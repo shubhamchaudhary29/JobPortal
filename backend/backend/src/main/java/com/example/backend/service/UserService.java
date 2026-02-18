@@ -1,11 +1,13 @@
 package com.example.backend.service;
 
-import com.example.backend.entity.User;
+import com.example.backend.exception.BadRequestException;
+import com.example.backend.exception.ResourceNotFoundException;
 import com.example.backend.repository.UserRepository;
 import com.example.backend.security.JwtUtil;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
+import com.example.backend.entity.User;
 
 import java.util.HashMap;
 import java.util.Map;
@@ -13,9 +15,12 @@ import java.util.Map;
 @Service
 public class UserService {
 
-    @Autowired private UserRepository userRepository;
-    @Autowired private PasswordEncoder passwordEncoder;
-    @Autowired private JwtUtil jwtUtils;
+    @Autowired
+    private UserRepository userRepository;
+    @Autowired
+    private PasswordEncoder passwordEncoder;
+    @Autowired
+    private JwtUtil jwtUtils;
 
     public User register(User user) {
         user.setPassword(passwordEncoder.encode(user.getPassword()));
@@ -27,10 +32,10 @@ public class UserService {
 
     public Map<String, String> login(String email, String password) {
         User loggedInUser = userRepository.findByEmail(email)
-                .orElseThrow(() -> new RuntimeException("User not found"));
+                .orElseThrow(() -> new ResourceNotFoundException("User not found"));
 
         if (!passwordEncoder.matches(password, loggedInUser.getPassword())) {
-            throw new RuntimeException("Invalid password");
+            throw new BadRequestException("Invalid password");
         }
 
         String token = jwtUtils.generateToken(email, loggedInUser.getRole());

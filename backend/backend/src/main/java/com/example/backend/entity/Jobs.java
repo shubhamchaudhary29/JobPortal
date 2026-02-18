@@ -7,9 +7,9 @@ import org.springframework.data.mongodb.core.mapping.Document;
 
 import java.time.LocalDateTime;
 
-@Data @Document(collection = "jobs")
+@Data
+@Document(collection = "jobs")
 public class Jobs {
-
 
     @Id
     private String id;
@@ -26,4 +26,3 @@ public class Jobs {
     private LocalDateTime createdAt = LocalDateTime.now();
 
 }
-
