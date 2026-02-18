@@ -2,6 +2,9 @@ package com.example.backend.service;
 
 import com.example.backend.entity.Application;
 import com.example.backend.entity.Jobs;
+import com.example.backend.entity.User;
+import com.example.backend.exception.ForbiddenException;
+import com.example.backend.exception.ResourceNotFoundException;
 import com.example.backend.repository.ApplicationRepository;
 import com.example.backend.repository.JobRepository;
 import com.example.backend.repository.UserRepository;
@@ -49,13 +52,13 @@ public class ApplicationService {
     public List<Application> getApplicationsForJob(String jobId, String currentUserEmail) {
 
         Jobs job = jobRepository.findById(jobId)
-                .orElseThrow(() -> new RuntimeException("Job not found"));
+                .orElseThrow(() -> new ResourceNotFoundException("Job not found"));
 
-        var currentUser = userRepository.findByEmail(currentUserEmail)
-                .orElseThrow(() -> new RuntimeException("User not found"));
+        User currentUser = userRepository.findByEmail(currentUserEmail)
+                .orElseThrow(() -> new ResourceNotFoundException("User not found"));
 
         if (!job.getRecruiterId().equals(currentUser.getId())) {
-            throw new RuntimeException("Unauthorized: You are not the recruiter.");
+            throw new ForbiddenException("Unauthorized: You are not the recruiter.");
         }
 
         return applicationRepository.findByJobId(jobId);
@@ -63,6 +66,6 @@ public class ApplicationService {
 
     public Application getApplicationById(String applicationId) {
         return applicationRepository.findById(applicationId)
-                .orElseThrow(() -> new RuntimeException("Application not found with ID: " + applicationId));
+                .orElseThrow(() -> new ResourceNotFoundException("Application not found with ID: " + applicationId));
     }
 }

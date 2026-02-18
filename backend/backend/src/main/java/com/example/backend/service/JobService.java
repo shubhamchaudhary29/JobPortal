@@ -3,6 +3,8 @@ package com.example.backend.service;
 import com.example.backend.dto.CreateJobRequest;
 import com.example.backend.entity.Jobs;
 import com.example.backend.entity.User;
+import com.example.backend.exception.ForbiddenException;
+import com.example.backend.exception.ResourceNotFoundException;
 import com.example.backend.repository.JobRepository;
 import com.example.backend.repository.UserRepository;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -21,10 +23,10 @@ public class JobService {
 
     public Jobs createJob(CreateJobRequest request, String recruiterEmail) {
         User recruiter = userRepository.findByEmail(recruiterEmail)
-                .orElseThrow(() -> new RuntimeException("Recruiter not found"));
+                .orElseThrow(() -> new ResourceNotFoundException("Recruiter not found"));
 
         if (!"RECRUITER".equals(recruiter.getRole())) {
-            throw new RuntimeException("Only recruiters can create jobs");
+            throw new ForbiddenException("Only recruiters can create jobs");
         }
 
         Jobs job = new Jobs();
@@ -45,12 +47,12 @@ public class JobService {
 
     public Jobs getJobById(String jobId) {
         return jobRepository.findById(jobId)
-                .orElseThrow(() -> new RuntimeException("Job not found with id: " + jobId));
+                .orElseThrow(() -> new ResourceNotFoundException("Job not found with id: " + jobId));
     }
 
     public List<Jobs> getMyJobs(String recruiterEmail) {
         User recruiter = userRepository.findByEmail(recruiterEmail)
-                .orElseThrow(() -> new RuntimeException("Recruiter not found"));
+                .orElseThrow(() -> new ResourceNotFoundException("Recruiter not found"));
         return jobRepository.findByRecruiterId(recruiter.getId());
     }
 }

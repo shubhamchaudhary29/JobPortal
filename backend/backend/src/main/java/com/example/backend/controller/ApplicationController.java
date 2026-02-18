@@ -2,7 +2,6 @@ package com.example.backend.controller;
 
 import com.example.backend.entity.Application;
 import com.example.backend.repository.ApplicationRepository;
-import com.example.backend.repository.JobRepository;
 import com.example.backend.service.ApplicationService;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.core.io.Resource;
@@ -40,7 +39,6 @@ public class ApplicationController {
         return applicationService.applyForJob(jobId, userId, file);
     }
 
-
     @GetMapping("/{jobId}")
     public List<Application> getApplicationsForJob(
             @PathVariable String jobId,
@@ -64,6 +62,7 @@ public class ApplicationController {
                 .header(HttpHeaders.CONTENT_DISPOSITION, "attachment; filename=\"" + resource.getFilename() + "\"")
                 .body(resource);
     }
+
     @GetMapping("/status/{jobId}")
     public ResponseEntity<Boolean> hasUserApplied(
             @PathVariable String jobId,
