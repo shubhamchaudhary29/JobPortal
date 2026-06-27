@@ -5,6 +5,7 @@ import { logout } from "../services/user-service";
 export default function Header() {
   const navigate = useNavigate();
   const isLoggedIn = Boolean(localStorage.getItem("token"));
+  const role = localStorage.getItem("role");
   const [showDropdown, setShowDropdown] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
 
@@ -73,9 +74,16 @@ export default function Header() {
 
                 {showDropdown && (
                   <div className="absolute right-0 mt-3 w-56 bg-white rounded-2xl shadow-xl border border-slate-100 py-2 z-50 transform origin-top-right transition-all">
-                    <Link to="/profile" className="block px-4 py-2.5 text-sm font-medium text-slate-700 hover:bg-slate-50 hover:text-indigo-600" onClick={() => setShowDropdown(false)}>
-                      Recruiter Dashboard
-                    </Link>
+                    {role === "RECRUITER" && (
+                      <Link to="/profile" className="block px-4 py-2.5 text-sm font-medium text-slate-700 hover:bg-slate-50 hover:text-indigo-600" onClick={() => setShowDropdown(false)}>
+                        Recruiter Dashboard
+                      </Link>
+                    )}
+                    {role === "USER" && (
+                      <Link to="/my-applications" className="block px-4 py-2.5 text-sm font-medium text-slate-700 hover:bg-slate-50 hover:text-indigo-600" onClick={() => setShowDropdown(false)}>
+                        My Applications
+                      </Link>
+                    )}
                     <div className="h-px bg-slate-100 my-1"></div>
                     <button
                       onClick={() => { logout(); setShowDropdown(false); }}

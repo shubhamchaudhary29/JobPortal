@@ -8,6 +8,7 @@ import Register from "../pages/Register";
 import RecruiterLogin from "../pages/RecruiterLogin";
 import Profile from "../pages/Profile";
 import CreateJob from "../pages/CreateJob";
+import MyApplications from "../pages/MyApplications";
 
 export default function AppRoutes() {
   return (
@@ -20,6 +21,7 @@ export default function AppRoutes() {
       <Route path="/recruiter-login" element={<RecruiterLogin />} />
       <Route path="/profile" element={<Profile />} />
       <Route path="/post-job" element={<CreateJob />} />
+      <Route path="/my-applications" element={<MyApplications />} />
     </Routes>
   );
 }

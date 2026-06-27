@@ -14,6 +14,7 @@ public class Application {
     private String userId;
     private String resumeUrl;
     private LocalDateTime appliedAt;
+    private String status = "APPLIED";
 
     public Application() {
         this.appliedAt = LocalDateTime.now();

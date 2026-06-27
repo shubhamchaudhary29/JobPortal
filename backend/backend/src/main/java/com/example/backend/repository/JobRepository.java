@@ -9,4 +9,6 @@ import java.util.List;
 public interface JobRepository extends MongoRepository<Jobs, String> {
 
     List<Jobs> findByRecruiterId(String recruiterId);
+
+    boolean existsByExternalId(String sourceUrl);
 }

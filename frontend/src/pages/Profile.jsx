@@ -2,7 +2,45 @@ import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import Header from "../components/Header";
 import { getMyJobs } from "../services/job-service";
-import { getApplicationsForJob } from "../services/application-service";
+import { getApplicationsForJob, updateApplicationStatus } from "../services/application-service";
+
+const StatusBadge = ({ status }) => {
+  const currentStatus = status || "APPLIED";
+  let classes = "";
+  let label = "";
+
+  switch (currentStatus) {
+    case "APPLIED":
+      classes = "bg-blue-50 text-blue-700 border-blue-100";
+      label = "Applied";
+      break;
+    case "UNDER_REVIEW":
+      classes = "bg-amber-50 text-amber-700 border-amber-100";
+      label = "Under Review";
+      break;
+    case "SHORTLISTED":
+      classes = "bg-purple-50 text-purple-700 border-purple-100";
+      label = "Shortlisted";
+      break;
+    case "ACCEPTED":
+      classes = "bg-green-50 text-green-700 border-green-100";
+      label = "Accepted";
+      break;
+    case "REJECTED":
+      classes = "bg-red-50 text-red-700 border-red-100";
+      label = "Rejected";
+      break;
+    default:
+      classes = "bg-blue-50 text-blue-700 border-blue-100";
+      label = "Applied";
+  }
+
+  return (
+    <span className={`inline-flex items-center text-xs font-bold border px-2.5 py-1 rounded-full uppercase tracking-wider ${classes}`}>
+      {label}
+    </span>
+  );
+};
 
 export default function Profile() {
   const navigate = useNavigate();
@@ -10,6 +48,26 @@ export default function Profile() {
   const [loading, setLoading] = useState(true);
   const [expandedJobId, setExpandedJobId] = useState(null);
   const [applicants, setApplicants] = useState({});
+  const [updatingIds, setUpdatingIds] = useState({});
+
+  const handleStatusChange = async (appId, jobId, newStatus) => {
+    setUpdatingIds(prev => ({ ...prev, [appId]: true }));
+    try {
+      await updateApplicationStatus(appId, newStatus);
+      setApplicants(prev => {
+        const jobApps = prev[jobId] || [];
+        const updatedApps = jobApps.map(app => 
+          app.id === appId ? { ...app, status: newStatus } : app
+        );
+        return { ...prev, [jobId]: updatedApps };
+      });
+    } catch (err) {
+      console.error(err);
+      alert("Failed to update applicant status. Please try again.");
+    } finally {
+      setUpdatingIds(prev => ({ ...prev, [appId]: false }));
+    }
+  };
 
   useEffect(() => {
     getMyJobs()
@@ -85,6 +143,7 @@ export default function Profile() {
                             <tr>
                               <th className="px-6 py-4">Candidate ID</th>
                               <th className="px-6 py-4">Date Applied</th>
+                              <th className="px-6 py-4">Status</th>
                               <th className="px-6 py-4 text-right">Resume</th>
                             </tr>
                           </thead>
@@ -93,6 +152,28 @@ export default function Profile() {
                               <tr key={app.id} className="hover:bg-slate-50 transition-colors">
                                 <td className="px-6 py-4 font-medium text-slate-800">{app.userId}</td>
                                 <td className="px-6 py-4 text-slate-500 font-medium">{new Date(app.appliedAt).toLocaleDateString()}</td>
+                                <td className="px-6 py-4">
+                                  <div className="flex items-center gap-3">
+                                    <StatusBadge status={app.status} />
+                                    <div className="flex items-center gap-2">
+                                      <select
+                                        value={app.status || "APPLIED"}
+                                        disabled={updatingIds[app.id]}
+                                        onChange={(e) => handleStatusChange(app.id, job._id || job.id, e.target.value)}
+                                        className="bg-slate-50 border border-slate-200 rounded-lg px-2.5 py-1 text-slate-700 focus:outline-none focus:ring-2 focus:ring-indigo-500 text-xs font-semibold"
+                                      >
+                                        <option value="APPLIED">Applied</option>
+                                        <option value="UNDER_REVIEW">Under Review</option>
+                                        <option value="SHORTLISTED">Shortlisted</option>
+                                        <option value="ACCEPTED">Accepted</option>
+                                        <option value="REJECTED">Rejected</option>
+                                      </select>
+                                      {updatingIds[app.id] && (
+                                        <div className="w-4 h-4 border-2 border-indigo-600 border-t-transparent rounded-full animate-spin"></div>
+                                      )}
+                                    </div>
+                                  </div>
+                                </td>
                                 <td className="px-6 py-4 text-right">
                                   <a href={`http://localhost:8080/applications/download/${app.id}`} target="_blank" rel="noreferrer"
                                     className="inline-flex items-center gap-2 text-indigo-600 bg-indigo-50 px-3 py-1.5 rounded-lg hover:bg-indigo-100 font-bold transition-colors">

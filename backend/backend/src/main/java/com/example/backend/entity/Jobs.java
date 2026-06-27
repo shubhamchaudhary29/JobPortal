@@ -25,4 +25,8 @@ public class Jobs {
 
     private LocalDateTime createdAt = LocalDateTime.now();
 
+    private String sourceUrl;      // original posting URL; null for manually-created jobs
+    private String source;         // "manual" or "adzuna"
+    private String externalId;     // Adzuna's job id, used to avoid duplicate imports
+
 }

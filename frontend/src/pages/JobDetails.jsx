@@ -5,6 +5,45 @@ import ApplyJobModal from "../components/ApplyJobModal";
 import { getJobById } from "../services/job-service";
 import { hasUserApplied } from "../services/application-service";
 
+const formatDescription = (text) => {
+  if (!text) return [];
+
+  let cleaned = text;
+
+  // Convert paragraph boundaries and breaks to newlines to preserve spacing
+  cleaned = cleaned
+    .replace(/<br\s*\/?>/gi, "\n")
+    .replace(/<\/p>/gi, "\n\n")
+    .replace(/<p>/gi, "");
+
+  // Decode HTML entities so that encoded tags (e.g. &lt;strong&gt;) become real tags
+  cleaned = cleaned
+    .replace(/&amp;/g, "&")
+    .replace(/&lt;/g, "<")
+    .replace(/&gt;/g, ">")
+    .replace(/&nbsp;/g, " ")
+    .replace(/&#39;/g, "'")
+    .replace(/&quot;/g, '"');
+
+  // Strip remaining HTML tags
+  cleaned = cleaned.replace(/<[^>]*>/g, "");
+
+  // Decode HTML entities again in case some were nested
+  cleaned = cleaned
+    .replace(/&amp;/g, "&")
+    .replace(/&lt;/g, "<")
+    .replace(/&gt;/g, ">")
+    .replace(/&nbsp;/g, " ")
+    .replace(/&#39;/g, "'")
+    .replace(/&quot;/g, '"');
+
+  // Split on double newlines and filter empty lines
+  return cleaned
+    .split(/\n\s*\n/)
+    .map(p => p.trim())
+    .filter(p => p.length > 0);
+};
+
 export default function JobDetails() {
   const { jobId } = useParams();
   const navigate = useNavigate();
@@ -78,6 +117,15 @@ export default function JobDetails() {
                 >
                   Login to Apply
                 </button>
+              ) : job.sourceUrl ? (
+                <a 
+                  href={job.sourceUrl} 
+                  target="_blank" 
+                  rel="noopener noreferrer"
+                  className="w-full bg-indigo-600 text-white py-3 rounded-xl font-semibold hover:bg-indigo-700 transition shadow-lg shadow-indigo-200 text-center block"
+                >
+                  Apply Now ↗
+                </a>
               ) : (
                 <button 
                   onClick={() => !hasApplied && setIsModalOpen(true)}
@@ -97,7 +145,9 @@ export default function JobDetails() {
           <div className="p-8">
             <h2 className="text-lg font-bold text-slate-900 mb-4">About the role</h2>
             <div className="prose prose-slate max-w-none text-slate-600 whitespace-pre-wrap leading-relaxed">
-              {job.description}
+              {formatDescription(job.description).map((para, index) => (
+                <p key={index} className="mb-4 last:mb-0">{para}</p>
+              ))}
             </div>
           </div>
         </div>

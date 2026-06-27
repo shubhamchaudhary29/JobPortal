@@ -27,3 +27,15 @@ export const hasUserApplied = async (jobId) => {
   const response = await apiClient.get(`/applications/status/${jobId}`);
   return response.data; 
 };
+
+// Candidate fetches their own applications with job details
+export const getMyApplications = async () => {
+  const response = await apiClient.get("/applications/my");
+  return response.data;
+};
+
+// Recruiter updates status of an application
+export const updateApplicationStatus = async (applicationId, status) => {
+  const response = await apiClient.patch(`/applications/${applicationId}/status`, { status });
+  return response.data;
+};

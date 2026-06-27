@@ -1,6 +1,9 @@
 package com.example.backend.controller;
 
+import com.example.backend.dto.ApplicationWithJobDTO;
+import com.example.backend.dto.UpdateStatusRequest;
 import com.example.backend.entity.Application;
+import com.example.backend.exception.ForbiddenException;
 import com.example.backend.repository.ApplicationRepository;
 import com.example.backend.service.ApplicationService;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -72,5 +75,33 @@ public class ApplicationController {
         boolean hasApplied = applicationRepository.existsByUserIdAndJobId(currentUserId, jobId);
 
         return ResponseEntity.ok(hasApplied);
+    }
+
+    @GetMapping("/my")
+    public ResponseEntity<List<ApplicationWithJobDTO>> getMyApplications(Authentication authentication) {
+        String email = authentication.getName();
+        List<ApplicationWithJobDTO> myApps = applicationService.getMyApplications(email);
+        return ResponseEntity.ok(myApps);
+    }
+
+    @PatchMapping("/{applicationId}/status")
+    public ResponseEntity<Application> updateApplicationStatus(
+            @PathVariable String applicationId,
+            @RequestBody UpdateStatusRequest request,
+            Authentication authentication) {
+
+        boolean isRecruiter = authentication.getAuthorities().stream()
+                .anyMatch(a -> a.getAuthority().equals("ROLE_RECRUITER"));
+
+        if (!isRecruiter) {
+            throw new ForbiddenException("Unauthorized: Only recruiters can update application status.");
+        }
+
+        Application updated = applicationService.updateApplicationStatus(
+                applicationId,
+                request.getStatus(),
+                authentication.getName()
+        );
+        return ResponseEntity.ok(updated);
     }
 }
