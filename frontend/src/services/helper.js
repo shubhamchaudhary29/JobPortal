@@ -1,7 +1,7 @@
 import axios from "axios";
 import { logout } from "./user-service";
 
-const BaseURL = "http://localhost:8080";
+const BaseURL = "";
 
 export const apiClient = axios.create({
   baseURL: BaseURL,

@@ -3,15 +3,24 @@ package com.example.backend.security;
 import io.jsonwebtoken.Jwts;
 import io.jsonwebtoken.SignatureAlgorithm;
 import io.jsonwebtoken.security.Keys;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
 
+import jakarta.annotation.PostConstruct;
 import java.security.Key;
 import java.util.Date;
 
 @Component
 public class JwtUtil {
-    private static final String SECRET = "mysecretkeymysecretkeymysecretkeymysecretkey";
-    private final Key key = Keys.hmacShaKeyFor(SECRET.getBytes());
+    @Value("${jwt.secret:mysecretkeymysecretkeymysecretkeymysecretkey}")
+    private String secret;
+
+    private Key key;
+
+    @PostConstruct
+    public void init() {
+        this.key = Keys.hmacShaKeyFor(secret.getBytes());
+    }
 
     // FIXED: Now accepts both email and role
     public String generateToken(String email, String role) {

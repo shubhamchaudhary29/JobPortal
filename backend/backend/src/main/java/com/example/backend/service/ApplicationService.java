@@ -11,6 +11,7 @@ import com.example.backend.repository.ApplicationRepository;
 import com.example.backend.repository.JobRepository;
 import com.example.backend.repository.UserRepository;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.context.annotation.Lazy;
 import org.springframework.stereotype.Service;
 import org.springframework.web.multipart.MultipartFile;
 
@@ -31,6 +32,11 @@ public class ApplicationService {
 
     @Autowired
     private UserRepository userRepository;
+
+    // @Lazy prevents circular dependency: ApplicationService → ChatService → ApplicationRepository → ApplicationService
+    @Lazy
+    @Autowired
+    private ChatService chatService;
 
     private final String UPLOAD_DIR = System.getProperty("user.dir") + "/uploads/";
 
@@ -120,6 +126,41 @@ public class ApplicationService {
         }
 
         app.setStatus(newStatus);
-        return applicationRepository.save(app);
+        Application saved = applicationRepository.save(app);
+
+        // Auto-create chat room when a candidate is accepted (idempotent)
+        if ("ACCEPTED".equals(newStatus)) {
+            try {
+                chatService.createChatRoom(applicationId);
+            } catch (Exception e) {
+                // Log but don't fail the status update if chat room creation fails
+                System.err.println("[ChatService] Failed to create chat room for application "
+                        + applicationId + ": " + e.getMessage());
+            }
+        }
+
+        return saved;
+    }
+
+    public Application getApplicationForDownload(String applicationId, String email) {
+        Application app = getApplicationById(applicationId);
+
+        User user = userRepository.findByEmail(email)
+                .orElseThrow(() -> new ResourceNotFoundException("User not found: " + email));
+
+        // Candidate check: Candidate can download their own resume
+        if (app.getUserId().equals(email)) {
+            return app;
+        }
+
+        // Recruiter check: Recruiter of the job can download the candidate's resume
+        Jobs job = jobRepository.findById(app.getJobId())
+                .orElseThrow(() -> new ResourceNotFoundException("Job not found: " + app.getJobId()));
+
+        if (job.getRecruiterId().equals(user.getId())) {
+            return app;
+        }
+
+        throw new ForbiddenException("Unauthorized: You do not have access to this candidate's resume.");
     }
 }

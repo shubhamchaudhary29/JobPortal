@@ -52,3 +52,15 @@ export const signUpUser = async (userData) => {
   const response = await apiClient.post("/auth/register", userData);
   return response.data;
 };
+
+// Get current user profile with application stats
+export const getMyProfile = async () => {
+  const response = await apiClient.get("/users/me");
+  return response.data;
+};
+
+// Update current user's editable profile fields
+export const updateMyProfile = async (profileData) => {
+  const response = await apiClient.put("/users/me", profileData);
+  return response.data;
+};

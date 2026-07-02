@@ -10,4 +10,8 @@ public interface ApplicationRepository extends MongoRepository<Application, Stri
     boolean existsByUserIdAndJobId(String userId, String jobId);
 
     List<Application> findByUserId(String userId);
+
+    int countByUserId(String userId);
+
+    int countByUserIdAndStatus(String userId, String status);
 }

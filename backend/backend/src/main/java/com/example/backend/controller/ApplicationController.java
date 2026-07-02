@@ -53,9 +53,12 @@ public class ApplicationController {
     }
 
     @GetMapping("/download/{applicationId}")
-    public ResponseEntity<Resource> downloadResume(@PathVariable String applicationId) throws IOException {
+    public ResponseEntity<Resource> downloadResume(
+            @PathVariable String applicationId,
+            Authentication authentication) throws IOException {
 
-        Application application = applicationService.getApplicationById(applicationId);
+        String email = authentication.getName();
+        Application application = applicationService.getApplicationForDownload(applicationId, email);
 
         Path path = Paths.get(application.getResumeUrl());
         Resource resource = new UrlResource(path.toUri());

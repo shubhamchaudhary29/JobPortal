@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import Header from "../components/Header";
 import { getMyJobs } from "../services/job-service";
-import { getApplicationsForJob, updateApplicationStatus } from "../services/application-service";
+import { getApplicationsForJob, updateApplicationStatus, downloadResume } from "../services/application-service";
 
 const StatusBadge = ({ status }) => {
   const currentStatus = status || "APPLIED";
@@ -175,10 +175,20 @@ export default function Profile() {
                                   </div>
                                 </td>
                                 <td className="px-6 py-4 text-right">
-                                  <a href={`http://localhost:8080/applications/download/${app.id}`} target="_blank" rel="noreferrer"
-                                    className="inline-flex items-center gap-2 text-indigo-600 bg-indigo-50 px-3 py-1.5 rounded-lg hover:bg-indigo-100 font-bold transition-colors">
-                                    Download PDF
-                                  </a>
+                                  <div className="flex items-center justify-end gap-2">
+                                    {app.status === "ACCEPTED" && (
+                                      <button
+                                        onClick={() => navigate("/chat")}
+                                        className="inline-flex items-center gap-1.5 text-green-700 bg-green-50 px-3 py-1.5 rounded-lg hover:bg-green-100 font-bold transition-colors text-xs"
+                                      >
+                                        💬 Chat
+                                      </button>
+                                    )}
+                                    <button onClick={() => downloadResume(app.id)}
+                                      className="inline-flex items-center gap-2 text-indigo-600 bg-indigo-50 px-3 py-1.5 rounded-lg hover:bg-indigo-100 font-bold transition-colors text-xs">
+                                      Download PDF
+                                    </button>
+                                  </div>
                                 </td>
                               </tr>
                             ))}

@@ -1,0 +1,25 @@
+FROM maven:3.9-eclipse-temurin-17 AS builder
+
+WORKDIR /app
+
+# Cache dependencies separately for faster rebuilds
+COPY pom.xml .
+RUN mvn dependency:go-offline -B
+
+# Copy source and build
+COPY src src
+RUN mvn clean package -DskipTests -B
+
+# --- Runtime ---
+FROM eclipse-temurin:17-jre
+
+WORKDIR /app
+
+# Create uploads directory
+RUN mkdir -p /app/uploads
+
+COPY --from=builder /app/target/backend-0.0.1-SNAPSHOT.jar app.jar
+
+EXPOSE 8080
+
+ENTRYPOINT ["java", "-Djava.net.preferIPv4Stack=true", "-jar", "app.jar"]

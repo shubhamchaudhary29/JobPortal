@@ -1,0 +1,54 @@
+services:
+  mongodb:
+    image: mongo:7
+    container_name: jobportal-mongodb
+    ports:
+      - "27017:27017"
+    volumes:
+      - mongo-data:/data/db
+    healthcheck:
+      test: ["CMD", "mongosh", "--eval", "db.adminCommand('ping')"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+
+  backend:
+    build:
+      context: ./backend/backend
+      dockerfile: Dockerfile.dev
+    container_name: jobportal-backend
+    ports:
+      - "8080:8080"
+    volumes:
+      - backend-uploads:/app/uploads
+    environment:
+      # MongoDB connection
+      - MONGODB_HOST=mongodb
+      - MONGODB_PORT=27017
+      - MONGODB_DATABASE=jobportal
+      # JWT
+      - JWT_SECRET=mysecretkeymysecretkeymysecretkeymysecretkey
+      # File uploads
+      - MAX_FILE_SIZE=5MB
+      - MAX_REQUEST_SIZE=5MB
+      # Adzuna API
+      - ADZUNA_APP_ID=4cf3db0b
+      - ADZUNA_APP_KEY=2d7ba727c4dfcfa80c3bfd4ce8bf26ff
+    depends_on:
+      mongodb:
+        condition: service_healthy
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    container_name: jobportal-frontend
+    ports:
+      - "80:80"
+    depends_on:
+      - backend
+
+volumes:
+  mongo-data:
+  backend-uploads:

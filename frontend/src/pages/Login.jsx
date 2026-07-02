@@ -22,8 +22,16 @@ const handleLogin = async (e) => {
     e.preventDefault();
     try {
       const { email, password } = formData;
-      await loginUser(email, password); 
-      navigate("/");
+      await loginUser(email, password);
+      // loginUser() stores role in localStorage — read it for role-based redirect
+      const role = localStorage.getItem("role");
+      if (role === "RECRUITER") {
+        navigate("/profile");
+      } else if (role === "USER") {
+        navigate("/my-profile");
+      } else {
+        navigate("/");
+      }
     } catch (error) {
       console.error("Login failed:", error);
       alert("Invalid credentials");

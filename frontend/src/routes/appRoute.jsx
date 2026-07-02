@@ -9,19 +9,75 @@ import RecruiterLogin from "../pages/RecruiterLogin";
 import Profile from "../pages/Profile";
 import CreateJob from "../pages/CreateJob";
 import MyApplications from "../pages/MyApplications";
+import MyProfile from "../pages/MyProfile";
+import ChatList from "../pages/ChatList";
+import ChatRoom from "../pages/ChatRoom";
+import ProtectedRoute from "../components/ProtectedRoute";
 
 export default function AppRoutes() {
   return (
     <Routes>
+      {/* Public routes */}
       <Route path="/" element={<Home />} />
       <Route path="/jobs" element={<Jobs />} />
       <Route path="/jobs/:jobId" element={<JobDetails />} />
       <Route path="/login" element={<Login />} />
       <Route path="/register" element={<Register />} />
       <Route path="/recruiter-login" element={<RecruiterLogin />} />
-      <Route path="/profile" element={<Profile />} />
-      <Route path="/post-job" element={<CreateJob />} />
-      <Route path="/my-applications" element={<MyApplications />} />
+
+      {/* Recruiter-only routes */}
+      <Route
+        path="/profile"
+        element={
+          <ProtectedRoute requiredRole="RECRUITER">
+            <Profile />
+          </ProtectedRoute>
+        }
+      />
+      <Route
+        path="/post-job"
+        element={
+          <ProtectedRoute requiredRole="RECRUITER">
+            <CreateJob />
+          </ProtectedRoute>
+        }
+      />
+
+      {/* Candidate-only routes */}
+      <Route
+        path="/my-applications"
+        element={
+          <ProtectedRoute requiredRole="USER">
+            <MyApplications />
+          </ProtectedRoute>
+        }
+      />
+      <Route
+        path="/my-profile"
+        element={
+          <ProtectedRoute requiredRole="USER">
+            <MyProfile />
+          </ProtectedRoute>
+        }
+      />
+
+      {/* Shared protected chat routes */}
+      <Route
+        path="/chat"
+        element={
+          <ProtectedRoute>
+            <ChatList />
+          </ProtectedRoute>
+        }
+      />
+      <Route
+        path="/chat/:roomId"
+        element={
+          <ProtectedRoute>
+            <ChatRoom />
+          </ProtectedRoute>
+        }
+      />
     </Routes>
   );
 }
