@@ -34,10 +34,13 @@ public class WebSocketConfig implements WebSocketMessageBrokerConfigurer {
      * Register the STOMP endpoint.
      * SockJS is enabled as a fallback for browsers that don't support native WebSocket.
      */
+    @Value("${app.allowed-origin:http://localhost:5173}")
+        private String allowedOrigin;
+
     @Override
     public void registerStompEndpoints(StompEndpointRegistry registry) {
         registry.addEndpoint("/ws")
-                .setAllowedOrigins("http://localhost:5173")
+                .setAllowedOriginPatterns(allowedOrigin, "http://localhost*")
                 .withSockJS();
     }
 
