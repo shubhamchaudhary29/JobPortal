@@ -24,14 +24,19 @@ public class SecurityConfig {
     @Bean
     public CorsConfigurationSource corsConfigurationSource() {
         CorsConfiguration config = new CorsConfiguration();
+    
         config.setAllowCredentials(true);
+    
         config.addAllowedOrigin("http://localhost:5173");
         config.addAllowedOrigin("http://localhost");
+        config.addAllowedOrigin("https://54-236-126-94.sslip.io/");
+    
         config.addAllowedHeader("*");
         config.addAllowedMethod("*");
-
+    
         UrlBasedCorsConfigurationSource source = new UrlBasedCorsConfigurationSource();
         source.registerCorsConfiguration("/**", config);
+    
         return source;
     }
 
