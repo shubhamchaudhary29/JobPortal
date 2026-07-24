@@ -29,7 +29,7 @@ public class SecurityConfig {
     
         config.addAllowedOrigin("http://localhost:5173");
         config.addAllowedOrigin("http://localhost");
-        config.addAllowedOrigin("https://54-236-126-94.sslip.io/");
+        config.addAllowedOrigin("https://54-236-126-94.sslip.io");
     
         config.addAllowedHeader("*");
         config.addAllowedMethod("*");
