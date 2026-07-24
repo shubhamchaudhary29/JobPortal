@@ -1,103 +1,236 @@
-# 🚀 JobPortal
-
 <div align="center">
 
-A modern **Full-Stack Recruitment Platform** that connects recruiters with talented candidates through a secure, scalable, and real-time hiring experience.
+# 🚀 JobPortal
 
-Built using **Spring Boot**, **React**, **MongoDB**, **Docker**, and **WebSockets**, JobPortal provides everything from authentication and resume management to real-time recruiter-candidate communication.
+### Modern Full-Stack Recruitment Platform with Real-Time Chat & Multi-Platform Job Aggregation
 
-![Java](https://img.shields.io/badge/Java-21-red)
-![Spring Boot](https://img.shields.io/badge/Spring%20Boot-3.x-brightgreen)
-![React](https://img.shields.io/badge/React-19-61DAFB)
-![MongoDB](https://img.shields.io/badge/MongoDB-Database-green)
-![Docker](https://img.shields.io/badge/Docker-Containerized-blue)
-![JWT](https://img.shields.io/badge/JWT-Authentication-orange)
-![WebSocket](https://img.shields.io/badge/WebSocket-Real--Time-purple)
+<p align="center">
+Connecting <b>Recruiters</b> and <b>Candidates</b> through a secure, scalable, and modern recruitment platform powered by <b>Spring Boot</b>, <b>React</b>, <b>MongoDB</b>, <b>Docker</b>, and <b>WebSockets</b>.
+</p>
+
+<p align="center">
+
+![Java](https://img.shields.io/badge/Java-21-red?style=for-the-badge&logo=openjdk)
+![Spring Boot](https://img.shields.io/badge/Spring%20Boot-3.x-brightgreen?style=for-the-badge&logo=springboot)
+![React](https://img.shields.io/badge/React-19-61DAFB?style=for-the-badge&logo=react)
+![MongoDB](https://img.shields.io/badge/MongoDB-Database-green?style=for-the-badge&logo=mongodb)
+![Docker](https://img.shields.io/badge/Docker-Containerized-blue?style=for-the-badge&logo=docker)
+![JWT](https://img.shields.io/badge/JWT-Authentication-orange?style=for-the-badge)
+![WebSocket](https://img.shields.io/badge/WebSocket-RealTime-purple?style=for-the-badge)
+
+</p>
+
+---
+
+### 🌐 Live Demo
+
+Coming Soon
+
+### 📽 Demo Video
+
+Coming Soon
+
+### 📄 Documentation
+
+Coming Soon
 
 </div>
 
 ---
 
-# ✨ Features
+# 📖 Overview
 
-## 👨‍💻 Candidate Features
+**JobPortal** is a modern full-stack recruitment platform that streamlines the hiring process for both **Recruiters** and **Candidates**.
 
-- Secure Registration & Login
+Unlike conventional job portals that only display jobs created within their own application, **JobPortal combines recruiter-posted jobs with thousands of external opportunities aggregated from multiple leading job platforms using the Adzuna Job Search API.**
+
+The platform provides:
+
+- 🔐 Secure JWT Authentication
+- 💼 Recruiter Dashboard
+- 👨‍💻 Candidate Dashboard
+- 📄 Resume Upload
+- 💬 Real-Time Recruiter ↔ Candidate Chat
+- 🌍 Aggregated Jobs from Multiple Platforms
+- 🐳 Dockerized Deployment
+- ⚡ Modern Responsive UI
+
+---
+
+# ✨ Key Highlights
+
+- 🔒 Secure Role-Based Authentication
+- 🌍 Search Jobs from Multiple Platforms
+- 💬 Real-Time Chat using WebSockets
+- 📄 Resume Upload & Download
+- 🐳 Fully Dockerized Application
+- 📱 Responsive User Interface
+- ⚡ RESTful Backend APIs
+- 🔑 JWT Authentication
+- 👥 Recruiter & Candidate Dashboards
+- 🔍 Smart Job Search
+- 📂 Modular Codebase
+- 🚀 Production Ready Architecture
+
+---
+
+# 🌍 Multi-Platform Job Aggregation
+
+One of the biggest highlights of **JobPortal** is its ability to aggregate jobs from multiple recruitment platforms.
+
+Instead of limiting candidates to only jobs posted inside the application, JobPortal integrates with the **Adzuna Job Search API**, allowing users to discover opportunities from multiple popular job platforms through a single interface.
+
+## Supported Platforms
+
+- 💼 LinkedIn
+- 🔵 Indeed
+- 🟢 Glassdoor
+- 🟣 ZipRecruiter
+- 🟠 Reed
+- 🌍 Adzuna Partner Network
+- 📰 Various Global Job Boards
+
+> The available job sources depend on the results returned by the Adzuna API for the selected country and search query.
+
+### Benefits
+
+- Search thousands of jobs instantly
+- Unified job discovery experience
+- Search by keywords
+- Filter by location
+- Browse external opportunities
+- Access recruiter-posted jobs from the same platform
+
+This transforms JobPortal into a **centralized recruitment hub** instead of just another CRUD job board.
+
+---
+
+# 👨‍💻 Candidate Features
+
+### Authentication
+
+- Secure Registration
+- Secure Login
 - JWT Authentication
-- Create & Manage Profile
+- Password Encryption
+- Role-Based Authorization
+
+### Profile
+
+- Create Candidate Profile
+- Edit Personal Information
 - Upload Resume (PDF)
+- Resume Management
+
+### Job Search
+
 - Browse All Jobs
-- Search Jobs
+- Search by Job Title
+- Search by Keywords
 - Filter by Location
-- Apply to Jobs
-- Track Applications
-- Chat with Recruiters
-- Real-Time Messaging
-- Responsive Dashboard
+- View Job Details
+- Explore External Jobs via Adzuna
 
----
+### Applications
 
-## 💼 Recruiter Features
+- One Click Apply
+- Track Applied Jobs
+- View Application Status
+- Resume Submission
 
-- Recruiter Authentication
-- Create Job Listings
-- Edit Job Listings
-- Delete Job Listings
-- View Posted Jobs
-- Manage Applicants
-- Download Candidate Resume
-- Real-Time Chat
-- Applicant Dashboard
+### Communication
 
----
-
-## 💬 Real-Time Chat
-
-One of the major features of JobPortal is the built-in messaging system.
-
-Features include:
-
-- Recruiter ↔ Candidate Messaging
-- WebSocket Communication
-- STOMP Protocol
-- Instant Message Delivery
-- Unread Message Counter
+- Real-Time Recruiter Chat
+- Instant Messaging
 - Conversation History
-- Persistent Chat Storage
+- Unread Message Notifications
 
 ---
 
-## 🔐 Authentication & Security
+# 🏢 Recruiter Features
+
+### Dashboard
+
+- Recruiter Dashboard
+- Manage Posted Jobs
+- View Job Statistics
+
+### Job Management
+
+- Create Jobs
+- Edit Jobs
+- Delete Jobs
+- Manage Listings
+
+### Applicant Management
+
+- View Applicants
+- Download Candidate Resume
+- Review Applications
+- Manage Hiring Process
+
+### Communication
+
+- Chat with Candidates
+- Real-Time Messaging
+- Persistent Conversations
+
+---
+
+# 💬 Real-Time Chat
+
+JobPortal includes an integrated messaging system that allows recruiters and candidates to communicate directly.
+
+## Features
+
+- WebSocket Communication
+- STOMP Messaging
+- Instant Message Delivery
+- Conversation History
+- Recruiter ↔ Candidate Chat
+- Persistent Storage
+- Unread Message Tracking
+
+This eliminates the need for third-party communication platforms and keeps the hiring process inside the application.
+
+---
+
+# 🔐 Security Features
 
 - Spring Security
 - JWT Authentication
 - BCrypt Password Encryption
-- Role-Based Access Control (RBAC)
+- Stateless Authentication
 - Protected REST APIs
+- Role-Based Access Control
 - Secure Resume Access
 - CORS Configuration
+- Authentication Filters
 
 ---
 
-# 🛠 Tech Stack
+# 🛠 Technology Stack
 
 ## Frontend
 
 - React (Vite)
-- React Router
+- React Router DOM
 - Tailwind CSS
 - Axios
+- Context API
 
 ---
 
 ## Backend
 
 - Java 21
-- Spring Boot 3
+- Spring Boot 3.x
 - Spring Security
 - Spring Data MongoDB
 - JWT
-- WebSocket (STOMP)
+- WebSocket
+- STOMP
+- Maven
 
 ---
 
@@ -114,41 +247,54 @@ Features include:
 
 ---
 
-# 📂 Project Structure
+## Third-Party Integrations
 
-```
-JobPortal
-│
-├── backend
-│   ├── config
-│   ├── controller
-│   ├── dto
-│   ├── entity
-│   ├── repository
-│   ├── security
-│   ├── service
-│   ├── websocket
-│   └── resources
-│
-├── frontend
-│   ├── components
-│   ├── pages
-│   ├── services
-│   ├── hooks
-│   ├── context
-│   └── assets
-│
-├── docker-compose.yml
-├── Dockerfile.backend
-├── Dockerfile.frontend
-└── README.md
-```
+- Adzuna Job Search API
+- JWT
+- WebSocket (STOMP)
+
+---
+
+
+# ⭐ Why JobPortal?
+
+Unlike traditional academic CRUD projects, JobPortal focuses on solving real-world recruitment challenges by combining:
+
+- Internal recruiter job postings
+- External job aggregation
+- Resume management
+- Secure authentication
+- Real-time communication
+- Containerized deployment
+- Modern UI/UX
+
+making it a scalable and production-oriented recruitment platform.
 
 ---
 
 # 🚀 Getting Started
 
-## Clone Repository
+Follow the steps below to run JobPortal on your local machine.
+
+---
+
+# 📋 Prerequisites
+
+Before you begin, ensure you have the following installed:
+
+| Software | Version |
+|----------|---------|
+| Java | 21+ |
+| Node.js | 18+ |
+| Maven | Latest |
+| MongoDB | Latest |
+| Docker | Latest |
+| Docker Compose | Latest |
+| Git | Latest |
+
+---
+
+# 📥 Clone Repository
 
 ```bash
 git clone https://github.com/shubhamchaudhary29/JobPortal.git
@@ -158,35 +304,23 @@ cd JobPortal
 
 ---
 
-# 🐳 Running with Docker
+# ⚙️ Running Locally
 
-Start the complete application using Docker Compose.
+## 1️⃣ Backend
 
-```bash
-docker compose up --build
-```
-
-This launches:
-
-- Frontend
-- Backend
-- MongoDB
-
-No manual installation is required beyond Docker.
-
----
-
-# 💻 Running Locally
-
-## Backend
+Navigate to the backend directory.
 
 ```bash
 cd backend
+```
 
+Start the Spring Boot application.
+
+```bash
 ./mvnw spring-boot:run
 ```
 
-Runs on
+Backend runs on:
 
 ```
 http://localhost:8080
@@ -194,17 +328,27 @@ http://localhost:8080
 
 ---
 
-## Frontend
+## 2️⃣ Frontend
+
+Navigate to the frontend directory.
 
 ```bash
 cd frontend
+```
 
+Install dependencies.
+
+```bash
 npm install
+```
 
+Run the development server.
+
+```bash
 npm run dev
 ```
 
-Runs on
+Frontend runs on:
 
 ```
 http://localhost:5173
@@ -212,123 +356,804 @@ http://localhost:5173
 
 ---
 
-# 📄 Resume Management
+# 🌍 Environment Variables
 
-Candidates can upload resumes directly while applying.
+### Backend
 
-Recruiters can:
+Example configuration:
 
-- View Applicants
-- Download Resume
-- Review Applications
+```properties
+spring.data.mongodb.uri=mongodb://localhost:27017/jobportal
 
----
+jwt.secret=YOUR_SECRET_KEY
 
-# 💬 Messaging Workflow
+adzuna.app.id=YOUR_ADZUNA_APP_ID
 
-```
-Candidate
-     │
-     │ Apply
-     ▼
-Recruiter
-
-     │
-     │ Start Chat
-     ▼
-
-WebSocket Server
-
-     ▲
-     │
-Instant Messaging
+adzuna.app.key=YOUR_ADZUNA_APP_KEY
 ```
 
 ---
 
-# 🔐 Security Architecture
+### Frontend
 
-```
-Client
+Example:
 
-↓
+```env
+VITE_API_BASE_URL=http://localhost:8080
 
-JWT Login
-
-↓
-
-Spring Security Filter
-
-↓
-
-Authentication
-
-↓
-
-Role Verification
-
-↓
-
-Protected APIs
+VITE_WEBSOCKET_URL=ws://localhost:8080/ws
 ```
 
 ---
 
-# 🌐 REST APIs
+# 🐳 Running with Docker
 
-The backend exposes REST APIs for:
+The entire application has been fully containerized using Docker.
 
-- Authentication
-- Users
-- Recruiters
-- Jobs
-- Applications
-- Chat
-- Resume Management
+Simply run:
+
+```bash
+docker compose up --build
+```
+
+Docker Compose automatically starts:
+
+- Frontend
+- Backend
+- MongoDB
+
+without requiring any manual configuration.
+
+To stop the application:
+
+```bash
+docker compose down
+```
 
 ---
 
 # 🐳 Docker Architecture
 
 ```
-             Docker Compose
-                    │
-        ┌───────────┼───────────┐
-        │           │           │
-        ▼           ▼           ▼
-   React App   Spring Boot   MongoDB
+                    Docker Compose
+
+                           │
+
+        ┌──────────────────┼──────────────────┐
+
+        │                  │                  │
+
+        ▼                  ▼                  ▼
+
+ React Frontend      Spring Boot API      MongoDB
+
+        │                  │
+
+        └──────────REST APIs───────────────┘
+
+                           │
+
+                     WebSocket Server
+
+                           │
+
+                    Real-Time Messaging
 ```
 
 ---
 
-# 🚀 Future Improvements
+# 🏗 System Architecture
 
-- Email Notifications
-- AI Resume Screening
-- Resume Builder
-- Company Profiles
-- Saved Jobs
-- Job Recommendations
-- Admin Dashboard
-- Interview Scheduling
-- Analytics Dashboard
+```
+                 +----------------------+
+
+                 |     React Frontend   |
+
+                 +----------+-----------+
+
+                            |
+
+                       REST API
+
+                            |
+
+                 +----------▼-----------+
+
+                 |   Spring Boot API    |
+
+                 +----------+-----------+
+
+                            |
+
+       ┌────────────────────┼────────────────────┐
+
+       │                    │                    │
+
+       ▼                    ▼                    ▼
+
+ MongoDB Database      JWT Security      WebSocket Server
+
+                                                │
+
+                                                ▼
+
+                                      Real-Time Chat
+```
+
+---
+
+# 📂 Project Structure
+
+```
+JobPortal
+
+│
+
+├── backend
+
+│   ├── config
+
+│   ├── controller
+
+│   ├── dto
+
+│   ├── entity
+
+│   ├── repository
+
+│   ├── security
+
+│   ├── service
+
+│   ├── websocket
+
+│   ├── util
+
+│   └── resources
+
+│
+
+├── frontend
+
+│   ├── assets
+
+│   ├── components
+
+│   ├── pages
+
+│   ├── hooks
+
+│   ├── services
+
+│   ├── context
+
+│   ├── routes
+
+│   └── utils
+
+│
+
+├── docker-compose.yml
+
+├── Dockerfile.backend
+
+├── Dockerfile.frontend
+
+└── README.md
+```
+
+---
+
+# 👨‍💻 Candidate Workflow
+
+```
+Register
+
+    │
+
+Login
+
+    │
+
+Create Profile
+
+    │
+
+Upload Resume
+
+    │
+
+Browse Jobs
+
+    │
+
+Search / Filter
+
+    │
+
+View Job Details
+
+    │
+
+Apply
+
+    │
+
+Track Applications
+
+    │
+
+Chat with Recruiter
+```
+
+---
+
+# 🏢 Recruiter Workflow
+
+```
+Register
+
+    │
+
+Login
+
+    │
+
+Recruiter Dashboard
+
+    │
+
+Create Job
+
+    │
+
+Manage Listings
+
+    │
+
+View Applicants
+
+    │
+
+Download Resume
+
+    │
+
+Chat with Candidate
+```
+
+---
+
+# 💬 Real-Time Chat Workflow
+
+```
+Candidate
+
+     │
+
+     │ Sends Message
+
+     ▼
+
+Spring WebSocket Server
+
+     │
+
+     ▼
+
+Message Broker (STOMP)
+
+     │
+
+     ▼
+
+Recruiter
+
+     │
+
+     ▼
+
+Conversation Saved
+
+     │
+
+     ▼
+
+Unread Count Updated
+```
+
+---
+
+# 🌍 Job Search Flow
+
+```
+Candidate Search
+
+        │
+
+        ▼
+
+Search Query
+
+        │
+
+        ▼
+
+Backend Service
+
+        │
+
+        ├──────── Local Jobs
+
+        │
+
+        └──────── Adzuna API
+
+                      │
+
+                      ▼
+
+      LinkedIn
+
+      Indeed
+
+      Glassdoor
+
+      ZipRecruiter
+
+      Reed
+
+      Other Sources
+
+              │
+
+              ▼
+
+Unified Results
+
+              │
+
+              ▼
+
+Displayed to Candidate
+```
+
+---
+
+# 📄 Resume Management
+
+Candidates can upload resumes while creating their profile or applying for jobs.
+
+Recruiters can:
+
+- Download resumes
+- Review candidate profiles
+- Shortlist applicants
+
+Supported format:
+
+- PDF
+
+---
+
+# 🔐 Authentication Flow
+
+```
+User Login
+
+      │
+
+      ▼
+
+Spring Security
+
+      │
+
+      ▼
+
+Authentication Manager
+
+      │
+
+      ▼
+
+JWT Generated
+
+      │
+
+      ▼
+
+Stored on Client
+
+      │
+
+      ▼
+
+JWT Attached to Every Request
+
+      │
+
+      ▼
+
+Protected REST APIs
+```
+
+---
+
+# 🛡 Authorization
+
+The application implements Role-Based Access Control (RBAC).
+
+### Candidate
+
+✔ Browse Jobs
+
+✔ Apply
+
+✔ Upload Resume
+
+✔ Chat
+
+✔ Manage Profile
+
+---
+
+### Recruiter
+
+✔ Create Jobs
+
+✔ Edit Jobs
+
+✔ Delete Jobs
+
+✔ View Applicants
+
+✔ Download Resume
+
+✔ Chat
+
+---
+
+# 📦 File Storage
+
+Candidate resumes are securely stored and associated with their respective applications.
+
+Recruiters can download resumes directly from the Applicant Dashboard.
+
+---
+
+# 🌐 REST API Overview
+
+The backend exposes RESTful APIs for:
+
+- Authentication
+- User Management
+- Recruiter Management
+- Candidate Profiles
+- Job Listings
+- Applications
+- Resume Management
+- Chat System
+- External Job Aggregation
+- Adzuna Integration
+
+---
+
+---
+
+# 📚 API Overview
+
+The backend follows a RESTful architecture and exposes well-structured endpoints for authentication, user management, job management, applications, resume handling, chat, and external job aggregation.
+
+| Module | Description |
+|---------|-------------|
+| Authentication | User registration, login, JWT authentication |
+| User Profile | Create and manage candidate profiles |
+| Recruiter | Recruiter dashboard and job management |
+| Jobs | CRUD operations for job postings |
+| Applications | Apply for jobs and manage applications |
+| Resume | Upload and download candidate resumes |
+| Chat | Real-time recruiter-candidate messaging |
+| External Jobs | Fetch jobs from Adzuna Job Search API |
+
+---
+
+# 🌐 Third-Party Integrations
+
+## 🔍 Adzuna Job Search API
+
+JobPortal integrates with the **Adzuna Job Search API** to provide candidates with access to thousands of external job opportunities.
+
+### Features
+
+- Search jobs from multiple platforms
+- Keyword-based search
+- Location-based search
+- Real-time job listings
+- Unified search experience
+- External application links
+
+### Job Sources
+
+- LinkedIn
+- Indeed
+- Glassdoor
+- ZipRecruiter
+- Reed
+- Adzuna Partner Network
+- Other supported job boards
+
+---
+
+# 💾 Database Overview
+
+MongoDB is used as the primary database for storing application data.
+
+### Main Collections
+
+```
+Users
+
+Recruiters
+
+Jobs
+
+Applications
+
+Messages
+
+Conversations
+
+Profiles
+```
+
+Each collection is designed to maintain a clean separation of responsibilities while ensuring scalability and efficient querying.
+
+---
+
+# 🔄 Application Flow
+
+```
+                     Recruiter
+
+                          │
+
+                     Create Job
+
+                          │
+
+                          ▼
+
+                 Stored in Database
+
+                          │
+
+                          ▼
+
+              Candidate Searches Jobs
+
+                          │
+
+                          ▼
+
+       ┌────────────────────────────────┐
+
+       │ Local Jobs + Adzuna API Results │
+
+       └────────────────────────────────┘
+
+                          │
+
+                          ▼
+
+                  Candidate Applies
+
+                          │
+
+                          ▼
+
+                  Resume Uploaded
+
+                          │
+
+                          ▼
+
+               Recruiter Reviews Candidate
+
+                          │
+
+                          ▼
+
+                Recruiter Starts Chat
+
+                          │
+
+                          ▼
+
+                 Hiring Communication
+```
+
+---
+
+# ⚡ Performance Highlights
+
+- Stateless JWT Authentication
+- RESTful Architecture
+- Real-Time WebSocket Communication
+- Modular Project Structure
+- Scalable Backend Services
+- Dockerized Deployment
+- Fast React Frontend
+- MongoDB NoSQL Storage
+
+---
+
+# 🔐 Security Features
+
+The application follows modern backend security practices.
+
+- JWT Authentication
+- BCrypt Password Encryption
+- Spring Security
+- Stateless Authentication
+- Role-Based Access Control
+- Protected REST APIs
+- Secure Resume Access
+- CORS Configuration
+- Authentication Filters
+- Input Validation
+
+---
+
+# 🧪 Testing
+
+The project has been designed with modular components that simplify testing and future expansion.
+
+Suggested testing tools:
+
+- JUnit
+- Spring Boot Test
+- Postman
+- Bruno
+- Thunder Client
+
+---
+
+# 🚀 Future Roadmap
+
+The following features are planned for future releases.
+
+## AI Features
+
+- AI Resume Analyzer
+- Resume Score Prediction
+- Skill Gap Analysis
 - Resume Parsing
+- AI Job Recommendations
+- AI Cover Letter Generator
+
+---
+
+## Recruiter Features
+
+- Company Profiles
+- Recruiter Analytics
+- Candidate Shortlisting
+- Interview Scheduling
+- Offer Management
+
+---
+
+## Candidate Features
+
+- Saved Jobs
+- Job Alerts
+- Email Notifications
+- Bookmark Companies
+- Profile Verification
+
+---
+
+## Platform Features
+
+- Admin Dashboard
+- Multi-language Support
+- OAuth Login
+- Email Verification
+- Password Reset
+- Notification Center
+- Dark Mode
+- Progressive Web App (PWA)
+
+---
+
+# 🤝 Contributing
+
+Contributions are welcome!
+
+If you would like to improve JobPortal:
+
+1. Fork the repository.
+2. Create a new feature branch.
+
+```bash
+git checkout -b feature/my-feature
+```
+
+3. Commit your changes.
+
+```bash
+git commit -m "Add amazing feature"
+```
+
+4. Push your branch.
+
+```bash
+git push origin feature/my-feature
+```
+
+5. Open a Pull Request.
+
+---
+
+# 📝 License
+
+This project is licensed under the MIT License.
+
+Feel free to use, modify, and distribute this project under the terms of the license.
+
+---
+
+# 🙏 Acknowledgements
+
+Special thanks to the amazing open-source community and technologies that made this project possible.
+
+- Spring Boot
+- React
+- MongoDB
+- Docker
+- Tailwind CSS
+- WebSocket (STOMP)
+- JWT
+- Maven
+- Axios
+- Adzuna Job Search API
 
 ---
 
 # 👨‍💻 Author
 
-**Shubham Chaudhary**
+## Shubham Chaudhary
 
-GitHub:
-https://github.com/shubhamchaudhary29
+Computer Science Engineering Student passionate about Backend Development, Distributed Systems, and Full-Stack Web Applications.
+
+### Connect with me
+
+- GitHub: https://github.com/shubhamchaudhary29
+- LinkedIn: *(Add your LinkedIn profile here)*
 
 ---
 
-# ⭐ Support
+# ⭐ Show Your Support
 
-If you found this project useful,
+If you found this project helpful or interesting:
 
-⭐ Star the repository.
+⭐ Star this repository
 
-Contributions, issues, and feature requests are always welcome.
+🍴 Fork the repository
+
+🛠️ Contribute to the project
+
+📢 Share it with others
+
+Your support motivates future development and improvements.
+
+---
+
+<div align="center">
+
+## 🚀 Built with ❤️ using Spring Boot, React, MongoDB, Docker & WebSockets
+
+### If you like this project, don't forget to ⭐ star the repository!
+
+</div>
