@@ -1,147 +1,334 @@
-```markdown
-# 🚀 JobPortal - Full-Stack Recruitment Platform
+# 🚀 JobPortal
 
-A modern, responsive, and secure full-stack job board application built with **Spring Boot** and **React**. 
+<div align="center">
 
-JobPortal connects talented candidates with top recruiters. It features a secure Role-Based Access Control (RBAC) system, allowing Recruiters to post jobs and manage applications, while Candidates can browse opportunities, filter by location/role, and upload their resumes seamlessly.
+A modern **Full-Stack Recruitment Platform** that connects recruiters with talented candidates through a secure, scalable, and real-time hiring experience.
 
----
+Built using **Spring Boot**, **React**, **MongoDB**, **Docker**, and **WebSockets**, JobPortal provides everything from authentication and resume management to real-time recruiter-candidate communication.
 
-## ✨ Key Features
+![Java](https://img.shields.io/badge/Java-21-red)
+![Spring Boot](https://img.shields.io/badge/Spring%20Boot-3.x-brightgreen)
+![React](https://img.shields.io/badge/React-19-61DAFB)
+![MongoDB](https://img.shields.io/badge/MongoDB-Database-green)
+![Docker](https://img.shields.io/badge/Docker-Containerized-blue)
+![JWT](https://img.shields.io/badge/JWT-Authentication-orange)
+![WebSocket](https://img.shields.io/badge/WebSocket-Real--Time-purple)
 
-### 🧑‍💻 For Candidates (Users)
-* **Secure Authentication:** JWT-based login and registration.
-* **Smart Job Search:** Filter jobs instantly by Title, Keyword, or Location.
-* **One-Click Apply:** Upload resumes (PDF) directly to job postings via Multipart file handling.
-* **Modern UI/UX:** Premium "Indigo & Slate" theme built with Tailwind CSS.
-
-### 💼 For Recruiters
-* **Dedicated Dashboard:** A specialized recruiter view to manage active job listings.
-* **Job Creation:** Clean, validated forms to post new opportunities to the platform.
-* **Applicant Tracking:** View a list of candidates who applied to specific roles and download their resumes directly from the dashboard.
-* **Role-Based Security:** Spring Security ensures only users with the `RECRUITER` role can post jobs or view candidate data.
+</div>
 
 ---
 
-## 🛠️ Tech Stack
+# ✨ Features
 
-**Frontend**
-* React.js (Vite)
-* Tailwind CSS (Styling & Responsive Design)
-* React Router DOM (Navigation)
-* Axios (HTTP Client & Interceptors)
+## 👨‍💻 Candidate Features
 
-**Backend**
-* Java 21 & Spring Boot 3.x
-* Spring Security & JWT (JSON Web Tokens)
-* Spring Data MongoDB
-* Maven
-
-**Database & Storage**
-* MongoDB (NoSQL Database)
-* Local File System (Resume PDF Storage)
+- Secure Registration & Login
+- JWT Authentication
+- Create & Manage Profile
+- Upload Resume (PDF)
+- Browse All Jobs
+- Search Jobs
+- Filter by Location
+- Apply to Jobs
+- Track Applications
+- Chat with Recruiters
+- Real-Time Messaging
+- Responsive Dashboard
 
 ---
 
-## 📂 Project Structure
+## 💼 Recruiter Features
 
-This repository is a monorepo containing both the frontend and backend applications.
+- Recruiter Authentication
+- Create Job Listings
+- Edit Job Listings
+- Delete Job Listings
+- View Posted Jobs
+- Manage Applicants
+- Download Candidate Resume
+- Real-Time Chat
+- Applicant Dashboard
 
-```text
-JobPortal/
-├── backend/                # Spring Boot REST API
-│   ├── src/main/java/...   # Java Source Code (Controllers, Services, Repositories, Security)
-│   ├── src/main/resources/ # application.properties (MongoDB config)
-│   └── pom.xml             # Maven Dependencies
+---
+
+## 💬 Real-Time Chat
+
+One of the major features of JobPortal is the built-in messaging system.
+
+Features include:
+
+- Recruiter ↔ Candidate Messaging
+- WebSocket Communication
+- STOMP Protocol
+- Instant Message Delivery
+- Unread Message Counter
+- Conversation History
+- Persistent Chat Storage
+
+---
+
+## 🔐 Authentication & Security
+
+- Spring Security
+- JWT Authentication
+- BCrypt Password Encryption
+- Role-Based Access Control (RBAC)
+- Protected REST APIs
+- Secure Resume Access
+- CORS Configuration
+
+---
+
+# 🛠 Tech Stack
+
+## Frontend
+
+- React (Vite)
+- React Router
+- Tailwind CSS
+- Axios
+
+---
+
+## Backend
+
+- Java 21
+- Spring Boot 3
+- Spring Security
+- Spring Data MongoDB
+- JWT
+- WebSocket (STOMP)
+
+---
+
+## Database
+
+- MongoDB
+
+---
+
+## DevOps
+
+- Docker
+- Docker Compose
+
+---
+
+# 📂 Project Structure
+
+```
+JobPortal
 │
-└── frontend/               # React Client Application
-    ├── src/components/     # Reusable UI Components (Header, Footer, Modals)
-    ├── src/pages/          # Application Pages (Home, Jobs, Dashboard, Auth)
-    ├── src/services/       # Axios API integrations
-    └── package.json        # Node Dependencies
-
+├── backend
+│   ├── config
+│   ├── controller
+│   ├── dto
+│   ├── entity
+│   ├── repository
+│   ├── security
+│   ├── service
+│   ├── websocket
+│   └── resources
+│
+├── frontend
+│   ├── components
+│   ├── pages
+│   ├── services
+│   ├── hooks
+│   ├── context
+│   └── assets
+│
+├── docker-compose.yml
+├── Dockerfile.backend
+├── Dockerfile.frontend
+└── README.md
 ```
 
 ---
 
-## 🚀 Getting Started
+# 🚀 Getting Started
 
-Follow these steps to run the project locally on your machine.
-
-### Prerequisites
-
-* **Java 21+** installed
-* **Node.js** (v18+) installed
-* **MongoDB** installed and running locally on `localhost:27017`
-
-### 1. Clone the Repository
+## Clone Repository
 
 ```bash
-git clone [https://github.com/shubhamchaudhary29/JobPortal.git](https://github.com/shubhamchaudhary29/JobPortal.git)
-cd JobPortal
+git clone https://github.com/shubhamchaudhary29/JobPortal.git
 
+cd JobPortal
 ```
 
-### 2. Backend Setup
+---
 
-1. Open a terminal and navigate to the backend folder:
+# 🐳 Running with Docker
+
+Start the complete application using Docker Compose.
+
+```bash
+docker compose up --build
+```
+
+This launches:
+
+- Frontend
+- Backend
+- MongoDB
+
+No manual installation is required beyond Docker.
+
+---
+
+# 💻 Running Locally
+
+## Backend
+
 ```bash
 cd backend
 
-```
-
-
-2. Verify your MongoDB is running. The backend defaults to `mongodb://localhost:27017/jobportal` (configure in `application.properties` if needed).
-3. Run the Spring Boot application:
-```bash
 ./mvnw spring-boot:run
-
 ```
 
+Runs on
 
-*The backend will start on `http://localhost:8080*`
+```
+http://localhost:8080
+```
 
-### 3. Frontend Setup
+---
 
-1. Open a new terminal and navigate to the frontend folder:
+## Frontend
+
 ```bash
 cd frontend
 
-```
-
-
-2. Install the Node dependencies:
-```bash
 npm install
 
-```
-
-
-3. Start the Vite development server:
-```bash
 npm run dev
-
 ```
 
+Runs on
 
-*The frontend will start on `http://localhost:5173*`
-
----
-
-## 🔒 Security & CORS configuration
-
-This application uses a stateless REST API.
-
-* Passwords are encrypted using `BCryptPasswordEncoder` before saving to MongoDB.
-* Sessions are managed via **JWTs** stored securely in the frontend's local storage.
-* CORS is explicitly configured in Spring Security to allow cross-origin requests from the React frontend port (`5173`).
+```
+http://localhost:5173
+```
 
 ---
 
-## 👤 Author
+# 📄 Resume Management
+
+Candidates can upload resumes directly while applying.
+
+Recruiters can:
+
+- View Applicants
+- Download Resume
+- Review Applications
+
+---
+
+# 💬 Messaging Workflow
+
+```
+Candidate
+     │
+     │ Apply
+     ▼
+Recruiter
+
+     │
+     │ Start Chat
+     ▼
+
+WebSocket Server
+
+     ▲
+     │
+Instant Messaging
+```
+
+---
+
+# 🔐 Security Architecture
+
+```
+Client
+
+↓
+
+JWT Login
+
+↓
+
+Spring Security Filter
+
+↓
+
+Authentication
+
+↓
+
+Role Verification
+
+↓
+
+Protected APIs
+```
+
+---
+
+# 🌐 REST APIs
+
+The backend exposes REST APIs for:
+
+- Authentication
+- Users
+- Recruiters
+- Jobs
+- Applications
+- Chat
+- Resume Management
+
+---
+
+# 🐳 Docker Architecture
+
+```
+             Docker Compose
+                    │
+        ┌───────────┼───────────┐
+        │           │           │
+        ▼           ▼           ▼
+   React App   Spring Boot   MongoDB
+```
+
+---
+
+# 🚀 Future Improvements
+
+- Email Notifications
+- AI Resume Screening
+- Resume Builder
+- Company Profiles
+- Saved Jobs
+- Job Recommendations
+- Admin Dashboard
+- Interview Scheduling
+- Analytics Dashboard
+- Resume Parsing
+
+---
+
+# 👨‍💻 Author
 
 **Shubham Chaudhary**
 
-* GitHub: [@shubhamchaudhary29](https://www.google.com/search?q=https://github.com/shubhamchaudhary29)
+GitHub:
+https://github.com/shubhamchaudhary29
 
-Feel free to reach out or open an issue if you have any questions or suggestions!
+---
+
+# ⭐ Support
+
+If you found this project useful,
+
+⭐ Star the repository.
+
+Contributions, issues, and feature requests are always welcome.
