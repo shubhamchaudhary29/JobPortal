@@ -18,10 +18,13 @@ export default function UnreadBadge() {
   };
 
   useEffect(() => {
-    fetchCount(); // Fetch immediately on mount
+    const initialFetch = setTimeout(fetchCount, 0);
 
     const interval = setInterval(fetchCount, 30_000); // Then every 30 s
-    return () => clearInterval(interval); // Cleanup to prevent memory leaks
+    return () => {
+      clearTimeout(initialFetch);
+      clearInterval(interval);
+    };
   }, []);
 
   if (count === 0) return null;

@@ -140,7 +140,6 @@ export default function ChatList() {
             {rooms.map((room) => {
               const other = getOtherParty(room);
               const hasPreview = Boolean(room.lastMessagePreview);
-              const isUnread = false; // Per-room unread requires extra API call; use polling badge
 
               return (
                 <button

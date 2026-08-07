@@ -8,6 +8,8 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
 import org.springframework.web.client.RestTemplate;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import java.time.LocalDateTime;
 import java.util.List;
@@ -15,6 +17,8 @@ import java.util.Map;
 
 @Service
 public class AdzunaService {
+
+    private static final Logger log = LoggerFactory.getLogger(AdzunaService.class);
 
     @Value("${adzuna.app.id}")
     private String appId;
@@ -36,20 +40,20 @@ public class AdzunaService {
 
     @Scheduled(fixedRate = 6 * 60 * 60 * 1000) // every 6 hours
     public void fetchAndSaveJobs() {
-        System.out.println("########## ADZUNA FETCH STARTED ##########");
-        System.out.println("app_id loaded as: " + appId);
-        System.out.println("app_key loaded as: " + (appKey != null ? appKey.substring(0, Math.min(4, appKey.length())) + "..." : "NULL"));
+        long startedAt = System.nanoTime();
+        int failures = 0;
 
         for (String keyword : KEYWORDS) {
             try {
                 fetchJobsByKeyword(keyword);
                 Thread.sleep(1000); // avoid rate limiting
             } catch (Exception e) {
-                System.out.println("########## ADZUNA ERROR for '" + keyword + "' ##########");
-                e.printStackTrace();
+                failures++;
+                log.warn("Adzuna import failed for one keyword: {}", e.getClass().getSimpleName());
             }
         }
-        System.out.println("########## ADZUNA FETCH FINISHED ##########");
+        long durationMs = (System.nanoTime() - startedAt) / 1_000_000;
+        log.info("Adzuna import finished in {} ms with {} failed keyword(s)", durationMs, failures);
     }
 
     private String cleanDescription(String raw) {
@@ -81,19 +85,12 @@ public class AdzunaService {
             appId, appKey, keyword.replace(" ", "+")
         );
 
-        System.out.println(">>> Calling URL: " + url.replace(appKey, "HIDDEN"));
-
         ResponseEntity<Map> response = restTemplate.getForEntity(java.net.URI.create(url), Map.class);
-        System.out.println(">>> HTTP status: " + response.getStatusCode());
-
         Map body = response.getBody();
-        System.out.println(">>> Raw body: " + body);
 
         if (body == null) return;
 
         List<Map> results = (List<Map>) body.get("results");
-        System.out.println(">>> Results count: " + (results != null ? results.size() : "null"));
-
         if (results == null) return;
 
         for (Map result : results) {
