@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { useNavigate, Link } from "react-router-dom";
 import { signUpUser } from "../services/user-service";
+import { safeApiMessage } from "../services/helper";
 
 export default function Register() {
   const navigate = useNavigate();
@@ -27,7 +28,7 @@ export default function Register() {
       await signUpUser(formData);
       navigate("/login"); 
     } catch (err) {
-      setError("Registration failed. Please try a different email." + err.message);
+      setError(safeApiMessage(err, "Registration failed. Please check your details and try again."));
     } finally {
       setLoading(false);
     }

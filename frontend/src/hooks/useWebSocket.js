@@ -23,7 +23,7 @@ export function useWebSocket({ onMessage, onNotification, chatRoomId }) {
     if (clientRef.current && clientRef.current.connected) {
       clientRef.current.publish({
         destination: "/app/chat.send",
-        body: JSON.stringify({ chatRoomId: roomId, content }),
+        body: JSON.stringify({ conversationId: roomId, content }),
       });
     }
   }, []);
@@ -106,9 +106,6 @@ export function useWebSocket({ onMessage, onNotification, chatRoomId }) {
         console.error("[WS] STOMP error:", frame.headers["message"], frame.body);
       },
 
-      onDisconnect: () => {
-        console.log("[WS] Disconnected from WebSocket");
-      },
     });
 
     clientRef.current = client;

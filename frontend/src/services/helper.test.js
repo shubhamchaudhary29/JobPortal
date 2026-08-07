@@ -25,7 +25,7 @@ describe("refresh coordination", () => {
     expect(first).toBe("new");
     expect(second).toBe("new");
     expect(authPost).toHaveBeenCalledTimes(1);
-    expect(authPost).toHaveBeenCalledWith("/auth/refresh");
+    expect(authPost).toHaveBeenCalledWith("/api/v1/auth/sessions/refresh");
   });
 
   it("configures both API clients to send credential cookies", async () => {
@@ -48,7 +48,7 @@ describe("refresh coordination", () => {
     apiInstance.mockResolvedValue({ data: "ok" });
     await import("./helper");
     const reject401 = apiInstance.interceptors.response.use.mock.calls[0][1];
-    const config = { url: "/users/me", headers: {} };
+    const config = { url: "/api/v1/users/me", headers: {} };
     await expect(reject401({ response: { status: 401 }, config })).resolves.toEqual({ data: "ok" });
     expect(config).toMatchObject({ _retried: true, headers: { Authorization: "Bearer rotated" } });
     expect(apiInstance).toHaveBeenCalledTimes(1);
@@ -57,8 +57,8 @@ describe("refresh coordination", () => {
   it("does not refresh auth endpoints or retry a request twice", async () => {
     await import("./helper");
     const reject401 = apiInstance.interceptors.response.use.mock.calls[0][1];
-    const authError = { response: { status: 401 }, config: { url: "/auth/login", headers: {} } };
-    const retriedError = { response: { status: 401 }, config: { url: "/users/me", headers: {}, _retried: true } };
+    const authError = { response: { status: 401 }, config: { url: "/api/v1/auth/sessions", headers: {} } };
+    const retriedError = { response: { status: 401 }, config: { url: "/api/v1/users/me", headers: {}, _retried: true } };
     await expect(reject401(authError)).rejects.toBe(authError);
     await expect(reject401(retriedError)).rejects.toBe(retriedError);
     expect(authPost).not.toHaveBeenCalled();

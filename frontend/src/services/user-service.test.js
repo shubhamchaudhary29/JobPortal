@@ -1,12 +1,13 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-const { apiPost, refreshAccessToken } = vi.hoisted(() => ({
+const { apiPost, apiDelete, refreshAccessToken } = vi.hoisted(() => ({
   apiPost: vi.fn(),
+  apiDelete: vi.fn(),
   refreshAccessToken: vi.fn(),
 }));
 
 vi.mock("./helper", () => ({
-  default: { post: apiPost, get: vi.fn(), put: vi.fn() },
+  default: { post: apiPost, delete: apiDelete, get: vi.fn(), put: vi.fn() },
   refreshAccessToken,
 }));
 
@@ -14,6 +15,7 @@ describe("session lifecycle", () => {
   beforeEach(() => {
     vi.resetModules();
     apiPost.mockReset();
+    apiDelete.mockReset();
     refreshAccessToken.mockReset();
   });
 
@@ -25,12 +27,12 @@ describe("session lifecycle", () => {
   });
 
   it("always clears memory state when logout completes or fails", async () => {
-    apiPost.mockRejectedValue(new Error("network unavailable"));
+    apiDelete.mockRejectedValue(new Error("network unavailable"));
     const { logout } = await import("./user-service");
     const { getSession, setAuthSession } = await import("../auth/auth-store");
     setAuthSession({ accessToken: "access", role: "USER", email: "user@example.test" });
     await expect(logout()).rejects.toThrow("network unavailable");
-    expect(apiPost).toHaveBeenCalledWith("/auth/logout");
+    expect(apiDelete).toHaveBeenCalledWith("/api/v1/auth/sessions/current");
     expect(getSession().accessToken).toBeNull();
   });
 });
