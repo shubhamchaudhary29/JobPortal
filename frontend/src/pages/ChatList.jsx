@@ -1,5 +1,6 @@
 import { useEffect, useState, useCallback } from "react";
 import { useNavigate } from "react-router-dom";
+import { useAuth } from "../auth/auth-context";
 import Header from "../components/Header";
 import Footer from "../components/Footer";
 import { getMyChatRooms, getUnreadCount } from "../services/chat-service";
@@ -37,7 +38,7 @@ function RoomSkeleton() {
 // ── Main page ─────────────────────────────────────────────────────────────────
 export default function ChatList() {
   const navigate = useNavigate();
-  const role = localStorage.getItem("role");
+  const { role } = useAuth();
 
   const [rooms, setRooms] = useState([]);
   const [unreadTotal, setUnreadTotal] = useState(0);

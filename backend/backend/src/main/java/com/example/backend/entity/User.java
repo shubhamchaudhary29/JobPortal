@@ -3,11 +3,10 @@ package com.example.backend.entity;
 import lombok.AllArgsConstructor;
 import lombok.Data;
 import lombok.NoArgsConstructor;
-import lombok.NonNull;
-import org.bson.types.ObjectId;
 import org.springframework.data.annotation.Id;
 import org.springframework.data.mongodb.core.index.Indexed;
 import org.springframework.data.mongodb.core.mapping.Document;
+import com.fasterxml.jackson.annotation.JsonIgnore;
 
 @Data
 @NoArgsConstructor
@@ -16,18 +15,15 @@ import org.springframework.data.mongodb.core.mapping.Document;
 public class User {
 
     @Id
-    private String Id;
+    private String id;
 
     @Indexed(unique = true)
-    @NonNull
     private String email;
 
-    @NonNull
     private String fullName;
 
-    @NonNull
-    private String password;
+    @JsonIgnore private String password;
 
-    private String role;
+    private UserRole role = UserRole.USER;
 
 }

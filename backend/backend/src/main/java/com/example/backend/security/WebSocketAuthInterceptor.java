@@ -16,6 +16,7 @@ import org.springframework.security.core.authority.SimpleGrantedAuthority;
 import org.springframework.stereotype.Component;
 
 import java.util.List;
+import com.example.backend.entity.UserRole;
 
 /**
  * Intercepts every inbound STOMP frame on the WebSocket channel.
@@ -49,6 +50,7 @@ public class WebSocketAuthInterceptor implements ChannelInterceptor {
                 try {
                     String email = jwtUtil.extractEmail(token);
                     String role  = jwtUtil.extractRole(token);
+                    UserRole.valueOf(role);
 
                     UsernamePasswordAuthenticationToken authentication =
                             new UsernamePasswordAuthenticationToken(
@@ -58,7 +60,7 @@ public class WebSocketAuthInterceptor implements ChannelInterceptor {
                             );
                     accessor.setUser(authentication);
                 } catch (Exception e) {
-                    throw new IllegalArgumentException("Invalid JWT token in WebSocket CONNECT: " + e.getMessage());
+                    throw new IllegalArgumentException("Invalid authentication token");
                 }
             } else if (StompCommand.SUBSCRIBE.equals(accessor.getCommand())) {
                 String destination = accessor.getDestination();
@@ -74,10 +76,10 @@ public class WebSocketAuthInterceptor implements ChannelInterceptor {
                         String roomId = destination.substring("/topic/chat/".length());
 
                         ChatRoom room = chatRoomRepository.findById(roomId)
-                                .orElseThrow(() -> new IllegalArgumentException("Chat room not found: " + roomId));
+                                .orElseThrow(() -> new IllegalArgumentException("Chat room not found"));
 
                         User user = userRepository.findByEmail(email)
-                                .orElseThrow(() -> new IllegalArgumentException("User not found: " + email));
+                                .orElseThrow(() -> new IllegalArgumentException("User not found"));
 
                         if (!room.getCandidateId().equals(user.getId()) && !room.getRecruiterId().equals(user.getId())) {
                             throw new IllegalArgumentException("Unauthorized subscription to this chat room");

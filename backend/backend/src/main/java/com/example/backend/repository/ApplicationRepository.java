@@ -1,6 +1,7 @@
 package com.example.backend.repository;
 
 import com.example.backend.entity.Application;
+import com.example.backend.entity.ApplicationStatus;
 import org.springframework.data.mongodb.repository.MongoRepository;
 import java.util.List;
 
@@ -13,5 +14,5 @@ public interface ApplicationRepository extends MongoRepository<Application, Stri
 
     int countByUserId(String userId);
 
-    int countByUserIdAndStatus(String userId, String status);
+    int countByUserIdAndStatus(String userId, ApplicationStatus status);
 }

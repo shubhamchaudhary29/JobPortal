@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import Header from "../components/Header";
 import ApplyJobModal from "../components/ApplyJobModal";
+import { useAuth } from "../auth/auth-context";
 import { getJobById } from "../services/job-service";
 import { hasUserApplied } from "../services/application-service";
 
@@ -53,7 +54,8 @@ export default function JobDetails() {
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [hasApplied, setHasApplied] = useState(false);
 
-  const isLoggedIn = Boolean(localStorage.getItem("token"));
+  const { accessToken } = useAuth();
+  const isLoggedIn = Boolean(accessToken);
 
   useEffect(() => {
     if (jobId) {

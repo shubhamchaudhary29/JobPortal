@@ -785,7 +785,7 @@ JWT Generated
 
       ▼
 
-Stored on Client
+Held in Browser Memory
 
       │
 
@@ -799,6 +799,29 @@ JWT Attached to Every Request
 
 Protected REST APIs
 ```
+
+The current flow uses a short-lived access token held only in browser memory and an opaque rotating refresh token in an `HttpOnly` cookie. On page reload the frontend calls `POST /auth/refresh`; concurrent `401` responses share one refresh request and retry once. Logout revokes the active refresh record and expires the cookie. Production must use HTTPS with `REFRESH_COOKIE_SECURE=true`. Refresh-token records store SHA-256 hashes only and expire through a MongoDB TTL index.
+
+Authentication settings are documented in `.env.example`: `JWT_ACCESS_TOKEN_MINUTES`, `REFRESH_TOKEN_DAYS`, cookie settings, and bounded login-rate-limit settings. The rate limiter is intentionally single-instance; multi-instance deployments need a shared limiter before horizontal scaling.
+
+Resume uploads are limited by `RESUME_MAX_BYTES`, require both PDF MIME type and PDF signatures, use random storage names, and are available only through authorized downloads.
+
+Before enabling unique indexes against existing production data, audit without deleting anything:
+
+```javascript
+db.users.aggregate([{ $group: { _id: { $toLower: "$email" }, ids: { $push: "$_id" }, count: { $sum: 1 } } }, { $match: { count: { $gt: 1 } } }])
+db.applications.aggregate([{ $group: { _id: { userId: "$userId", jobId: "$jobId" }, ids: { $push: "$_id" }, count: { $sum: 1 } } }, { $match: { count: { $gt: 1 } } }])
+db.chat_rooms.aggregate([{ $group: { _id: "$applicationId", ids: { $push: "$_id" }, count: { $sum: 1 } } }, { $match: { _id: { $ne: null }, count: { $gt: 1 } } }])
+```
+
+Existing application status `UNDER_REVIEW` must be migrated idempotently to `IN_REVIEW` before deployment:
+
+```javascript
+db.applications.updateMany({ status: "UNDER_REVIEW" }, { $set: { status: "IN_REVIEW" } })
+db.users.find().forEach(function(user) { var normalized = user.email.trim().toLowerCase(); if (normalized !== user.email) db.users.updateOne({ _id: user._id }, { $set: { email: normalized } }); })
+```
+
+Run backend tests with `cd backend/backend && ./mvnw test`, frontend tests with `cd frontend && npm test`, and the stack with `docker compose up --build` after configuring `.env`.
 
 ---
 

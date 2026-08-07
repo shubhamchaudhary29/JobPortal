@@ -5,9 +5,7 @@ import com.example.backend.exception.BadRequestException;
 import com.example.backend.exception.ForbiddenException;
 import com.example.backend.exception.ResourceNotFoundException;
 import com.example.backend.repository.*;
-import org.bson.types.ObjectId;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.data.mongodb.core.MongoTemplate;
 import org.springframework.stereotype.Service;
 
 import java.time.LocalDateTime;
@@ -31,9 +29,6 @@ public class ChatService {
 
     @Autowired
     private UserRepository userRepository;
-
-    @Autowired
-    private MongoTemplate mongoTemplate;
 
     // ── 1. Create chat room (idempotent) ────────────────────────────────────
 
@@ -62,14 +57,8 @@ public class ChatService {
         User candidate = userRepository.findByEmail(app.getUserId())
                 .orElseThrow(() -> new ResourceNotFoundException("Candidate not found: " + app.getUserId()));
 
-        // Fetch recruiter by the recruiter's MongoDB ID using raw collection query to bypass Spring Data's String ID type conversions
-        org.bson.Document recruiterDoc = mongoTemplate.getCollection("users")
-                .find(new org.bson.Document("_id", new ObjectId(job.getRecruiterId())))
-                .first();
-        if (recruiterDoc == null) {
-            throw new ResourceNotFoundException("Recruiter not found: " + job.getRecruiterId());
-        }
-        User recruiter = mongoTemplate.getConverter().read(User.class, recruiterDoc);
+        User recruiter = userRepository.findById(job.getRecruiterId())
+                .orElseThrow(() -> new ResourceNotFoundException("Recruiter not found"));
 
         // Build and save the room
         ChatRoom room = new ChatRoom();
@@ -94,7 +83,7 @@ public class ChatService {
         User user = userRepository.findByEmail(userEmail)
                 .orElseThrow(() -> new ResourceNotFoundException("User not found: " + userEmail));
 
-        if ("RECRUITER".equals(user.getRole())) {
+        if (user.getRole() == UserRole.RECRUITER) {
             List<ChatRoom> rooms = chatRoomRepository
                     .findByRecruiterIdOrderByLastMessageAtDesc(user.getId());
             return rooms != null ? rooms : new ArrayList<>();
@@ -111,14 +100,7 @@ public class ChatService {
         User user = userRepository.findByEmail(userEmail)
                 .orElseThrow(() -> new ResourceNotFoundException("User not found: " + userEmail));
 
-        ChatRoom room = chatRoomRepository.findById(chatRoomId)
-                .orElseThrow(() -> new ResourceNotFoundException("Chat room not found: " + chatRoomId));
-
-        // Auth check — user must be a participant
-        if (!room.getCandidateId().equals(user.getId())
-                && !room.getRecruiterId().equals(user.getId())) {
-            throw new ForbiddenException("You are not a participant of this chat room.");
-        }
+        ChatRoom room = participantRoom(chatRoomId, user);
 
         // Mark messages from the other party as read
         List<ChatMessage> unread = chatMessageRepository
@@ -137,14 +119,7 @@ public class ChatService {
         User user = userRepository.findByEmail(userEmail)
                 .orElseThrow(() -> new ResourceNotFoundException("User not found: " + userEmail));
 
-        ChatRoom room = chatRoomRepository.findById(chatRoomId)
-                .orElseThrow(() -> new ResourceNotFoundException("Chat room not found: " + chatRoomId));
-
-        // Auth check
-        if (!room.getCandidateId().equals(user.getId())
-                && !room.getRecruiterId().equals(user.getId())) {
-            throw new ForbiddenException("You are not a participant of this chat room.");
-        }
+        ChatRoom room = participantRoom(chatRoomId, user);
 
         // Validate content
         if (content == null || content.isBlank()) {
@@ -199,12 +174,14 @@ public class ChatService {
         User user = userRepository.findByEmail(userEmail)
                 .orElseThrow(() -> new ResourceNotFoundException("User not found: " + userEmail));
 
-        ChatRoom room = chatRoomRepository.findById(chatRoomId)
-                .orElseThrow(() -> new ResourceNotFoundException("Chat room not found: " + chatRoomId));
+        return participantRoom(chatRoomId, user);
+    }
 
-        if (!room.getCandidateId().equals(user.getId()) && !room.getRecruiterId().equals(user.getId())) {
-            throw new ForbiddenException("You are not a participant of this chat room.");
-        }
+    private ChatRoom participantRoom(String chatRoomId, User user) {
+        ChatRoom room = chatRoomRepository.findById(chatRoomId)
+                .orElseThrow(() -> new ResourceNotFoundException("Chat room not found"));
+        if (!room.getCandidateId().equals(user.getId()) && !room.getRecruiterId().equals(user.getId()))
+            throw new ResourceNotFoundException("Chat room not found");
         return room;
     }
 }

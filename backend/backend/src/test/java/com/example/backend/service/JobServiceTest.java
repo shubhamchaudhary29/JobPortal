@@ -3,6 +3,7 @@ package com.example.backend.service;
 import com.example.backend.dto.CreateJobRequest;
 import com.example.backend.entity.Jobs;
 import com.example.backend.entity.User;
+import com.example.backend.entity.UserRole;
 import com.example.backend.exception.ForbiddenException;
 import com.example.backend.exception.ResourceNotFoundException;
 import com.example.backend.repository.JobRepository;
@@ -42,25 +43,19 @@ class JobServiceTest {
         recruiter = new User();
         recruiter.setId("recruiter1");
         recruiter.setEmail("recruiter@test.com");
-        recruiter.setRole("RECRUITER");
+        recruiter.setRole(UserRole.RECRUITER);
 
         regularUser = new User();
         regularUser.setId("user1");
         regularUser.setEmail("user@test.com");
-        regularUser.setRole("USER");
+        regularUser.setRole(UserRole.USER);
 
         job = new Jobs();
         job.setId("job1");
         job.setTitle("Test Job");
         job.setRecruiterId("recruiter1");
 
-        createJobRequest = new CreateJobRequest();
-        createJobRequest.setTitle("New Job");
-        createJobRequest.setDescription("Description");
-        createJobRequest.setLocation("Location");
-        createJobRequest.setCompany("Company");
-        createJobRequest.setSalary(1000.0);
-        createJobRequest.setExperience(2.0);
+        createJobRequest = new CreateJobRequest("New Job", "Description", "Location", "Company", 1000.0, 2.0);
     }
 
     @Test

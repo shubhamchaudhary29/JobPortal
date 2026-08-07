@@ -2,11 +2,12 @@ import { useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { logout } from "../services/user-service";
 import UnreadBadge from "./UnreadBadge";
+import { useAuth } from "../auth/auth-context";
 
 export default function Header() {
   const navigate = useNavigate();
-  const isLoggedIn = Boolean(localStorage.getItem("token"));
-  const role = localStorage.getItem("role");
+  const { accessToken, role } = useAuth();
+  const isLoggedIn = Boolean(accessToken);
   const [showDropdown, setShowDropdown] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
 
@@ -134,7 +135,7 @@ export default function Header() {
 
                     <div className="h-px bg-slate-100 my-1"></div>
                     <button
-                      onClick={() => { logout(); setShowDropdown(false); }}
+                      onClick={async () => { await logout(); setShowDropdown(false); navigate("/login"); }}
                       className="block w-full text-left px-4 py-2.5 text-sm font-medium text-red-600 hover:bg-red-50 transition-colors"
                     >
                       Sign out

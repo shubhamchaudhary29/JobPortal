@@ -3,17 +3,17 @@
  * Used by both MyApplications.jsx and MyProfile.jsx.
  *
  * Props:
- *   status {string} — one of: "APPLIED", "UNDER_REVIEW", "SHORTLISTED", "ACCEPTED", "REJECTED"
+ *   status {string} — one of: "APPLIED", "IN_REVIEW", "SHORTLISTED", "ACCEPTED", "REJECTED"
  */
 export default function Stepper({ status }) {
   const currentStatus = status || "APPLIED";
 
-  let displayStages = ["APPLIED", "UNDER_REVIEW", "SHORTLISTED", "ACCEPTED"];
+  let displayStages = ["APPLIED", "IN_REVIEW", "SHORTLISTED", "ACCEPTED"];
   const isRejected = currentStatus === "REJECTED";
   const isAccepted = currentStatus === "ACCEPTED";
 
   if (isRejected) {
-    displayStages = ["APPLIED", "UNDER_REVIEW", "SHORTLISTED", "REJECTED"];
+    displayStages = ["APPLIED", "IN_REVIEW", "SHORTLISTED", "REJECTED"];
   }
 
   const currentIndex = displayStages.indexOf(currentStatus);
@@ -21,7 +21,7 @@ export default function Stepper({ status }) {
   const formatStageLabel = (stage) => {
     switch (stage) {
       case "APPLIED":      return "Applied";
-      case "UNDER_REVIEW": return "Under Review";
+      case "IN_REVIEW": return "In Review";
       case "SHORTLISTED":  return "Shortlisted";
       case "ACCEPTED":     return "Accepted";
       case "REJECTED":     return "Rejected";

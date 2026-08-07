@@ -14,7 +14,7 @@ const StatusBadge = ({ status }) => {
       classes = "bg-blue-50 text-blue-700 border-blue-100";
       label = "Applied";
       break;
-    case "UNDER_REVIEW":
+    case "IN_REVIEW":
       classes = "bg-amber-50 text-amber-700 border-amber-100";
       label = "Under Review";
       break;
@@ -163,7 +163,7 @@ export default function Profile() {
                                         className="bg-slate-50 border border-slate-200 rounded-lg px-2.5 py-1 text-slate-700 focus:outline-none focus:ring-2 focus:ring-indigo-500 text-xs font-semibold"
                                       >
                                         <option value="APPLIED">Applied</option>
-                                        <option value="UNDER_REVIEW">Under Review</option>
+                                        <option value="IN_REVIEW">In Review</option>
                                         <option value="SHORTLISTED">Shortlisted</option>
                                         <option value="ACCEPTED">Accepted</option>
                                         <option value="REJECTED">Rejected</option>

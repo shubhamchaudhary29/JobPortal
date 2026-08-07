@@ -12,7 +12,6 @@ export default function RecruiterLogin() {
     fullName: "",
     email: "",
     password: "",
-    role: "RECRUITER", // Hardcoded for Recruiter
   });
 
   function handleChange(e) {
@@ -25,7 +24,7 @@ export default function RecruiterLogin() {
     setError("");
 
     try {
-      await signUpUser(formData);
+      await signUpUser(formData, true);
       navigate("/login");
     } catch (err) {
       console.error(err);

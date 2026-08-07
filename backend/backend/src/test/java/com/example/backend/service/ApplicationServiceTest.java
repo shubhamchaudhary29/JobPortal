@@ -3,8 +3,11 @@ package com.example.backend.service;
 import com.example.backend.entity.Application;
 import com.example.backend.entity.Jobs;
 import com.example.backend.entity.User;
+import com.example.backend.entity.UserRole;
 import com.example.backend.exception.ForbiddenException;
 import com.example.backend.exception.ResourceNotFoundException;
+import com.example.backend.exception.BadRequestException;
+import com.example.backend.entity.ApplicationStatus;
 import com.example.backend.repository.ApplicationRepository;
 import com.example.backend.repository.JobRepository;
 import com.example.backend.repository.UserRepository;
@@ -44,7 +47,7 @@ class ApplicationServiceTest {
 
     @BeforeEach
     void setUp() {
-        applicationService = new ApplicationService(uploadDirectory.toString());
+        applicationService = new ApplicationService(uploadDirectory.toString(), 5_242_880);
         ReflectionTestUtils.setField(applicationService, "applicationRepository", applicationRepository);
         ReflectionTestUtils.setField(applicationService, "jobRepository", jobRepository);
         ReflectionTestUtils.setField(applicationService, "userRepository", userRepository);
@@ -63,7 +66,9 @@ class ApplicationServiceTest {
 
     @Test
     void applyForJob_Success() throws IOException {
-        MockMultipartFile file = new MockMultipartFile("file", "resume.pdf", "application/pdf", "content".getBytes());
+        MockMultipartFile file = new MockMultipartFile("file", "resume.pdf", "application/pdf", "%PDF-1.4\n%%EOF".getBytes());
+        when(userRepository.findByEmail("applicant@test.com")).thenReturn(Optional.of(applicant));
+        when(jobRepository.findById("job1")).thenReturn(Optional.of(job));
         when(applicationRepository.save(any(Application.class))).thenAnswer(invocation -> invocation.getArgument(0));
         Application result = applicationService.applyForJob("job1", "applicant@test.com", file);
         assertEquals("job1", result.getJobId());
@@ -133,6 +138,43 @@ class ApplicationServiceTest {
         assertThrows(ResourceNotFoundException.class, () -> applicationService.getAuthorizedResume("app1", "applicant@test.com"));
     }
 
+    @Test
+    void emptyAndRenamedNonPdfAreRejected() {
+        assertThrows(BadRequestException.class, () -> applicationService.applyForJob("job1", "applicant@test.com",
+                new MockMultipartFile("file", "resume.pdf", "application/pdf", new byte[0])));
+        assertThrows(BadRequestException.class, () -> applicationService.applyForJob("job1", "applicant@test.com",
+                new MockMultipartFile("file", "resume.pdf", "application/pdf", "not a pdf".getBytes())));
+    }
+
+    @Test
+    void falseMimeTypeIsRejected() {
+        assertThrows(BadRequestException.class, () -> applicationService.applyForJob("job1", "applicant@test.com",
+                new MockMultipartFile("file", "resume.pdf", "text/plain", "%PDF-1.4\n%%EOF".getBytes())));
+    }
+
+    @Test
+    void persistenceFailureCleansUpWrittenFile() throws IOException {
+        when(userRepository.findByEmail("applicant@test.com")).thenReturn(Optional.of(applicant));
+        when(jobRepository.findById("job1")).thenReturn(Optional.of(job));
+        when(applicationRepository.save(any())).thenThrow(new RuntimeException("database unavailable"));
+        assertThrows(RuntimeException.class, () -> applicationService.applyForJob("job1", "applicant@test.com",
+                new MockMultipartFile("file", "../../resume.pdf", "application/pdf", "%PDF-1.4\n%%EOF".getBytes())));
+        assertEquals(0, Files.list(uploadDirectory).count());
+    }
+
+    @Test
+    void invalidAndTerminalStatusTransitionsFail() {
+        application.setStatus(ApplicationStatus.APPLIED);
+        when(applicationRepository.findById("app1")).thenReturn(Optional.of(application));
+        when(jobRepository.findById("job1")).thenReturn(Optional.of(job));
+        when(userRepository.findByEmail("recruiter@test.com")).thenReturn(Optional.of(recruiter));
+        assertThrows(com.example.backend.exception.ConflictException.class,
+                () -> applicationService.updateApplicationStatus("app1", ApplicationStatus.ACCEPTED, "recruiter@test.com"));
+        application.setStatus(ApplicationStatus.REJECTED);
+        assertThrows(com.example.backend.exception.ConflictException.class,
+                () -> applicationService.updateApplicationStatus("app1", ApplicationStatus.IN_REVIEW, "recruiter@test.com"));
+    }
+
     private void assertUnrelatedUserDenied(User unrelated) {
         when(applicationRepository.findById("app1")).thenReturn(Optional.of(application));
         when(userRepository.findByEmail(unrelated.getEmail())).thenReturn(Optional.of(unrelated));
@@ -149,7 +191,7 @@ class ApplicationServiceTest {
         User user = new User();
         user.setId(id);
         user.setEmail(email);
-        user.setRole(role);
+        user.setRole(UserRole.valueOf(role));
         return user;
     }
 }

@@ -18,7 +18,7 @@ public class ChatMessage {
     private String senderId;      // MongoDB user _id
     private String senderEmail;   // for display
     private String senderName;    // for display
-    private String senderRole;    // "USER" or "RECRUITER"
+    private UserRole senderRole;
 
     private String content;
 

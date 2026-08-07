@@ -22,9 +22,7 @@ const handleLogin = async (e) => {
     e.preventDefault();
     try {
       const { email, password } = formData;
-      await loginUser(email, password);
-      // loginUser() stores role in localStorage — read it for role-based redirect
-      const role = localStorage.getItem("role");
+      const { role } = await loginUser(email, password);
       if (role === "RECRUITER") {
         navigate("/profile");
       } else if (role === "USER") {

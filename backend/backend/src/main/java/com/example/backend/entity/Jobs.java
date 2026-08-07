@@ -1,8 +1,8 @@
 package com.example.backend.entity;
 
 import lombok.Data;
-import org.bson.types.ObjectId;
 import org.springframework.data.annotation.Id;
+import org.springframework.data.mongodb.core.index.Indexed;
 import org.springframework.data.mongodb.core.mapping.Document;
 
 import java.time.LocalDateTime;
@@ -21,7 +21,7 @@ public class Jobs {
     private double salary;
     private double experience;
 
-    private String recruiterId;
+    @Indexed private String recruiterId;
 
     private LocalDateTime createdAt = LocalDateTime.now();
 

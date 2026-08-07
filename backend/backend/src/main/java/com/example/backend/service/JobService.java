@@ -3,6 +3,7 @@ package com.example.backend.service;
 import com.example.backend.dto.CreateJobRequest;
 import com.example.backend.entity.Jobs;
 import com.example.backend.entity.User;
+import com.example.backend.entity.UserRole;
 import com.example.backend.exception.ForbiddenException;
 import com.example.backend.exception.ResourceNotFoundException;
 import com.example.backend.repository.JobRepository;
@@ -25,18 +26,14 @@ public class JobService {
         User recruiter = userRepository.findByEmail(recruiterEmail)
                 .orElseThrow(() -> new ResourceNotFoundException("Recruiter not found"));
 
-        if (!"RECRUITER".equals(recruiter.getRole())) {
+        if (recruiter.getRole() != UserRole.RECRUITER) {
             throw new ForbiddenException("Only recruiters can create jobs");
         }
 
         Jobs job = new Jobs();
-        job.setTitle(request.getTitle());
-        job.setDescription(request.getDescription());
-        job.setLocation(request.getLocation());
-        job.setCompany(request.getCompany());
-        job.setSalary(request.getSalary());
-        job.setExperience(request.getExperience()); // Now saving experience
+        apply(request, job);
         job.setRecruiterId(recruiter.getId());
+        job.setSource("manual");
 
         return jobRepository.save(job);
     }
@@ -54,5 +51,32 @@ public class JobService {
         User recruiter = userRepository.findByEmail(recruiterEmail)
                 .orElseThrow(() -> new ResourceNotFoundException("Recruiter not found"));
         return jobRepository.findByRecruiterId(recruiter.getId());
+    }
+
+    public Jobs updateJob(String jobId, CreateJobRequest request, String recruiterEmail) {
+        Jobs job = ownedJob(jobId, recruiterEmail);
+        apply(request, job);
+        return jobRepository.save(job);
+    }
+
+    public void deleteJob(String jobId, String recruiterEmail) {
+        jobRepository.delete(ownedJob(jobId, recruiterEmail));
+    }
+
+    private Jobs ownedJob(String jobId, String email) {
+        User recruiter = userRepository.findByEmail(email).orElseThrow(() -> new ResourceNotFoundException("User not found"));
+        Jobs job = jobRepository.findById(jobId).orElseThrow(() -> new ResourceNotFoundException("Job not found"));
+        if (recruiter.getRole() != UserRole.RECRUITER || !recruiter.getId().equals(job.getRecruiterId()))
+            throw new ForbiddenException("Not authorized to manage this job");
+        return job;
+    }
+
+    private void apply(CreateJobRequest request, Jobs job) {
+        job.setTitle(request.title().trim());
+        job.setDescription(request.description().trim());
+        job.setLocation(request.location().trim());
+        job.setCompany(request.company().trim());
+        job.setSalary(request.salary());
+        job.setExperience(request.experience());
     }
 }
