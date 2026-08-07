@@ -11,18 +11,27 @@ import com.example.backend.repository.ApplicationRepository;
 import com.example.backend.repository.JobRepository;
 import com.example.backend.repository.UserRepository;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Lazy;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
 import org.springframework.web.multipart.MultipartFile;
 
-import java.io.File;
 import java.io.IOException;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.nio.file.Paths;
+import java.nio.file.StandardCopyOption;
 import java.util.List;
 import java.util.Objects;
+import java.util.UUID;
 import java.util.stream.Collectors;
 
 @Service
 public class ApplicationService {
+
+    private static final Logger log = LoggerFactory.getLogger(ApplicationService.class);
 
     @Autowired
     private ApplicationRepository applicationRepository;
@@ -38,23 +47,23 @@ public class ApplicationService {
     @Autowired
     private ChatService chatService;
 
-    private final String UPLOAD_DIR = System.getProperty("user.dir") + "/uploads/";
+    private final Path uploadDirectory;
+
+    public ApplicationService(@Value("${app.upload-dir:uploads}") String uploadDirectory) {
+        this.uploadDirectory = Paths.get(uploadDirectory).toAbsolutePath().normalize();
+    }
 
     public Application applyForJob(String jobId, String userId, MultipartFile file) throws IOException {
 
-        File directory = new File(UPLOAD_DIR);
-        if (!directory.exists()) {
-            directory.mkdirs();
-        }
-
-        String fileName = System.currentTimeMillis() + "_" + file.getOriginalFilename();
-        File dest = new File(UPLOAD_DIR + fileName);
-        file.transferTo(dest);
+        Files.createDirectories(uploadDirectory);
+        String storageName = UUID.randomUUID() + ".pdf";
+        Path destination = uploadDirectory.resolve(storageName).normalize();
+        Files.copy(file.getInputStream(), destination, StandardCopyOption.REPLACE_EXISTING);
 
         Application app = new Application();
         app.setJobId(jobId);
         app.setUserId(userId);
-        app.setResumeUrl(dest.getAbsolutePath());
+        app.setResumeUrl(storageName);
 
         return applicationRepository.save(app);
     }
@@ -134,8 +143,8 @@ public class ApplicationService {
                 chatService.createChatRoom(applicationId);
             } catch (Exception e) {
                 // Log but don't fail the status update if chat room creation fails
-                System.err.println("[ChatService] Failed to create chat room for application "
-                        + applicationId + ": " + e.getMessage());
+                log.warn("Chat room creation failed after an application status update: {}",
+                        e.getClass().getSimpleName());
             }
         }
 
@@ -145,13 +154,13 @@ public class ApplicationService {
     public Application getApplicationForDownload(String applicationId, String email) {
         Application app = getApplicationById(applicationId);
 
-        User user = userRepository.findByEmail(email)
-                .orElseThrow(() -> new ResourceNotFoundException("User not found: " + email));
-
         // Candidate check: Candidate can download their own resume
         if (app.getUserId().equals(email)) {
             return app;
         }
+
+        User user = userRepository.findByEmail(email)
+                .orElseThrow(() -> new ResourceNotFoundException("User not found"));
 
         // Recruiter check: Recruiter of the job can download the candidate's resume
         Jobs job = jobRepository.findById(app.getJobId())
@@ -162,5 +171,24 @@ public class ApplicationService {
         }
 
         throw new ForbiddenException("Unauthorized: You do not have access to this candidate's resume.");
+    }
+
+    public Path getAuthorizedResume(String applicationId, String email) {
+        Application application = getApplicationForDownload(applicationId, email);
+        String storedName = application.getResumeUrl();
+        if (storedName == null || storedName.isBlank()) {
+            throw new ResourceNotFoundException("Resume not found");
+        }
+
+        Path fileName = Paths.get(storedName).getFileName();
+        if (fileName == null) {
+            throw new ResourceNotFoundException("Resume not found");
+        }
+
+        Path resume = uploadDirectory.resolve(fileName).normalize();
+        if (!resume.startsWith(uploadDirectory) || !Files.isRegularFile(resume)) {
+            throw new ResourceNotFoundException("Resume not found");
+        }
+        return resume;
     }
 }

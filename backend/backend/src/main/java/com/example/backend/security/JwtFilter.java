@@ -41,10 +41,7 @@ public class JwtFilter extends OncePerRequestFilter {
         }
 
 
-        System.out.println("JWT FILTER HIT → " + request.getServletPath());
-
         String authHeader = request.getHeader("Authorization");
-        System.out.println("Authorization Header: " + authHeader);
 
         if (authHeader != null && authHeader.startsWith("Bearer ")) {
             String token = authHeader.substring(7);
@@ -52,9 +49,6 @@ public class JwtFilter extends OncePerRequestFilter {
             try {
                 String email = jwtUtil.extractEmail(token);
                 String role = jwtUtil.extractRole(token);
-
-                System.out.println("Decoded Email: " + email);
-                System.out.println("Decoded Role: " + role);
 
                 UsernamePasswordAuthenticationToken authentication =
                         new UsernamePasswordAuthenticationToken(
@@ -64,13 +58,9 @@ public class JwtFilter extends OncePerRequestFilter {
                         );
 
                 SecurityContextHolder.getContext().setAuthentication(authentication);
-                System.out.println("Authentication SET");
-
             } catch (Exception e) {
-                System.out.println("JWT ERROR: " + e.getMessage());
+                SecurityContextHolder.clearContext();
             }
-        } else {
-            System.out.println("No Bearer token found");
         }
 
         filterChain.doFilter(request, response);

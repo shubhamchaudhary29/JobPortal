@@ -306,12 +306,23 @@ cd JobPortal
 
 # ⚙️ Running Locally
 
+Create a private environment file first:
+
+```bash
+cp .env.example .env
+```
+
+Replace every `REPLACE_WITH_...` placeholder in `.env`. These values are backend-only; never prefix JWT, Adzuna, or MongoDB credentials with `VITE_`, because Vite exposes those variables to browser code.
+
 ## 1️⃣ Backend
 
 Navigate to the backend directory.
 
 ```bash
-cd backend
+cd backend/backend
+set -a
+source ../../.env
+set +a
 ```
 
 Start the Spring Boot application.
@@ -390,7 +401,7 @@ VITE_WEBSOCKET_URL=ws://localhost:8080/ws
 
 The entire application has been fully containerized using Docker.
 
-Simply run:
+After creating `.env` as shown above, run:
 
 ```bash
 docker compose up --build
@@ -409,6 +420,17 @@ To stop the application:
 ```bash
 docker compose down
 ```
+
+MongoDB is reachable only through the internal Compose network. If a local database client needs port 27017, use a development-only override bound to `127.0.0.1`; do not publish that port in production.
+
+Before committing, confirm private configuration and uploads are not tracked:
+
+```bash
+git check-ignore .env
+git ls-files '.env' 'uploads/**' '**/uploads/**'
+```
+
+The first command should identify `.env`; the second should produce no output.
 
 ---
 

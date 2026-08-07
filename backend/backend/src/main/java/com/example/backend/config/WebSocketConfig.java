@@ -2,6 +2,7 @@ package com.example.backend.config;
 
 import com.example.backend.security.WebSocketAuthInterceptor;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.messaging.simp.config.ChannelRegistration;
 import org.springframework.messaging.simp.config.MessageBrokerRegistry;
@@ -34,10 +35,13 @@ public class WebSocketConfig implements WebSocketMessageBrokerConfigurer {
      * Register the STOMP endpoint.
      * SockJS is enabled as a fallback for browsers that don't support native WebSocket.
      */
+    @Value("${app.cors.allowed-origins}")
+    private String allowedOrigins;
+
     @Override
     public void registerStompEndpoints(StompEndpointRegistry registry) {
         registry.addEndpoint("/ws")
-                .setAllowedOrigins("http://localhost:5173")
+                .setAllowedOrigins(allowedOrigins.split(","))
                 .withSockJS();
     }
 
