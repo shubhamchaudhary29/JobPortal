@@ -3,6 +3,7 @@ import { useParams, useNavigate } from "react-router-dom";
 import Header from "../components/Header";
 import { getChatRoom, getChatMessages } from "../services/chat-service";
 import { useWebSocket } from "../hooks/useWebSocket";
+import { useAuth } from "../auth/auth-context";
 
 // ── Date separator label (Today / Yesterday / date string) ───────────────────
 function dateSeparatorLabel(dateStr) {
@@ -72,7 +73,7 @@ export default function ChatRoom() {
   const { roomId } = useParams();
   const navigate = useNavigate();
 
-  const myEmail = localStorage.getItem("email") || "";
+  const { email: myEmail, role } = useAuth();
 
   const [room, setRoom] = useState(null);
   const [messages, setMessages] = useState([]);
@@ -155,7 +156,6 @@ export default function ChatRoom() {
   };
 
   // ── Determine other party info ────────────────────────────────────────────
-  const role = localStorage.getItem("role");
   const otherName = room
     ? role === "RECRUITER" ? room.candidateName : room.recruiterName
     : "";

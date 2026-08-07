@@ -1,6 +1,7 @@
 import { useEffect, useRef, useCallback } from "react";
 import { Client } from "@stomp/stompjs";
 import SockJS from "sockjs-client";
+import { useAuth } from "../auth/auth-context";
 
 /**
  * Custom hook that manages a STOMP/SockJS WebSocket connection.
@@ -15,7 +16,7 @@ import SockJS from "sockjs-client";
 export function useWebSocket({ onMessage, onNotification, chatRoomId }) {
   const clientRef = useRef(null);
   const roomSubscriptionRef = useRef(null);
-  const token = localStorage.getItem("token");
+  const { accessToken: token } = useAuth();
 
   // ── Send a message to the server ──────────────────────────────────────────
   const sendMessage = useCallback((roomId, content) => {

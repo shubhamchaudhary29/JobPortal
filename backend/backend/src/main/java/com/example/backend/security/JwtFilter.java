@@ -13,6 +13,7 @@ import org.springframework.web.filter.OncePerRequestFilter;
 
 import java.io.IOException;
 import java.util.List;
+import com.example.backend.entity.UserRole;
 
 @Component
 public class JwtFilter extends OncePerRequestFilter {
@@ -49,6 +50,7 @@ public class JwtFilter extends OncePerRequestFilter {
             try {
                 String email = jwtUtil.extractEmail(token);
                 String role = jwtUtil.extractRole(token);
+                UserRole.valueOf(role);
 
                 UsernamePasswordAuthenticationToken authentication =
                         new UsernamePasswordAuthenticationToken(

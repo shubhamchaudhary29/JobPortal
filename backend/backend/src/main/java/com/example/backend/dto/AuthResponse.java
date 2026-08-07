@@ -1,11 +1,5 @@
 package com.example.backend.dto;
 
-import lombok.AllArgsConstructor;
-import lombok.Data;
+import com.example.backend.entity.UserRole;
 
-@Data
-@AllArgsConstructor
-public class AuthResponse {
-    private String token;
-}
-
+public record AuthResponse(String accessToken, UserRole role, String email) { }

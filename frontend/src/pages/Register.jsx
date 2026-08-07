@@ -12,7 +12,6 @@ export default function Register() {
     fullName: "",
     email: "",
     password: "",
-    role: "USER",
   });
 
   function handleChange(e) {

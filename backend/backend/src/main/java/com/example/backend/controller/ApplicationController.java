@@ -14,6 +14,7 @@ import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.Authentication;
 import org.springframework.web.bind.annotation.*;
+import jakarta.validation.Valid;
 import org.springframework.web.multipart.MultipartFile;
 
 import java.io.IOException;
@@ -63,6 +64,7 @@ public class ApplicationController {
         return ResponseEntity.ok()
                 .contentType(MediaType.APPLICATION_PDF)
                 .header(HttpHeaders.CONTENT_DISPOSITION, "attachment; filename=\"resume.pdf\"")
+                .header("X-Content-Type-Options", "nosniff")
                 .contentLength(java.nio.file.Files.size(path))
                 .body(resource);
     }
@@ -88,7 +90,7 @@ public class ApplicationController {
     @PatchMapping("/{applicationId}/status")
     public ResponseEntity<Application> updateApplicationStatus(
             @PathVariable String applicationId,
-            @RequestBody UpdateStatusRequest request,
+            @Valid @RequestBody UpdateStatusRequest request,
             Authentication authentication) {
 
         boolean isRecruiter = authentication.getAuthorities().stream()
@@ -100,9 +102,19 @@ public class ApplicationController {
 
         Application updated = applicationService.updateApplicationStatus(
                 applicationId,
-                request.getStatus(),
+                request.status(),
                 authentication.getName()
         );
         return ResponseEntity.ok(updated);
+    }
+
+    @GetMapping("/item/{applicationId}")
+    public Application getApplication(@PathVariable String applicationId, Authentication authentication) {
+        return applicationService.getAuthorizedApplication(applicationId, authentication.getName());
+    }
+
+    @PostMapping("/{applicationId}/withdraw")
+    public Application withdraw(@PathVariable String applicationId, Authentication authentication) {
+        return applicationService.withdraw(applicationId, authentication.getName());
     }
 }

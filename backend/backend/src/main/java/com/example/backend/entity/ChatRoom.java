@@ -2,6 +2,7 @@ package com.example.backend.entity;
 
 import lombok.Data;
 import org.springframework.data.annotation.Id;
+import org.springframework.data.mongodb.core.index.Indexed;
 import org.springframework.data.mongodb.core.mapping.Document;
 
 import java.time.LocalDateTime;
@@ -13,15 +14,15 @@ public class ChatRoom {
     @Id
     private String id;
 
-    private String applicationId;
+    @Indexed(unique = true) private String applicationId;
     private String jobId;
     private String jobTitle;
 
-    private String candidateId;       // user's MongoDB _id
+    @Indexed private String candidateId;       // user's MongoDB _id
     private String candidateEmail;    // for display / routing
     private String candidateName;     // for display
 
-    private String recruiterId;       // recruiter's MongoDB _id
+    @Indexed private String recruiterId;       // recruiter's MongoDB _id
     private String recruiterEmail;    // for display / routing
     private String recruiterName;     // for display
 

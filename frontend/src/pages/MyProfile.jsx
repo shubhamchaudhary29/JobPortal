@@ -10,7 +10,7 @@ import { getMyApplications } from "../services/application-service";
 const StatusBadge = ({ status }) => {
   const map = {
     APPLIED:      { cls: "bg-blue-50 text-blue-700 border-blue-100",     label: "Applied" },
-    UNDER_REVIEW: { cls: "bg-amber-50 text-amber-700 border-amber-100",  label: "Under Review" },
+    IN_REVIEW: { cls: "bg-amber-50 text-amber-700 border-amber-100",  label: "In Review" },
     SHORTLISTED:  { cls: "bg-purple-50 text-purple-700 border-purple-100",label: "Shortlisted" },
     ACCEPTED:     { cls: "bg-green-50 text-green-700 border-green-100",   label: "Accepted" },
     REJECTED:     { cls: "bg-red-50 text-red-700 border-red-100",         label: "Rejected" },

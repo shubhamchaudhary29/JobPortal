@@ -1,8 +1,6 @@
 package com.example.backend.dto;
 
-import lombok.Data;
+import com.example.backend.entity.ApplicationStatus;
+import jakarta.validation.constraints.NotNull;
 
-@Data
-public class UpdateStatusRequest {
-    private String status;
-}
+public record UpdateStatusRequest(@NotNull ApplicationStatus status) { }
