@@ -37,6 +37,8 @@ services:
       MAX_FILE_SIZE: ${MAX_FILE_SIZE:-5MB}
       MAX_REQUEST_SIZE: ${MAX_REQUEST_SIZE:-5MB}
       RESUME_MAX_BYTES: ${RESUME_MAX_BYTES:-5242880}
+      SWAGGER_ENABLED: ${SWAGGER_ENABLED:-true}
+      APP_SCHEDULING_ENABLED: ${APP_SCHEDULING_ENABLED:-true}
     depends_on:
       mongodb:
         condition: service_healthy

@@ -1,12 +1,11 @@
 import apiClient from "./helper";
+import { apiRoutes } from "./api-routes";
 
 
 export const applyForJob = async (jobId, file) => {
   const formData = new FormData();
   formData.append("file", file);
-  formData.append("jobId", jobId);
-
-  const response = await apiClient.post("/applications/apply", formData, {
+  const response = await apiClient.post(apiRoutes.jobs.applications(jobId), formData, {
     headers: {
       "Content-Type": "multipart/form-data",
     },
@@ -15,12 +14,12 @@ export const applyForJob = async (jobId, file) => {
   return response.data;
 };
 export const getApplicationsForJob = async (jobId) => {
-  const response = await apiClient.get(`/applications/${jobId}`);
-  return response.data;
+  const response = await apiClient.get(apiRoutes.jobs.applications(jobId));
+  return response.data.content;
 };
 
 export const downloadResume = async (applicationId) => {
-  const response = await apiClient.get(`/applications/download/${applicationId}`, {
+  const response = await apiClient.get(apiRoutes.applications.resume(applicationId), {
     responseType: "blob",
   });
 
@@ -37,18 +36,18 @@ export const downloadResume = async (applicationId) => {
 };
 
 export const hasUserApplied = async (jobId) => {
-  const response = await apiClient.get(`/applications/status/${jobId}`);
-  return response.data; 
+  const response = await apiClient.get(apiRoutes.jobs.applicationStatus(jobId));
+  return response.data.applied;
 };
 
 // Candidate fetches their own applications with job details
 export const getMyApplications = async () => {
-  const response = await apiClient.get("/applications/my");
-  return response.data;
+  const response = await apiClient.get(apiRoutes.applications.collection);
+  return response.data.content;
 };
 
 // Recruiter updates status of an application
 export const updateApplicationStatus = async (applicationId, status) => {
-  const response = await apiClient.patch(`/applications/${applicationId}/status`, { status });
+  const response = await apiClient.patch(apiRoutes.applications.status(applicationId), { status });
   return response.data;
 };

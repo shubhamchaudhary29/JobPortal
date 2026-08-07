@@ -32,7 +32,7 @@ Coming Soon
 
 ### 📄 Documentation
 
-Coming Soon
+See [Backend architecture and API v1](docs/architecture.md).
 
 </div>
 
@@ -387,13 +387,8 @@ adzuna.app.key=YOUR_ADZUNA_APP_KEY
 
 ### Frontend
 
-Example:
-
-```env
-VITE_API_BASE_URL=http://localhost:8080
-
-VITE_WEBSOCKET_URL=ws://localhost:8080/ws
-```
+The browser uses same-origin `/api/v1` and `/ws` paths through the Vite/nginx proxy. Backend secrets must never
+use a `VITE_*` prefix because Vite exposes such values to browser code.
 
 ---
 
@@ -511,27 +506,21 @@ JobPortal
 
 │
 
-├── backend
+├── backend/backend/src/main/java/com/example/backend
 
-│   ├── config
+│   ├── auth
 
-│   ├── controller
+│   ├── user
 
-│   ├── dto
+│   ├── job
 
-│   ├── entity
+│   ├── application
 
-│   ├── repository
+│   ├── messaging
 
-│   ├── security
+│   ├── integration/adzuna
 
-│   ├── service
-
-│   ├── websocket
-
-│   ├── util
-
-│   └── resources
+│   └── shared
 
 │
 
@@ -800,7 +789,7 @@ JWT Attached to Every Request
 Protected REST APIs
 ```
 
-The current flow uses a short-lived access token held only in browser memory and an opaque rotating refresh token in an `HttpOnly` cookie. On page reload the frontend calls `POST /auth/refresh`; concurrent `401` responses share one refresh request and retry once. Logout revokes the active refresh record and expires the cookie. Production must use HTTPS with `REFRESH_COOKIE_SECURE=true`. Refresh-token records store SHA-256 hashes only and expire through a MongoDB TTL index.
+The current flow uses a short-lived access token held only in browser memory and an opaque rotating refresh token in an `HttpOnly` cookie. On page reload the frontend calls `POST /api/v1/auth/sessions/refresh`; concurrent `401` responses share one refresh request and retry once. Logout revokes the active refresh record and expires the cookie. Production must use HTTPS with `REFRESH_COOKIE_SECURE=true`. Refresh-token records store SHA-256 hashes only and expire through a MongoDB TTL index.
 
 Authentication settings are documented in `.env.example`: `JWT_ACCESS_TOKEN_MINUTES`, `REFRESH_TOKEN_DAYS`, cookie settings, and bounded login-rate-limit settings. The rate limiter is intentionally single-instance; multi-instance deployments need a shared limiter before horizontal scaling.
 
@@ -821,7 +810,7 @@ db.applications.updateMany({ status: "UNDER_REVIEW" }, { $set: { status: "IN_REV
 db.users.find().forEach(function(user) { var normalized = user.email.trim().toLowerCase(); if (normalized !== user.email) db.users.updateOne({ _id: user._id }, { $set: { email: normalized } }); })
 ```
 
-Run backend tests with `cd backend/backend && ./mvnw test`, frontend tests with `cd frontend && npm test`, and the stack with `docker compose up --build` after configuring `.env`.
+Run backend verification with `cd backend/backend && ./mvnw clean verify`; run frontend checks with `cd frontend && npm run lint && npm test && npm run build`; validate and start the stack with `docker compose config` and `docker compose up --build` after configuring `.env`.
 
 ---
 
@@ -868,6 +857,8 @@ Recruiters can download resumes directly from the Applicant Dashboard.
 ---
 
 # 🌐 REST API Overview
+
+The canonical base path is `/api/v1`. OpenAPI JSON is available at `/v3/api-docs` and local Swagger UI at `/swagger-ui.html`; set `SWAGGER_ENABLED=false` in production. Pagination, route migration, errors, supported filters, and sort allowlists are documented in [docs/architecture.md](docs/architecture.md).
 
 The backend exposes RESTful APIs for:
 
@@ -1052,15 +1043,7 @@ The application follows modern backend security practices.
 
 # 🧪 Testing
 
-The project has been designed with modular components that simplify testing and future expansion.
-
-Suggested testing tools:
-
-- JUnit
-- Spring Boot Test
-- Postman
-- Bruno
-- Thunder Client
+The backend suite includes JUnit, Spring MVC, service, mapper, security, OpenAPI, pagination, and ArchUnit tests. The frontend uses Vitest and ESLint. See [docs/architecture.md](docs/architecture.md#commands) for the repository-controlled commands.
 
 ---
 

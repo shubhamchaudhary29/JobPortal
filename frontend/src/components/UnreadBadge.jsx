@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { getUnreadCount } from "../services/chat-service";
 
 /**
- * Polls the /chat/unread endpoint every 30 seconds.
+ * Polls the versioned conversation unread-count endpoint every 30 seconds.
  * Renders a small badge with the count if count > 0, nothing if 0.
  */
 export default function UnreadBadge() {
