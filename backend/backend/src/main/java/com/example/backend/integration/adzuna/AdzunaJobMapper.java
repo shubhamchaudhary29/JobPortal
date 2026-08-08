@@ -1,13 +1,16 @@
 package com.example.backend.integration.adzuna;
 
 import com.example.backend.job.infrastructure.JobDocument;
+import java.time.LocalDateTime;
+import java.util.Optional;
 
 public final class AdzunaJobMapper {
     private AdzunaJobMapper() { }
 
-    public static JobDocument toDocument(AdzunaResponse.AdzunaJob source) {
+    public static Optional<JobDocument> toDocument(AdzunaResponse.AdzunaJob source, LocalDateTime now) {
+        if (source == null || blank(source.id()) || blank(source.title()) || blank(source.redirectUrl())) return Optional.empty();
         JobDocument job = new JobDocument();
-        job.setTitle(source.title());
+        job.setTitle(source.title().trim());
         job.setDescription(cleanDescription(source.description()));
         job.setSourceUrl(source.redirectUrl());
         job.setCompany(source.company() == null || source.company().displayName() == null
@@ -19,8 +22,12 @@ public final class AdzunaJobMapper {
         job.setSource("adzuna");
         job.setExternalId(source.id());
         job.setRecruiterId(null);
-        return job;
+        job.setFetchedAt(now);
+        job.setLastSeenAt(now);
+        return Optional.of(job);
     }
+
+    private static boolean blank(String value) { return value == null || value.isBlank(); }
 
     static String cleanDescription(String raw) {
         if (raw == null) return "";

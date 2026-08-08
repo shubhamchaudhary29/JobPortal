@@ -2,7 +2,6 @@ package com.example.backend.job.infrastructure;
 
 import lombok.Data;
 import org.springframework.data.annotation.Id;
-import org.springframework.data.mongodb.core.index.Indexed;
 import org.springframework.data.mongodb.core.mapping.Document;
 
 import java.time.LocalDateTime;
@@ -21,12 +20,14 @@ public class JobDocument {
     private double salary;
     private double experience;
 
-    @Indexed private String recruiterId;
+    private String recruiterId;
 
     private LocalDateTime createdAt = LocalDateTime.now();
 
     private String sourceUrl;      // original posting URL; null for manually-created jobs
     private String source;         // "manual" or "adzuna"
     private String externalId;     // Adzuna's job id, used to avoid duplicate imports
+    private LocalDateTime fetchedAt;
+    private LocalDateTime lastSeenAt;
 
 }

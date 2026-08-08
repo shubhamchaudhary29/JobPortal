@@ -1,0 +1,48 @@
+# Phase 3: Adzuna reliability and MongoDB operations
+
+## Runtime behavior
+
+The public `GET /api/v1/jobs` API reads only from MongoDB. It never waits for a live Adzuna request. The importer runs on `ADZUNA_SCHEDULE_CRON` (default: every six hours) and is guarded in-process so an overlapping scheduled invocation is skipped.
+
+`ADZUNA_APP_ID` and `ADZUNA_APP_KEY` are required server environment variables. They are only used to create the outbound Adzuna request and are never logged or returned in errors. Do not place either value in source code, frontend configuration, screenshots, or issue comments.
+
+Configuration defaults (all can be overridden through the matching environment variable):
+
+- `ADZUNA_CONNECT_TIMEOUT_MS=3000`, `ADZUNA_READ_TIMEOUT_MS=5000`
+- `ADZUNA_RETRY_MAX_ATTEMPTS=3` (bounded to 1–5) and `ADZUNA_RETRY_INITIAL_BACKOFF_MS=200`
+- `ADZUNA_CIRCUIT_FAILURE_THRESHOLD=3`, `ADZUNA_CIRCUIT_OPEN_MS=60000`
+- `ADZUNA_PAGES_PER_KEYWORD=2` (1–10), `ADZUNA_RESULTS_PER_PAGE=20` (1–50), and `ADZUNA_KEYWORDS`
+
+Network failures, 429s, and 5xx responses receive bounded exponential backoff with jitter. 4xx authentication/validation responses and malformed provider payloads are not retried. Repeated failed batches open a small in-process circuit; after its open interval one successful probe closes it. Completion logs contain sanitized event names, counts, and latency only; the lightweight counters report cumulative successful runs, failed batches, and total latency.
+
+Every provider record is validated and atomically upserted using `(source, externalId)`. Imported jobs carry `source`, `externalId`, `fetchedAt`, and `lastSeenAt`. A failed or partial sync does not delete or alter previously imported jobs. The current stale-data policy is **retain and label by `lastSeenAt`**: operators should query/report jobs not seen within their business freshness window before any separately approved cleanup. There is intentionally no unauthenticated (or newly introduced) manual-sync endpoint.
+
+## Indexes and query rationale
+
+The startup verifier creates the job indexes below after rejecting legacy duplicate `(source, externalId)` values. It fails startup loudly rather than silently ignoring an unsafe unique-index migration.
+
+| Index | Supporting query |
+| --- | --- |
+| `source_external_id_unique` (partial unique) | atomic Adzuna upsert and replay deduplication |
+| `jobs_created_at_idx` | default public job listing sort |
+| `jobs_source_created_at_idx` | public source-filtered listing, newest first |
+| `jobs_recruiter_created_at_idx` | recruiter `/api/v1/jobs/mine`, newest first |
+| `jobs_search_text_idx` | public tokenized title/description/company search; avoids user-controlled regex |
+| `candidate_job_unique`, `job_applied_at_idx`, `candidate_applied_at_idx` | application duplicate protection plus recruiter/candidate pages |
+| `candidate_last_message_idx`, `recruiter_last_message_idx` | conversation pages |
+| `room_sent_at_idx`, `room_unread_idx` | message pages and unread lookups |
+
+Indexes consume storage and make writes slower. These are limited to current repository query paths; do not add speculative sort indexes. MongoDB pagination remains database-side. Location filtering uses a bounded, quoted, anchored case-insensitive pattern, so it cannot execute user regex syntax; its case-insensitive form is not index-friendly and should be replaced with a normalized location field only through a separately backfilled migration.
+
+## Production migration
+
+1. Back up the database and run `mongosh "$MONGODB_URI" backend/backend/scripts/audit-mongo-indexes.js` from the repository root. Keep credentials in environment variables only.
+2. Resolve every reported duplicate before deploying. Do not merely disable `MONGO_INDEX_VERIFY_ON_STARTUP` to bypass it.
+3. Deploy once with `MONGO_INDEX_VERIFY_ON_STARTUP=true`; startup verifies duplicates and ensures the indexes.
+4. Monitor the sanitized `adzuna_sync_completed`, `adzuna_batch_failed`, and `adzuna_sync_skipped` events and review `lastSeenAt` before any approved stale-job cleanup.
+
+## Local and Docker checks
+
+Backend unit/contract tests do not call Adzuna: `cd backend/backend && ./mvnw test`.
+
+For Compose, create a local ignored `.env` with placeholders for `MONGODB_URI`, `JWT_SECRET`, `ADZUNA_APP_ID`, `ADZUNA_APP_KEY`, and `CORS_ALLOWED_ORIGINS`, then run `docker compose config` followed by `docker compose build`. Do not commit `.env` files. Docker image creation exercises the wrapper build inside the backend image; a live Adzuna sync still requires valid provider credentials and is not part of automated verification.

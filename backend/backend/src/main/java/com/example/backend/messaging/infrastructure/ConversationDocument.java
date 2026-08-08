@@ -3,12 +3,15 @@ package com.example.backend.messaging.infrastructure;
 import lombok.Data;
 import org.springframework.data.annotation.Id;
 import org.springframework.data.mongodb.core.index.Indexed;
+import org.springframework.data.mongodb.core.index.CompoundIndex;
 import org.springframework.data.mongodb.core.mapping.Document;
 
 import java.time.LocalDateTime;
 
 @Data
 @Document(collection = "chat_rooms")
+@CompoundIndex(name = "candidate_last_message_idx", def = "{'candidateId': 1, 'lastMessageAt': -1}")
+@CompoundIndex(name = "recruiter_last_message_idx", def = "{'recruiterId': 1, 'lastMessageAt': -1}")
 public class ConversationDocument {
 
     @Id
@@ -18,11 +21,11 @@ public class ConversationDocument {
     private String jobId;
     private String jobTitle;
 
-    @Indexed private String candidateId;       // user's MongoDB _id
+    private String candidateId;       // user's MongoDB _id
     private String candidateEmail;    // for display / routing
     private String candidateName;     // for display
 
-    @Indexed private String recruiterId;       // recruiter's MongoDB _id
+    private String recruiterId;       // recruiter's MongoDB _id
     private String recruiterEmail;    // for display / routing
     private String recruiterName;     // for display
 
