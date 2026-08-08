@@ -41,20 +41,26 @@ public class AdzunaService {
     public SyncResult sync() {
         if (!running.compareAndSet(false, true)) {
             log.warn("event=adzuna_sync_skipped reason=already_running");
-            return new SyncResult(0, 0, 0, true);
+            metrics.record(AdzunaSyncMetrics.Outcome.REJECTED, 0);
+            return new SyncResult(0, 0, 0, 0, Outcome.OVERLAP_REJECTED);
         }
         long startedAt = System.nanoTime();
-        int failedBatches = 0, imported = 0, rejected = 0;
+        int failedBatches = 0, failedItems = 0, imported = 0, rejected = 0, attemptedBatches = 0;
         try {
             for (String rawKeyword : properties.keywords()) {
                 String keyword = rawKeyword.trim();
                 if (keyword.isEmpty()) continue;
                 for (int page = 1; page <= properties.pagesPerKeyword(); page++) {
+                    attemptedBatches++;
                     try {
                         BatchResult batch = fetchKeyword(keyword, page);
-                        imported += batch.imported(); rejected += batch.rejected();
+                        imported += batch.imported(); rejected += batch.rejected(); failedItems += batch.failed();
+                    } catch (AdzunaCircuitOpenException ex) {
+                        failedBatches++;
+                        log.warn("event=adzuna_batch_rejected provider=adzuna reason=circuit_open");
+                        break;
                     } catch (AdzunaProviderException ex) {
-                        failedBatches++; metrics.failure(); circuit.recordFailure();
+                        failedBatches++; circuit.recordFailure();
                         log.warn("event=adzuna_batch_failed provider=adzuna retryable={} error={}", ex.retryable(), ex.getMessage());
                         break; // do not pretend a failed page is an empty page
                     }
@@ -62,25 +68,27 @@ public class AdzunaService {
             }
         } finally { running.set(false); }
         long elapsed = (System.nanoTime() - startedAt) / 1_000_000;
-        metrics.success(elapsed);
+        Outcome outcome = imported == 0 && (failedBatches > 0 || failedItems > 0) ? Outcome.COMPLETE_FAILURE
+                : (failedBatches > 0 || failedItems > 0 || rejected > 0 ? Outcome.PARTIAL_FAILURE : Outcome.FULL_SUCCESS);
+        metrics.record(outcome == Outcome.FULL_SUCCESS ? AdzunaSyncMetrics.Outcome.FULL_SUCCESS : outcome == Outcome.PARTIAL_FAILURE ? AdzunaSyncMetrics.Outcome.PARTIAL_FAILURE : AdzunaSyncMetrics.Outcome.COMPLETE_FAILURE, elapsed);
         AdzunaSyncMetrics.Snapshot snapshot = metrics.snapshot();
-        log.info("event=adzuna_sync_completed imported={} rejected={} failed_batches={} latency_ms={} success_total={} failure_total={}",
-                imported, rejected, failedBatches, elapsed, snapshot.successes(), snapshot.failures());
-        return new SyncResult(imported, rejected, failedBatches, false);
+        log.info("event=adzuna_sync_completed outcome={} attempted_batches={} imported={} rejected={} failed_items={} failed_batches={} latency_ms={}", outcome, attemptedBatches, imported, rejected, failedItems, failedBatches, elapsed);
+        return new SyncResult(imported, rejected, failedBatches, failedItems, outcome);
     }
     private BatchResult fetchKeyword(String keyword, int page) {
-        if (!circuit.allowRequest()) throw new AdzunaProviderException("Adzuna circuit is open", false, null);
+        if (!circuit.allowRequest()) throw new AdzunaCircuitOpenException();
         AdzunaResponse response = fetchWithRetry(keyword, page);
-        int imported = 0, rejected = 0;
+        int imported = 0, rejected = 0, failed = 0;
         LocalDateTime now = LocalDateTime.now(clock);
         if (response.results() == null) throw new AdzunaProviderException("Adzuna response is missing results", false, null);
         for (AdzunaResponse.AdzunaJob source : response.results()) {
             var mapped = AdzunaJobMapper.toDocument(source, now);
             if (mapped.isEmpty()) { rejected++; continue; }
-            jobs.upsert(mapped.get(), now); imported++;
+            try { jobs.upsert(mapped.get(), now); imported++; }
+            catch (AdzunaPersistenceException ex) { failed++; log.warn("event=adzuna_item_store_failed provider=adzuna error={}", ex.getMessage()); }
         }
         circuit.recordSuccess();
-        return new BatchResult(imported, rejected);
+        return new BatchResult(imported, rejected, failed);
     }
     private AdzunaResponse fetchWithRetry(String keyword, int page) {
         AdzunaProviderException last = null;
@@ -96,7 +104,10 @@ public class AdzunaService {
         throw last;
     }
     private long backoff(int attempt) { long base = properties.initialBackoffMs() * (1L << (attempt - 1)); return base + jitter.applyAsLong(Math.max(1, base / 2)); }
-    record BatchResult(int imported, int rejected) { }
-    public record SyncResult(int imported, int rejected, int failedBatches, boolean skipped) { }
+    record BatchResult(int imported, int rejected, int failed) { }
+    public enum Outcome { FULL_SUCCESS, PARTIAL_FAILURE, COMPLETE_FAILURE, OVERLAP_REJECTED }
+    public record SyncResult(int imported, int rejected, int failedBatches, int failedItems, Outcome outcome) {
+        public boolean skipped() { return outcome == Outcome.OVERLAP_REJECTED; }
+    }
     @FunctionalInterface interface Sleeper { void sleep(long millis) throws InterruptedException; }
 }

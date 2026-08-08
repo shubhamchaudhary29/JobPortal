@@ -1,7 +1,7 @@
 package com.example.backend.integration.adzuna;
 
 import com.example.backend.job.infrastructure.JobDocument;
-import com.mongodb.client.result.UpdateResult;
+import org.springframework.dao.DuplicateKeyException;
 import org.springframework.data.mongodb.core.FindAndModifyOptions;
 import org.springframework.data.mongodb.core.MongoTemplate;
 import org.springframework.data.mongodb.core.query.Criteria;
@@ -21,6 +21,10 @@ public class AdzunaJobStore {
                 .set("salary", job.getSalary()).set("experience", job.getExperience()).set("fetchedAt", now)
                 .set("lastSeenAt", now).setOnInsert("source", job.getSource()).setOnInsert("externalId", job.getExternalId())
                 .setOnInsert("recruiterId", null).setOnInsert("createdAt", now);
-        mongo.findAndModify(query, update, FindAndModifyOptions.options().upsert(true), JobDocument.class);
+        try { mongo.findAndModify(query, update, FindAndModifyOptions.options().upsert(true), JobDocument.class); }
+        catch (DuplicateKeyException race) {
+            try { mongo.findAndModify(query, update, FindAndModifyOptions.options().upsert(true), JobDocument.class); }
+            catch (RuntimeException failure) { throw new AdzunaPersistenceException(failure); }
+        } catch (RuntimeException failure) { throw new AdzunaPersistenceException(failure); }
     }
 }

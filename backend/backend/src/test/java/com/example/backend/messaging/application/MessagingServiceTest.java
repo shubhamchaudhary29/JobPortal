@@ -4,6 +4,7 @@ import com.example.backend.messaging.infrastructure.ConversationDocument;
 import com.example.backend.messaging.infrastructure.ConversationRepository;
 import com.example.backend.messaging.infrastructure.MessageDocument;
 import com.example.backend.messaging.infrastructure.MessageRepository;
+import com.example.backend.messaging.infrastructure.MessageBulkRepository;
 import com.example.backend.shared.error.ResourceNotFoundException;
 import com.example.backend.shared.security.CurrentUserProvider;
 import com.example.backend.user.domain.UserRole;
@@ -25,6 +26,7 @@ class MessagingServiceTest {
     private MessageRepository messages;
     private UserRepository users;
     private CurrentUserProvider currentUser;
+    private MessageBulkRepository bulkMessages;
     private MessagingService service;
     private ConversationDocument room;
 
@@ -34,7 +36,8 @@ class MessagingServiceTest {
         messages = mock(MessageRepository.class);
         users = mock(UserRepository.class);
         currentUser = mock(CurrentUserProvider.class);
-        service = new MessagingService(conversations, messages, users, currentUser);
+        bulkMessages = mock(MessageBulkRepository.class);
+        service = new MessagingService(conversations, messages, users, currentUser, bulkMessages);
         room = new ConversationDocument(); room.setId("room1"); room.setCandidateId("candidate");
         room.setRecruiterId("recruiter"); room.setCandidateEmail("candidate@example.test");
         room.setRecruiterEmail("recruiter@example.test");
@@ -63,15 +66,11 @@ class MessagingServiceTest {
         when(currentUser.email()).thenReturn(candidate.getEmail());
         when(users.findByEmail(candidate.getEmail())).thenReturn(Optional.of(candidate));
         when(conversations.findById("room1")).thenReturn(Optional.of(room));
-        MessageDocument unread = new MessageDocument(); unread.setSenderId("recruiter"); unread.setRead(false);
-        when(messages.findByChatRoomIdAndReadFalseAndSenderIdNot("room1", "candidate"))
-                .thenReturn(java.util.List.of(unread));
         var pageable = PageRequest.of(0, 20);
         when(messages.findByChatRoomId("room1", pageable)).thenReturn(new PageImpl<>(java.util.List.of(), pageable, 0));
 
         assertTrue(service.messages("room1", pageable).content().isEmpty());
-        assertTrue(unread.isRead());
-        verify(messages).saveAll(java.util.List.of(unread));
+        verify(bulkMessages).markUnreadFromOtherSenderRead("room1", "candidate");
     }
 
     @Test
