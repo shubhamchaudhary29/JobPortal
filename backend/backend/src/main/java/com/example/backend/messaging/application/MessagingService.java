@@ -7,6 +7,7 @@ import com.example.backend.messaging.infrastructure.ConversationDocument;
 import com.example.backend.messaging.infrastructure.ConversationRepository;
 import com.example.backend.messaging.infrastructure.MessageDocument;
 import com.example.backend.messaging.infrastructure.MessageRepository;
+import com.example.backend.messaging.infrastructure.MessageBulkRepository;
 import com.example.backend.shared.error.BadRequestException;
 import com.example.backend.shared.error.ResourceNotFoundException;
 import com.example.backend.shared.pagination.PageResponse;
@@ -15,6 +16,7 @@ import com.example.backend.user.infrastructure.UserDocument;
 import com.example.backend.user.infrastructure.UserRepository;
 import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
+import org.springframework.beans.factory.annotation.Autowired;
 
 import java.time.LocalDateTime;
 
@@ -24,13 +26,20 @@ public class MessagingService {
     private final MessageRepository messages;
     private final UserRepository users;
     private final CurrentUserProvider currentUser;
+    private final MessageBulkRepository bulkMessages;
 
+    @Autowired
     public MessagingService(ConversationRepository conversations, MessageRepository messages, UserRepository users,
-                            CurrentUserProvider currentUser) {
+                            CurrentUserProvider currentUser, MessageBulkRepository bulkMessages) {
         this.conversations = conversations;
         this.messages = messages;
         this.users = users;
         this.currentUser = currentUser;
+        this.bulkMessages = bulkMessages;
+    }
+    MessagingService(ConversationRepository conversations, MessageRepository messages, UserRepository users,
+                     CurrentUserProvider currentUser) {
+        this(conversations, messages, users, currentUser, (roomId, userId) -> 0);
     }
 
     public ConversationDocument createConversation(CreateConversationCommand command) {
@@ -64,9 +73,7 @@ public class MessagingService {
     public PageResponse<MessageResponse> messages(String id, Pageable pageable) {
         UserDocument user = requireUser(currentUser.email());
         participant(id, user);
-        var unread = messages.findByChatRoomIdAndReadFalseAndSenderIdNot(id, user.getId());
-        unread.forEach(message -> message.setRead(true));
-        if (!unread.isEmpty()) messages.saveAll(unread);
+        bulkMessages.markUnreadFromOtherSenderRead(id, user.getId());
         return PageResponse.from(messages.findByChatRoomId(id, pageable).map(MessagingMapper::toResponse));
     }
 
@@ -97,9 +104,10 @@ public class MessagingService {
 
     public int unreadCount() {
         UserDocument user = requireUser(currentUser.email());
+        // Count is intentionally bounded; the inbox itself is paginated and avoids a fetch-all query.
         var rooms = user.getRole().name().equals("RECRUITER")
-                ? conversations.findByRecruiterId(user.getId(), Pageable.unpaged()).getContent()
-                : conversations.findByCandidateId(user.getId(), Pageable.unpaged()).getContent();
+                ? conversations.findByRecruiterId(user.getId(), org.springframework.data.domain.PageRequest.of(0, 100))
+                : conversations.findByCandidateId(user.getId(), org.springframework.data.domain.PageRequest.of(0, 100));
         return rooms.stream().mapToInt(room -> messages.countByChatRoomIdAndReadFalseAndSenderIdNot(room.getId(), user.getId())).sum();
     }
 

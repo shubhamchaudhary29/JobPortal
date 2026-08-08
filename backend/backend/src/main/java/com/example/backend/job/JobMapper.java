@@ -4,6 +4,7 @@ import com.example.backend.job.api.dto.CreateJobRequest;
 import com.example.backend.job.api.dto.JobResponse;
 import com.example.backend.job.api.dto.UpdateJobRequest;
 import com.example.backend.job.infrastructure.JobDocument;
+import com.example.backend.shared.validation.SafeExternalUrl;
 
 public final class JobMapper {
     private JobMapper() { }
@@ -23,7 +24,7 @@ public final class JobMapper {
     public static JobResponse toResponse(JobDocument document) {
         return new JobResponse(document.getId(), document.getTitle(), document.getDescription(), document.getLocation(),
                 document.getCompany(), document.getSalary(), document.getExperience(), document.getCreatedAt(),
-                document.getSourceUrl(), document.getSource());
+                SafeExternalUrl.parse(document.getSourceUrl()).orElse(null), document.getSource());
     }
 
     private static void apply(String title, String description, String location, String company, double salary,

@@ -5,6 +5,7 @@ import com.example.backend.application.api.dto.ApplicationSummaryResponse;
 import com.example.backend.application.domain.ApplicationStatus;
 import com.example.backend.application.infrastructure.ApplicationDocument;
 import com.example.backend.job.infrastructure.JobDocument;
+import com.example.backend.shared.validation.SafeExternalUrl;
 
 public final class ApplicationMapper {
     private ApplicationMapper() { }
@@ -16,7 +17,7 @@ public final class ApplicationMapper {
 
     public static ApplicationSummaryResponse toSummary(ApplicationDocument application, JobDocument job) {
         return new ApplicationSummaryResponse(application.getId(), status(application), application.getAppliedAt(),
-                job.getId(), job.getTitle(), job.getCompany(), job.getLocation(), job.getSalary(), job.getSourceUrl());
+                job.getId(), job.getTitle(), job.getCompany(), job.getLocation(), job.getSalary(), SafeExternalUrl.parse(job.getSourceUrl()).orElse(null));
     }
 
     private static ApplicationStatus status(ApplicationDocument document) {

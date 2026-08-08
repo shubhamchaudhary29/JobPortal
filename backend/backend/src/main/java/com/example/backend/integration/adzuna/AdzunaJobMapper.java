@@ -1,6 +1,7 @@
 package com.example.backend.integration.adzuna;
 
 import com.example.backend.job.infrastructure.JobDocument;
+import com.example.backend.shared.validation.SafeExternalUrl;
 import java.time.LocalDateTime;
 import java.util.Optional;
 
@@ -8,11 +9,13 @@ public final class AdzunaJobMapper {
     private AdzunaJobMapper() { }
 
     public static Optional<JobDocument> toDocument(AdzunaResponse.AdzunaJob source, LocalDateTime now) {
-        if (source == null || blank(source.id()) || blank(source.title()) || blank(source.redirectUrl())) return Optional.empty();
+        if (source == null || blank(source.id()) || blank(source.title())) return Optional.empty();
+        Optional<String> sourceUrl = SafeExternalUrl.parse(source.redirectUrl());
+        if (sourceUrl.isEmpty()) return Optional.empty();
         JobDocument job = new JobDocument();
         job.setTitle(source.title().trim());
         job.setDescription(cleanDescription(source.description()));
-        job.setSourceUrl(source.redirectUrl());
+        job.setSourceUrl(sourceUrl.get());
         job.setCompany(source.company() == null || source.company().displayName() == null
                 ? "Unknown" : source.company().displayName());
         job.setLocation(source.location() == null || source.location().displayName() == null
