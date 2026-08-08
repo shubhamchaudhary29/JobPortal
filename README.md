@@ -34,6 +34,8 @@ Coming Soon
 
 See [Backend architecture and API v1](docs/architecture.md).
 
+For the Adzuna ingestion reliability, MongoDB index migration, and local/Docker verification guide, see [Phase 3 operations](docs/phase-3-operations.md).
+
 </div>
 
 ---

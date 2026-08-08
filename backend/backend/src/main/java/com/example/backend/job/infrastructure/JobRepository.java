@@ -8,5 +8,5 @@ public interface JobRepository extends MongoRepository<JobDocument, String> {
 
     Page<JobDocument> findByRecruiterId(String recruiterId, Pageable pageable);
 
-    boolean existsByExternalId(String sourceUrl);
+    boolean existsBySourceAndExternalId(String source, String externalId);
 }
