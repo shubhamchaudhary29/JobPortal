@@ -21,6 +21,7 @@ public class JobSearchRepository {
 
     public Page<JobDocument> search(String q, String location, String source, Pageable pageable) {
         List<Criteria> filters = new ArrayList<>();
+        filters.add(new Criteria().orOperator(Criteria.where("active").is(true), Criteria.where("active").exists(false), Criteria.where("active").is(null)));
         if (location != null && !location.isBlank())
             filters.add(Criteria.where("location").regex(Pattern.compile("^" + Pattern.quote(location.trim()) + "$", Pattern.CASE_INSENSITIVE)));
         if (source != null && !source.isBlank()) filters.add(Criteria.where("source").is(source.trim().toLowerCase()));

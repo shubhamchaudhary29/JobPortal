@@ -43,9 +43,9 @@ class AdzunaServiceTest {
     }
     private static AdzunaService service(AdzunaClient client, AdzunaJobStore store, int attempts, String keywords, AtomicInteger sleeps) {
         AdzunaProperties p = properties(attempts, keywords); AdzunaCircuitBreaker circuit = new AdzunaCircuitBreaker(p);
-        return new AdzunaService(client, store, p, circuit, new AdzunaSyncMetrics(), java.time.Clock.systemUTC(), millis -> sleeps.incrementAndGet(), bound -> 0);
+        return new AdzunaService(new AdzunaJobSource(client), store, p, circuit, new AdzunaSyncMetrics(), java.time.Clock.systemUTC(), millis -> sleeps.incrementAndGet(), bound -> 0);
     }
     static AdzunaProperties properties(int attempts, String keywords) { return new AdzunaProperties("id-not-secret", "key-not-secret", 1, 1, attempts, 1, 2, 100, 1, 1, keywords); }
     private static AdzunaResponse response(String id) { return new AdzunaResponse(List.of(valid(id))); }
-    private static AdzunaResponse.AdzunaJob valid(String id) { return new AdzunaResponse.AdzunaJob(id, "Engineer", "description", "https://example.test/" + id, null, null, null); }
+    private static AdzunaResponse.AdzunaJob valid(String id) { return new AdzunaResponse.AdzunaJob(id, "Engineer", "description", "https://example.test/" + id, null, null, null, null, null, null); }
 }

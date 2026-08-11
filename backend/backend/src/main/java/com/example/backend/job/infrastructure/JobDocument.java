@@ -29,5 +29,15 @@ public class JobDocument {
     private String externalId;     // Adzuna's job id, used to avoid duplicate imports
     private LocalDateTime fetchedAt;
     private LocalDateTime lastSeenAt;
+    private String employmentType;
+    private Double salaryMin;
+    private Double salaryMax;
+    private String applicationUrl;
+    private LocalDateTime publishedAt;
+    private LocalDateTime firstSeenAt;
+    private LocalDateTime expiresAt;
+    /** Null is deliberately treated as active for pre-Phase-1 documents. */
+    private Boolean active = true;
+    private String fingerprint;
 
 }

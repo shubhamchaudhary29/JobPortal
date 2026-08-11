@@ -14,7 +14,7 @@ import java.util.function.LongUnaryOperator;
 @Service
 public class AdzunaService {
     private static final Logger log = LoggerFactory.getLogger(AdzunaService.class);
-    private final AdzunaClient client;
+    private final JobSource source;
     private final AdzunaJobStore jobs;
     private final AdzunaProperties properties;
     private final AdzunaCircuitBreaker circuit;
@@ -24,14 +24,14 @@ public class AdzunaService {
     private final LongUnaryOperator jitter;
     private final AtomicBoolean running = new AtomicBoolean();
     @Autowired
-    public AdzunaService(AdzunaClient client, AdzunaJobStore jobs, AdzunaProperties properties,
+    public AdzunaService(JobSource source, AdzunaJobStore jobs, AdzunaProperties properties,
                          AdzunaCircuitBreaker circuit, AdzunaSyncMetrics metrics) {
-        this(client, jobs, properties, circuit, metrics, Clock.systemUTC(), Thread::sleep,
+        this(source, jobs, properties, circuit, metrics, Clock.systemUTC(), Thread::sleep,
                 bound -> ThreadLocalRandom.current().nextLong(Math.max(1, bound)));
     }
-    AdzunaService(AdzunaClient client, AdzunaJobStore jobs, AdzunaProperties properties,
+    AdzunaService(JobSource source, AdzunaJobStore jobs, AdzunaProperties properties,
                   AdzunaCircuitBreaker circuit, AdzunaSyncMetrics metrics, Clock clock, Sleeper sleeper, LongUnaryOperator jitter) {
-        this.client = client; this.jobs = jobs; this.properties = properties; this.circuit = circuit;
+        this.source = source; this.jobs = jobs; this.properties = properties; this.circuit = circuit;
         this.metrics = metrics; this.clock = clock; this.sleeper = sleeper; this.jitter = jitter;
     }
 
@@ -90,7 +90,7 @@ public class AdzunaService {
     private AdzunaResponse fetchWithRetry(String keyword, int page) {
         AdzunaProviderException last = null;
         for (int attempt = 1; attempt <= properties.maxAttempts(); attempt++) {
-            try { return client.fetchPage(keyword, page); }
+            try { return source.fetch(keyword, page); }
             catch (AdzunaProviderException ex) {
                 last = ex;
                 if (!ex.retryable() || attempt == properties.maxAttempts()) throw ex;

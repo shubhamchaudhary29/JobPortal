@@ -19,7 +19,10 @@ public class AdzunaJobStore {
         Update update = new Update().set("title", job.getTitle()).set("description", job.getDescription())
                 .set("sourceUrl", job.getSourceUrl()).set("company", job.getCompany()).set("location", job.getLocation())
                 .set("salary", job.getSalary()).set("experience", job.getExperience()).set("fetchedAt", now)
-                .set("lastSeenAt", now).setOnInsert("source", job.getSource()).setOnInsert("externalId", job.getExternalId())
+                .set("lastSeenAt", now).set("employmentType", job.getEmploymentType()).set("salaryMin", job.getSalaryMin())
+                .set("salaryMax", job.getSalaryMax()).set("applicationUrl", job.getApplicationUrl()).set("publishedAt", job.getPublishedAt())
+                .set("expiresAt", job.getExpiresAt()).set("active", true).set("fingerprint", job.getFingerprint())
+                .setOnInsert("firstSeenAt", now).setOnInsert("source", job.getSource()).setOnInsert("externalId", job.getExternalId())
                 .setOnInsert("recruiterId", null).setOnInsert("createdAt", now);
         try { mongo.findAndModify(query, update, FindAndModifyOptions.options().upsert(true), JobDocument.class); }
         catch (DuplicateKeyException race) {
