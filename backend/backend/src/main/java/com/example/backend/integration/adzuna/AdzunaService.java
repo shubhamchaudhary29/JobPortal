@@ -81,7 +81,8 @@ public class AdzunaService {
         int inserted = 0, updated = 0, unchanged = 0, rejected = 0, failed = 0;
         LocalDateTime now = LocalDateTime.now(clock);
         for (ExternalJob source : response) {
-            if (source.externalId() == null || source.title() == null) { rejected++; continue; }
+            if (source.externalId() == null || source.externalId().isBlank() || source.title() == null || source.title().isBlank()
+                    || source.applicationUrl() == null || source.fingerprint() == null) { rejected++; continue; }
             JobDocument mapped = new JobDocument(); mapped.setSource(this.source.sourceName()); mapped.setExternalId(source.externalId());
             mapped.setTitle(source.title()); mapped.setDescription(source.description()); mapped.setCompany(source.company()); mapped.setLocation(source.location()); mapped.setEmploymentType(source.employmentType()); mapped.setSalaryMin(source.salaryMin()); mapped.setSalaryMax(source.salaryMax()); mapped.setSalary(source.salaryMin() == null ? 0 : source.salaryMin()); mapped.setApplicationUrl(source.applicationUrl()); mapped.setSourceUrl(source.applicationUrl()); mapped.setPublishedAt(source.publishedAt()); mapped.setExpiresAt(source.expiresAt()); mapped.setFingerprint(source.fingerprint());
             try { switch (jobs.upsert(mapped, now)) { case INSERTED -> inserted++; case UPDATED -> updated++; case UNCHANGED -> unchanged++; } }
