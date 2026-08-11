@@ -42,10 +42,10 @@ public class AdzunaService {
         if (!running.compareAndSet(false, true)) {
             log.warn("event=adzuna_sync_skipped reason=already_running");
             metrics.record(AdzunaSyncMetrics.Outcome.REJECTED, 0);
-            return new SyncResult(0, 0, 0, 0, Outcome.OVERLAP_REJECTED);
+            return new SyncResult(0, 0, 0, 0, 0, 0, Outcome.OVERLAP_REJECTED);
         }
         long startedAt = System.nanoTime();
-        int failedBatches = 0, failedItems = 0, imported = 0, rejected = 0, attemptedBatches = 0;
+        int failedBatches = 0, failedItems = 0, inserted = 0, updated = 0, unchanged = 0, rejected = 0, attemptedBatches = 0;
         try {
             for (String rawKeyword : properties.keywords()) {
                 String keyword = rawKeyword.trim();
@@ -54,7 +54,7 @@ public class AdzunaService {
                     attemptedBatches++;
                     try {
                         BatchResult batch = fetchKeyword(keyword, page);
-                        imported += batch.imported(); rejected += batch.rejected(); failedItems += batch.failed();
+                        inserted += batch.inserted(); updated += batch.updated(); unchanged += batch.unchanged(); rejected += batch.rejected(); failedItems += batch.failed();
                     } catch (AdzunaCircuitOpenException ex) {
                         failedBatches++;
                         log.warn("event=adzuna_batch_rejected provider=adzuna reason=circuit_open");
@@ -68,27 +68,27 @@ public class AdzunaService {
             }
         } finally { running.set(false); }
         long elapsed = (System.nanoTime() - startedAt) / 1_000_000;
-        Outcome outcome = imported == 0 && (failedBatches > 0 || failedItems > 0) ? Outcome.COMPLETE_FAILURE
+        Outcome outcome = inserted + updated == 0 && (failedBatches > 0 || failedItems > 0) ? Outcome.COMPLETE_FAILURE
                 : (failedBatches > 0 || failedItems > 0 || rejected > 0 ? Outcome.PARTIAL_FAILURE : Outcome.FULL_SUCCESS);
         metrics.record(outcome == Outcome.FULL_SUCCESS ? AdzunaSyncMetrics.Outcome.FULL_SUCCESS : outcome == Outcome.PARTIAL_FAILURE ? AdzunaSyncMetrics.Outcome.PARTIAL_FAILURE : AdzunaSyncMetrics.Outcome.COMPLETE_FAILURE, elapsed);
         AdzunaSyncMetrics.Snapshot snapshot = metrics.snapshot();
-        log.info("event=adzuna_sync_completed outcome={} attempted_batches={} imported={} rejected={} failed_items={} failed_batches={} latency_ms={}", outcome, attemptedBatches, imported, rejected, failedItems, failedBatches, elapsed);
-        return new SyncResult(imported, rejected, failedBatches, failedItems, outcome);
+        log.info("event=adzuna_sync_completed outcome={} attempted_batches={} inserted={} updated={} unchanged={} rejected={} failed_items={} failed_batches={} latency_ms={}", outcome, attemptedBatches, inserted, updated, unchanged, rejected, failedItems, failedBatches, elapsed);
+        return new SyncResult(inserted, updated, unchanged, rejected, failedBatches, failedItems, outcome);
     }
     private BatchResult fetchKeyword(String keyword, int page) {
         if (!circuit.allowRequest()) throw new AdzunaCircuitOpenException();
         java.util.List<ExternalJob> response = fetchWithRetry(keyword, page);
-        int imported = 0, rejected = 0, failed = 0;
+        int inserted = 0, updated = 0, unchanged = 0, rejected = 0, failed = 0;
         LocalDateTime now = LocalDateTime.now(clock);
         for (ExternalJob source : response) {
             if (source.externalId() == null || source.title() == null) { rejected++; continue; }
             JobDocument mapped = new JobDocument(); mapped.setSource(this.source.sourceName()); mapped.setExternalId(source.externalId());
             mapped.setTitle(source.title()); mapped.setDescription(source.description()); mapped.setCompany(source.company()); mapped.setLocation(source.location()); mapped.setEmploymentType(source.employmentType()); mapped.setSalaryMin(source.salaryMin()); mapped.setSalaryMax(source.salaryMax()); mapped.setSalary(source.salaryMin() == null ? 0 : source.salaryMin()); mapped.setApplicationUrl(source.applicationUrl()); mapped.setSourceUrl(source.applicationUrl()); mapped.setPublishedAt(source.publishedAt()); mapped.setExpiresAt(source.expiresAt()); mapped.setFingerprint(source.fingerprint());
-            try { jobs.upsert(mapped, now); imported++; }
+            try { switch (jobs.upsert(mapped, now)) { case INSERTED -> inserted++; case UPDATED -> updated++; case UNCHANGED -> unchanged++; } }
             catch (AdzunaPersistenceException ex) { failed++; log.warn("event=adzuna_item_store_failed provider=adzuna error={}", ex.getMessage()); }
         }
         circuit.recordSuccess();
-        return new BatchResult(imported, rejected, failed);
+        return new BatchResult(inserted, updated, unchanged, rejected, failed);
     }
     private java.util.List<ExternalJob> fetchWithRetry(String keyword, int page) {
         AdzunaProviderException last = null;
@@ -104,9 +104,9 @@ public class AdzunaService {
         throw last;
     }
     private long backoff(int attempt) { long base = properties.initialBackoffMs() * (1L << (attempt - 1)); return base + jitter.applyAsLong(Math.max(1, base / 2)); }
-    record BatchResult(int imported, int rejected, int failed) { }
+    record BatchResult(int inserted, int updated, int unchanged, int rejected, int failed) { }
     public enum Outcome { FULL_SUCCESS, PARTIAL_FAILURE, COMPLETE_FAILURE, OVERLAP_REJECTED }
-    public record SyncResult(int imported, int rejected, int failedBatches, int failedItems, Outcome outcome) {
+    public record SyncResult(int inserted, int updated, int unchanged, int rejected, int failedBatches, int failedItems, Outcome outcome) {
         public boolean skipped() { return outcome == Outcome.OVERLAP_REJECTED; }
     }
     @FunctionalInterface interface Sleeper { void sleep(long millis) throws InterruptedException; }

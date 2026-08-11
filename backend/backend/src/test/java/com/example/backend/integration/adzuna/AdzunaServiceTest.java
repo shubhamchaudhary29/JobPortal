@@ -14,10 +14,11 @@ class AdzunaServiceTest {
         AdzunaClient client = mock(AdzunaClient.class); AdzunaJobStore store = mock(AdzunaJobStore.class);
         when(client.fetchPage(anyString(), anyInt())).thenThrow(new AdzunaProviderException("timeout", true, null))
                 .thenThrow(new AdzunaProviderException("timeout", true, null)).thenReturn(response("one"));
+        when(store.upsert(any(), any())).thenReturn(UpsertOutcome.INSERTED);
         AtomicInteger sleeps = new AtomicInteger();
         AdzunaService service = service(client, store, 3, "java", sleeps);
         AdzunaService.SyncResult result = service.sync();
-        assertEquals(1, result.imported()); assertEquals(2, sleeps.get()); verify(client, times(3)).fetchPage("java", 1); verify(store).upsert(any(), any());
+        assertEquals(1, result.inserted()); assertEquals(2, sleeps.get()); verify(client, times(3)).fetchPage("java", 1); verify(store).upsert(any(), any());
     }
     @Test
     void doesNotRetryAuthenticationOrInvalidProviderRequest() {
@@ -31,13 +32,15 @@ class AdzunaServiceTest {
         AdzunaClient client = mock(AdzunaClient.class); AdzunaJobStore store = mock(AdzunaJobStore.class);
         when(client.fetchPage(eq("java"), eq(1))).thenThrow(new AdzunaProviderException("HTTP 503", false, null));
         when(client.fetchPage(eq("python"), eq(1))).thenReturn(new AdzunaResponse(List.of(valid("good"), new AdzunaResponse.AdzunaJob("", "bad", "x", null, null, null, null))));
+        when(store.upsert(any(), any())).thenReturn(UpsertOutcome.INSERTED);
         AdzunaService.SyncResult result = service(client, store, 1, "java,python", new AtomicInteger()).sync();
-        assertEquals(1, result.failedBatches()); assertEquals(1, result.imported()); assertEquals(1, result.rejected()); verify(store, times(1)).upsert(any(), any());
+        assertEquals(1, result.failedBatches()); assertEquals(1, result.inserted()); assertEquals(1, result.rejected()); verify(store, times(1)).upsert(any(), any());
     }
     @Test
     void skipsOverlappingRuns() {
         AdzunaClient client = mock(AdzunaClient.class); AdzunaJobStore store = mock(AdzunaJobStore.class); AtomicReference<AdzunaService.SyncResult> nested = new AtomicReference<>();
         AdzunaService service = service(client, store, 1, "java", new AtomicInteger());
+        when(store.upsert(any(), any())).thenReturn(UpsertOutcome.INSERTED);
         when(client.fetchPage(anyString(), anyInt())).thenAnswer(invocation -> { nested.set(service.sync()); return response("one"); });
         assertFalse(service.sync().skipped()); assertTrue(nested.get().skipped()); verify(client, times(1)).fetchPage("java", 1);
     }

@@ -14,7 +14,7 @@ import java.time.LocalDateTime;
 public class AdzunaJobStore {
     private final MongoTemplate mongo;
     public AdzunaJobStore(MongoTemplate mongo) { this.mongo = mongo; }
-    public void upsert(JobDocument job, LocalDateTime now) {
+    public UpsertOutcome upsert(JobDocument job, LocalDateTime now) {
         Query query = Query.query(Criteria.where("source").is(job.getSource()).and("externalId").is(job.getExternalId()));
         Update update = new Update().set("title", job.getTitle()).set("description", job.getDescription())
                 .set("sourceUrl", job.getSourceUrl()).set("company", job.getCompany()).set("location", job.getLocation())
@@ -24,10 +24,21 @@ public class AdzunaJobStore {
                 .set("expiresAt", job.getExpiresAt()).set("active", true).set("fingerprint", job.getFingerprint())
                 .setOnInsert("firstSeenAt", now).setOnInsert("source", job.getSource()).setOnInsert("externalId", job.getExternalId())
                 .setOnInsert("recruiterId", null).setOnInsert("createdAt", now);
-        try { mongo.findAndModify(query, update, FindAndModifyOptions.options().upsert(true), JobDocument.class); }
+        try { return outcome(mongo.findAndModify(query, update, FindAndModifyOptions.options().upsert(true), JobDocument.class), job); }
         catch (DuplicateKeyException race) {
-            try { mongo.findAndModify(query, update, FindAndModifyOptions.options().upsert(true), JobDocument.class); }
+            try { return outcome(mongo.findAndModify(query, update, FindAndModifyOptions.options().upsert(true), JobDocument.class), job); }
             catch (RuntimeException failure) { throw new AdzunaPersistenceException(failure); }
         } catch (RuntimeException failure) { throw new AdzunaPersistenceException(failure); }
+    }
+    private UpsertOutcome outcome(JobDocument previous, JobDocument incoming) {
+        if (previous == null) return UpsertOutcome.INSERTED;
+        return same(previous, incoming) ? UpsertOutcome.UNCHANGED : UpsertOutcome.UPDATED;
+    }
+    private boolean same(JobDocument a, JobDocument b) {
+        return java.util.Objects.equals(a.getTitle(), b.getTitle()) && java.util.Objects.equals(a.getDescription(), b.getDescription())
+                && java.util.Objects.equals(a.getCompany(), b.getCompany()) && java.util.Objects.equals(a.getLocation(), b.getLocation())
+                && java.util.Objects.equals(a.getApplicationUrl(), b.getApplicationUrl()) && java.util.Objects.equals(a.getFingerprint(), b.getFingerprint())
+                && java.util.Objects.equals(a.getSalaryMin(), b.getSalaryMin()) && java.util.Objects.equals(a.getSalaryMax(), b.getSalaryMax())
+                && java.util.Objects.equals(a.getEmploymentType(), b.getEmploymentType());
     }
 }
