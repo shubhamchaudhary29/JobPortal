@@ -8,6 +8,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.annotation.Qualifier;
 import java.time.Clock;
 import java.time.LocalDateTime;
 import java.util.concurrent.ThreadLocalRandom;
@@ -27,7 +28,7 @@ public class AdzunaService {
     private final LongUnaryOperator jitter;
     private final AtomicBoolean running = new AtomicBoolean();
     @Autowired
-    public AdzunaService(JobSource source, AdzunaJobStore jobs, AdzunaProperties properties,
+    public AdzunaService(@Qualifier("adzunaJobSource") JobSource source, AdzunaJobStore jobs, AdzunaProperties properties,
                          AdzunaCircuitBreaker circuit, AdzunaSyncMetrics metrics) {
         this(source, jobs, properties, circuit, metrics, Clock.systemUTC(), Thread::sleep,
                 bound -> ThreadLocalRandom.current().nextLong(Math.max(1, bound)));

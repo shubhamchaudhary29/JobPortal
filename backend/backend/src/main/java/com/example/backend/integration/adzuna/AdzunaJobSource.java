@@ -6,7 +6,7 @@ import com.example.backend.integration.jobs.JobSource;
 import java.util.List;
 import org.springframework.stereotype.Component;
 
-@Component
+@Component("adzunaJobSource")
 public class AdzunaJobSource implements JobSource {
     private final AdzunaClient client;
     public AdzunaJobSource(AdzunaClient client) { this.client = client; }

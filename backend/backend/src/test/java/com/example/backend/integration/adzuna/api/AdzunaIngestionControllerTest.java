@@ -1,33 +1,51 @@
 package com.example.backend.integration.adzuna.api;
 
-import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertThrows;
-import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
-import com.example.backend.shared.error.ForbiddenException;
 import com.example.backend.integration.adzuna.AdzunaService;
-import java.util.List;
+import com.example.backend.shared.security.JwtUtil;
 import org.junit.jupiter.api.Test;
-import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
-import org.springframework.security.core.authority.SimpleGrantedAuthority;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
+import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.http.HttpHeaders;
+import org.springframework.test.context.bean.override.mockito.MockitoBean;
+import org.springframework.test.web.servlet.MockMvc;
 
+@SpringBootTest
+@AutoConfigureMockMvc
 class AdzunaIngestionControllerTest {
-    @Test
-    void recruiterCanTriggerManualSync() {
-        AdzunaService service = mock(AdzunaService.class);
-        AdzunaService.SyncResult result = new AdzunaService.SyncResult(1, 0, 0, 0, 0, 0, AdzunaService.Outcome.FULL_SUCCESS);
-        when(service.sync()).thenReturn(result);
-        var authentication = new UsernamePasswordAuthenticationToken("recruiter@example.com", null,
-                List.of(new SimpleGrantedAuthority("ROLE_RECRUITER")));
+    @Autowired MockMvc mvc;
+    @Autowired JwtUtil jwt;
+    @MockitoBean AdzunaService ingestion;
 
-        assertEquals(result, new AdzunaIngestionController(service).sync(authentication).getBody());
+    @Test
+    void unauthenticatedRequestIsRejectedByTheSecurityFilterChain() throws Exception {
+        mvc.perform(post("/api/v1/jobs/ingestion/adzuna")).andExpect(status().isUnauthorized());
     }
 
     @Test
-    void nonRecruiterCannotTriggerManualSync() {
-        var authentication = new UsernamePasswordAuthenticationToken("user@example.com", null,
-                List.of(new SimpleGrantedAuthority("ROLE_USER")));
-        assertThrows(ForbiddenException.class, () -> new AdzunaIngestionController(mock(AdzunaService.class)).sync(authentication));
+    void authenticatedUserIsForbiddenByTheRealSecurityChain() throws Exception {
+        mvc.perform(post("/api/v1/jobs/ingestion/adzuna").header(HttpHeaders.AUTHORIZATION, bearer("USER")))
+                .andExpect(status().isForbidden());
     }
+
+    @Test
+    void recruiterJwtTriggersManualSyncAndReturnsItsHttpResponse() throws Exception {
+        when(ingestion.sync()).thenReturn(new AdzunaService.SyncResult(2, 1, 3, 4, 0, 0,
+                AdzunaService.Outcome.FULL_SUCCESS));
+
+        mvc.perform(post("/api/v1/jobs/ingestion/adzuna").header(HttpHeaders.AUTHORIZATION, bearer("RECRUITER")))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.inserted").value(2))
+                .andExpect(jsonPath("$.updated").value(1)).andExpect(jsonPath("$.unchanged").value(3))
+                .andExpect(jsonPath("$.outcome").value("FULL_SUCCESS"));
+
+        verify(ingestion).sync();
+    }
+
+    private String bearer(String role) { return "Bearer " + jwt.generateToken("actor@example.com", role); }
 }
