@@ -1,6 +1,9 @@
 package com.example.backend.integration.adzuna;
 
 import com.example.backend.job.infrastructure.JobDocument;
+import com.example.backend.integration.jobs.ExternalJob;
+import com.example.backend.integration.jobs.JobFetchRequest;
+import com.example.backend.integration.jobs.JobSource;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
@@ -74,23 +77,23 @@ public class AdzunaService {
     }
     private BatchResult fetchKeyword(String keyword, int page) {
         if (!circuit.allowRequest()) throw new AdzunaCircuitOpenException();
-        AdzunaResponse response = fetchWithRetry(keyword, page);
+        java.util.List<ExternalJob> response = fetchWithRetry(keyword, page);
         int imported = 0, rejected = 0, failed = 0;
         LocalDateTime now = LocalDateTime.now(clock);
-        if (response.results() == null) throw new AdzunaProviderException("Adzuna response is missing results", false, null);
-        for (AdzunaResponse.AdzunaJob source : response.results()) {
-            var mapped = AdzunaJobMapper.toDocument(source, now);
-            if (mapped.isEmpty()) { rejected++; continue; }
-            try { jobs.upsert(mapped.get(), now); imported++; }
+        for (ExternalJob source : response) {
+            if (source.externalId() == null || source.title() == null) { rejected++; continue; }
+            JobDocument mapped = new JobDocument(); mapped.setSource(this.source.sourceName()); mapped.setExternalId(source.externalId());
+            mapped.setTitle(source.title()); mapped.setDescription(source.description()); mapped.setCompany(source.company()); mapped.setLocation(source.location()); mapped.setEmploymentType(source.employmentType()); mapped.setSalaryMin(source.salaryMin()); mapped.setSalaryMax(source.salaryMax()); mapped.setSalary(source.salaryMin() == null ? 0 : source.salaryMin()); mapped.setApplicationUrl(source.applicationUrl()); mapped.setSourceUrl(source.applicationUrl()); mapped.setPublishedAt(source.publishedAt()); mapped.setExpiresAt(source.expiresAt()); mapped.setFingerprint(source.fingerprint());
+            try { jobs.upsert(mapped, now); imported++; }
             catch (AdzunaPersistenceException ex) { failed++; log.warn("event=adzuna_item_store_failed provider=adzuna error={}", ex.getMessage()); }
         }
         circuit.recordSuccess();
         return new BatchResult(imported, rejected, failed);
     }
-    private AdzunaResponse fetchWithRetry(String keyword, int page) {
+    private java.util.List<ExternalJob> fetchWithRetry(String keyword, int page) {
         AdzunaProviderException last = null;
         for (int attempt = 1; attempt <= properties.maxAttempts(); attempt++) {
-            try { return source.fetch(keyword, page); }
+            try { return source.fetch(new JobFetchRequest(keyword, page)); }
             catch (AdzunaProviderException ex) {
                 last = ex;
                 if (!ex.retryable() || attempt == properties.maxAttempts()) throw ex;
