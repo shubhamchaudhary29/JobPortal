@@ -3,7 +3,6 @@ package com.example.backend.integration.adzuna;
 import com.example.backend.job.infrastructure.JobDocument;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
 import org.springframework.beans.factory.annotation.Autowired;
 import java.time.Clock;
@@ -36,8 +35,6 @@ public class AdzunaService {
         this.metrics = metrics; this.clock = clock; this.sleeper = sleeper; this.jitter = jitter;
     }
 
-    @Scheduled(cron = "${adzuna.schedule.cron:0 0 */6 * * *}")
-    public void fetchAndSaveJobs() { sync(); }
     public SyncResult sync() {
         if (!running.compareAndSet(false, true)) {
             log.warn("event=adzuna_sync_skipped reason=already_running");

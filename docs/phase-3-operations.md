@@ -2,7 +2,7 @@
 
 ## Runtime behavior
 
-The public `GET /api/v1/jobs` API reads only from MongoDB. It never waits for a live Adzuna request. The importer runs on `ADZUNA_SCHEDULE_CRON` (default: every six hours) and is guarded in-process so an overlapping scheduled invocation is skipped.
+The public `GET /api/v1/jobs` API reads only from MongoDB. It never waits for a live Adzuna request. Trigger an import explicitly with `POST /api/v1/jobs/ingestion/adzuna` using a recruiter JWT; there is no periodic scheduler.
 
 `ADZUNA_APP_ID` and `ADZUNA_APP_KEY` are required server environment variables. They are only used to create the outbound Adzuna request and are never logged or returned in errors. Do not place either value in source code, frontend configuration, screenshots, or issue comments.
 
@@ -15,7 +15,7 @@ Configuration defaults (all can be overridden through the matching environment v
 
 Network failures, 429s, and 5xx responses receive bounded exponential backoff with jitter. 4xx authentication/validation responses and malformed provider payloads are not retried. Repeated failed batches open a small in-process circuit; after its open interval one successful probe closes it. Completion logs contain sanitized event names, counts, and latency only; the lightweight counters report cumulative successful runs, failed batches, and total latency.
 
-Every provider record is validated and atomically upserted using `(source, externalId)`. Imported jobs carry `source`, `externalId`, `fetchedAt`, and `lastSeenAt`. A failed or partial sync does not delete or alter previously imported jobs. The current stale-data policy is **retain and label by `lastSeenAt`**: operators should query/report jobs not seen within their business freshness window before any separately approved cleanup. There is intentionally no unauthenticated (or newly introduced) manual-sync endpoint.
+Every provider record is validated and atomically upserted using `(source, externalId)`. Imported jobs carry `source`, `externalId`, `fetchedAt`, and `lastSeenAt`. A failed or partial sync does not delete or alter previously imported jobs. The current stale-data policy is **retain and label by `lastSeenAt`**: operators should query/report jobs not seen within their business freshness window before any separately approved cleanup. The manual sync endpoint is authenticated and recruiter-only.
 
 ## Indexes and query rationale
 
