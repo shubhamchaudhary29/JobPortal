@@ -15,8 +15,9 @@ public class AdzunaJobStore {
     private final MongoTemplate mongo;
     public AdzunaJobStore(MongoTemplate mongo) { this.mongo = mongo; }
     public UpsertOutcome upsert(JobDocument job, LocalDateTime now) {
+        String identity = job.getSource() + ":" + job.getExternalId();
         if (job.getFingerprint() != null && mongo.exists(Query.query(Criteria.where("fingerprint").is(job.getFingerprint()).and("source").ne(job.getSource())), JobDocument.class)) {
-            mongo.updateMulti(Query.query(Criteria.where("fingerprint").is(job.getFingerprint())), new Update().set("lastSeenAt", now).set("active", true), JobDocument.class);
+            mongo.updateMulti(Query.query(Criteria.where("fingerprint").is(job.getFingerprint())), new Update().set("lastSeenAt", now).set("active", true).addToSet("sourceIdentities", identity), JobDocument.class);
             return UpsertOutcome.UNCHANGED;
         }
         Query query = Query.query(Criteria.where("source").is(job.getSource()).and("externalId").is(job.getExternalId()));
@@ -27,7 +28,7 @@ public class AdzunaJobStore {
                 .set("salaryMax", job.getSalaryMax()).set("applicationUrl", job.getApplicationUrl()).set("publishedAt", job.getPublishedAt())
                 .set("expiresAt", job.getExpiresAt()).set("active", true).set("fingerprint", job.getFingerprint())
                 .setOnInsert("firstSeenAt", now).setOnInsert("source", job.getSource()).setOnInsert("externalId", job.getExternalId())
-                .setOnInsert("recruiterId", null).setOnInsert("createdAt", now);
+                .setOnInsert("recruiterId", null).setOnInsert("createdAt", now).addToSet("sourceIdentities", identity);
         try { return outcome(mongo.findAndModify(query, update, FindAndModifyOptions.options().upsert(true), JobDocument.class), job); }
         catch (DuplicateKeyException race) {
             try { return outcome(mongo.findAndModify(query, update, FindAndModifyOptions.options().upsert(true), JobDocument.class), job); }

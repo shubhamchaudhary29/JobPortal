@@ -4,11 +4,9 @@ import org.springframework.boot.SpringApplication;
 import org.springframework.boot.autoconfigure.SpringBootApplication;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
 import com.example.backend.integration.aggregation.EmployerRegistryProperties;
-import org.springframework.scheduling.annotation.EnableScheduling;
 
 @SpringBootApplication
 @EnableConfigurationProperties(EmployerRegistryProperties.class)
-@EnableScheduling
 public class BackendApplication {
 
 	public static void main(String[] args) {

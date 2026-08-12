@@ -5,6 +5,8 @@ import org.springframework.data.annotation.Id;
 import org.springframework.data.mongodb.core.mapping.Document;
 
 import java.time.LocalDateTime;
+import java.util.LinkedHashSet;
+import java.util.Set;
 
 @Data
 @Document(collection = "jobs")
@@ -39,5 +41,6 @@ public class JobDocument {
     /** Null is deliberately treated as active for pre-Phase-1 documents. */
     private Boolean active = true;
     private String fingerprint;
+    private Set<String> sourceIdentities = new LinkedHashSet<>();
 
 }
