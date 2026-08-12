@@ -15,7 +15,10 @@ public class AdzunaJobStore {
     private final MongoTemplate mongo;
     public AdzunaJobStore(MongoTemplate mongo) { this.mongo = mongo; }
     public UpsertOutcome upsert(JobDocument job, LocalDateTime now) {
-        if (job.getFingerprint() != null && mongo.exists(Query.query(Criteria.where("fingerprint").is(job.getFingerprint()).and("source").ne(job.getSource())), JobDocument.class)) return UpsertOutcome.UNCHANGED;
+        if (job.getFingerprint() != null && mongo.exists(Query.query(Criteria.where("fingerprint").is(job.getFingerprint()).and("source").ne(job.getSource())), JobDocument.class)) {
+            mongo.updateMulti(Query.query(Criteria.where("fingerprint").is(job.getFingerprint())), new Update().set("lastSeenAt", now).set("active", true), JobDocument.class);
+            return UpsertOutcome.UNCHANGED;
+        }
         Query query = Query.query(Criteria.where("source").is(job.getSource()).and("externalId").is(job.getExternalId()));
         Update update = new Update().set("title", job.getTitle()).set("description", job.getDescription())
                 .set("sourceUrl", job.getSourceUrl()).set("company", job.getCompany()).set("location", job.getLocation())
