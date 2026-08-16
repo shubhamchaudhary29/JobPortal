@@ -59,7 +59,7 @@ mongosh "$MONGODB_URI" backend/backend/scripts/backfill-source-listings.js
 Apply only after reviewing the reported candidates and ambiguous records:
 
 ```bash
-mongosh "$MONGODB_URI" backend/backend/scripts/backfill-source-listings.js --apply
+BACKFILL_APPLY=true mongosh "$MONGODB_URI" backend/backend/scripts/backfill-source-listings.js
 ```
 
 The script is idempotent and does not delete, merge, or guess ambiguous documents. Back up the `jobs` collection before applying; rollback consists of restoring that backup or manually removing only the reviewed additive `sourceListings` fields. Recruiter-created jobs are excluded.

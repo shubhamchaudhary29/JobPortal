@@ -55,7 +55,7 @@ public class AdzunaJobStore {
             return result;
         }
         catch (DuplicateKeyException race) {
-            try { UpsertOutcome result=outcome(mongo.findAndModify(query, update, FindAndModifyOptions.options().upsert(true), JobDocument.class), job); refreshListing(query, identity, listing); return result; }
+            try { JobDocument winner=mongo.findOne(query, JobDocument.class); if(winner!=null) listing.setFirstSeenAt(existingListingFirstSeen(winner, null, identity, now)); UpsertOutcome result=outcome(mongo.findAndModify(query, update, FindAndModifyOptions.options().upsert(true), JobDocument.class), job); refreshListing(query, identity, listing); return result; }
             catch (RuntimeException failure) { throw new AdzunaPersistenceException(failure); }
         } catch (RuntimeException failure) { throw new AdzunaPersistenceException(failure); }
     }

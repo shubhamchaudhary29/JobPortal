@@ -1,4 +1,4 @@
-// Usage: mongosh "$MONGODB_URI" backend/backend/scripts/backfill-source-listings.js [--apply]
+// Usage: BACKFILL_APPLY=true mongosh "$MONGODB_URI" backend/backend/scripts/backfill-source-listings.js
 // Default is dry-run. It never deletes, merges, or guesses ambiguous records.
 // mongosh does not pass arbitrary trailing arguments to scripts; use a portable env flag.
 const apply = typeof process !== 'undefined' && process.env.BACKFILL_APPLY === 'true';
