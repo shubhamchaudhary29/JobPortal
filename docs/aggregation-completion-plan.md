@@ -20,7 +20,7 @@ The following behavior is frozen: preserve it and avoid unrelated rewrites. Mini
 
 The remaining scope is per-source lifecycle and safe migration; deterministic canonical selection and conflict reconciliation; durable sync history and employer-specific operations; provider reliability and observability; an ADMIN frontend; registry evidence; CI, Docker, and final operational documentation.
 
-- [ ] **M1A — Additive source-listing schema and safe backfill foundation**
+- [x] **M1A — Additive source-listing schema and safe backfill foundation**
 
   - Required behavior: add an additive per-listing model for identity, application URL, first/last seen, active state, and missing-run count; leave legacy documents readable; supply a non-destructive backfill/audit command.
   - Expected files/components: `backend/backend/src/main/java/.../job/infrastructure/JobDocument.java`, aggregation persistence, Mongo index initializer, `backend/backend/scripts/`, operations documentation.
@@ -28,6 +28,7 @@ The remaining scope is per-source lifecycle and safe migration; deterministic ca
   - Verification commands: `cd backend/backend && ./mvnw -Dtest='*LifecycleSchema*,*JobStoreMongoIntegrationTest' test`; `mongosh "$MONGODB_URI" backend/backend/scripts/audit-mongo-indexes.js`.
   - Dependencies: frozen imported identity/index foundations.
   - Done when: additive fields persist/read safely, no document is deleted or ambiguously rewritten, backfill is repeatable, and focused Mongo tests pass.
+  - Evidence (2026-08-16): `./mvnw -q -Dtest='*LifecycleSchema*,*JobStoreMongoIntegrationTest' test` passed (real Mongo job-store suite, including additive listing replay and recruiter isolation); `./mvnw -q test` passed (complete backend suite); `git diff --check` passed. The backfill script was reviewed in dry-run/apply form; it excludes recruiter jobs and reports ambiguous records without mutation.
 
 - [ ] **M1B — Deterministic canonical selection and atomic multi-source upsert**
 

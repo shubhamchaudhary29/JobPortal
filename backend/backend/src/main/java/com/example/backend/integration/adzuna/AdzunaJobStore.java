@@ -9,6 +9,7 @@ import org.springframework.data.mongodb.core.query.Query;
 import org.springframework.data.mongodb.core.query.Update;
 import org.springframework.stereotype.Repository;
 import java.time.LocalDateTime;
+import com.example.backend.job.infrastructure.ImportedSourceListing;
 
 @Repository
 public class AdzunaJobStore {
@@ -45,7 +46,17 @@ public class AdzunaJobStore {
                 .setOnInsert("firstSeenAt", now).setOnInsert("source", job.getSource()).setOnInsert("externalId", job.getExternalId())
                 .setOnInsert("recruiterId", null).setOnInsert("createdAt", now).addToSet("sourceIdentities", identity);
         if (job.getApplicationUrl() != null) update.addToSet("applicationUrls", job.getApplicationUrl());
-        try { return outcome(mongo.findAndModify(query, update, FindAndModifyOptions.options().upsert(true), JobDocument.class), job); }
+        ImportedSourceListing listing = new ImportedSourceListing();
+        listing.setIdentity(identity); listing.setProvider(job.getSource()); listing.setExternalId(job.getExternalId());
+        listing.setApplicationUrl(job.getApplicationUrl()); listing.setFirstSeenAt(now); listing.setLastSeenAt(now); listing.setActive(true);
+        try {
+            UpsertOutcome result = outcome(mongo.findAndModify(query, update, FindAndModifyOptions.options().upsert(true), JobDocument.class), job);
+            // Mongo forbids $pull/$push on one array in the same update. Both operations
+            // are identity-scoped, so no unrelated provider listing is removed.
+            mongo.updateFirst(query, new Update().pull("sourceListings", Query.query(Criteria.where("identity").is(identity))), JobDocument.class);
+            mongo.updateFirst(query, new Update().addToSet("sourceListings", listing), JobDocument.class);
+            return result;
+        }
         catch (DuplicateKeyException race) {
             try { return outcome(mongo.findAndModify(query, update, FindAndModifyOptions.options().upsert(true), JobDocument.class), job); }
             catch (RuntimeException failure) { throw new AdzunaPersistenceException(failure); }

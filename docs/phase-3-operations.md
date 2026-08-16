@@ -48,6 +48,22 @@ Backend unit/contract tests do not call Adzuna: `cd backend/backend && ./mvnw te
 For Compose, create a local ignored `.env` with placeholders for `MONGODB_URI`, `JWT_SECRET`, `ADZUNA_APP_ID`, `ADZUNA_APP_KEY`, and `CORS_ALLOWED_ORIGINS`, then run `docker compose config` followed by `docker compose build`. Do not commit `.env` files. Docker image creation exercises the wrapper build inside the backend image; a live Adzuna sync still requires valid provider credentials and is not part of automated verification.
 ## Employer ingestion operations
 
+### Source-listing backfill (M1A)
+
+Imported jobs now retain additive `sourceListings` entries. Before lifecycle work is enabled, inspect legacy data without mutation:
+
+```bash
+mongosh "$MONGODB_URI" backend/backend/scripts/backfill-source-listings.js
+```
+
+Apply only after reviewing the reported candidates and ambiguous records:
+
+```bash
+mongosh "$MONGODB_URI" backend/backend/scripts/backfill-source-listings.js --apply
+```
+
+The script is idempotent and does not delete, merge, or guess ambiguous documents. Back up the `jobs` collection before applying; rollback consists of restoring that backup or manually removing only the reviewed additive `sourceListings` fields. Recruiter-created jobs are excluded.
+
 Public job search reads MongoDB only; it never invokes Greenhouse, Lever, or Adzuna.
 Greenhouse and Lever are independently scheduled every six hours by default and can be globally disabled with `JOB_AGGREGATION_SCHEDULING_ENABLED=false` (the test profile does this).
 

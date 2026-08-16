@@ -44,6 +44,7 @@ public class JobDocument {
     private Set<String> sourceIdentities = new LinkedHashSet<>();
     /** Every original provider deep link associated with the canonical job. */
     private Set<String> applicationUrls = new LinkedHashSet<>();
+    private java.util.List<ImportedSourceListing> sourceListings = new java.util.ArrayList<>();
     private LocalDateTime lastSuccessfulSyncAt;
     private int consecutiveMissingRuns;
     private String inactiveReason;

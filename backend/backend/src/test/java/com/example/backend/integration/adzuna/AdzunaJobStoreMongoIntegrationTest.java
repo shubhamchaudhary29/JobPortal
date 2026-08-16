@@ -51,6 +51,23 @@ class AdzunaJobStoreMongoIntegrationTest {
     }
 
     @Test
+    void persistsOneAdditiveListingPerIdentityAndLeavesRecruiterJobsUntouched() {
+        LocalDateTime first = LocalDateTime.of(2026, 2, 1, 0, 0);
+        JobDocument imported = job("listing", "one");
+        store.upsert(imported, first);
+        store.upsert(job("listing", "two"), first.plusMinutes(1));
+        JobDocument persisted = mongo.findAll(JobDocument.class).get(0);
+        assertEquals(1, persisted.getSourceListings().size());
+        assertEquals("adzuna:listing", persisted.getSourceListings().get(0).getIdentity());
+        assertEquals(first.plusMinutes(1), persisted.getSourceListings().get(0).getLastSeenAt());
+
+        JobDocument manual = job("manual", "manual"); manual.setRecruiterId("recruiter"); manual.setSource("manual");
+        mongo.save(manual);
+        assertTrue(mongo.findAll(JobDocument.class).stream().filter(j -> "manual".equals(j.getSource()))
+                .allMatch(j -> j.getSourceListings().isEmpty()));
+    }
+
+    @Test
     void applicationOwnsTheNamedUniqueIndexAndImportedJobsDoNotAlterRecruiterJobs() {
         assertTrue(mongo.indexOps(JobDocument.class).getIndexInfo().stream()
                 .anyMatch(index -> "source_external_id_unique".equals(index.getName()) && index.isUnique()));
