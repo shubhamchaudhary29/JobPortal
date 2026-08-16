@@ -55,7 +55,18 @@ public class AdzunaJobStore {
             return result;
         }
         catch (DuplicateKeyException race) {
-            try { JobDocument winner=mongo.findOne(query, JobDocument.class); if(winner!=null) listing.setFirstSeenAt(existingListingFirstSeen(winner, null, identity, now)); UpsertOutcome result=outcome(mongo.findAndModify(query, update, FindAndModifyOptions.options().upsert(true), JobDocument.class), job); refreshListing(query, identity, listing); return result; }
+            try {
+                JobDocument winner = mongo.findOne(query, JobDocument.class);
+                if (winner == null || winner.getId() == null) {
+                    throw new IllegalStateException("Duplicate-key winner could not be resolved");
+                }
+                Query winnerQuery = Query.query(Criteria.where("_id").is(winner.getId()));
+                listing.setFirstSeenAt(existingListingFirstSeen(winner, null, identity, now));
+                UpsertOutcome result = outcome(mongo.findAndModify(winnerQuery, update,
+                        FindAndModifyOptions.options().upsert(false), JobDocument.class), job);
+                refreshListing(winnerQuery, identity, listing);
+                return result;
+            }
             catch (RuntimeException failure) { throw new AdzunaPersistenceException(failure); }
         } catch (RuntimeException failure) { throw new AdzunaPersistenceException(failure); }
     }
@@ -85,8 +96,12 @@ public class AdzunaJobStore {
     private String safe(String value) { return value == null ? "" : value.trim().replaceAll("\\s+", " "); }
     private LocalDateTime existingListingFirstSeen(JobDocument identityMatch, JobDocument fingerprintMatch, String identity, LocalDateTime fallback) {
         JobDocument match = identityMatch != null ? identityMatch : fingerprintMatch;
-        if (match != null && match.getSourceListings() != null) for (ImportedSourceListing listing : match.getSourceListings())
-            if (identity.equals(listing.getIdentity()) && listing.getFirstSeenAt() != null) return listing.getFirstSeenAt();
-        return fallback;
+        if (match == null || match.getSourceListings() == null) return fallback;
+        return match.getSourceListings().stream()
+                .filter(listing -> identity.equals(listing.getIdentity()))
+                .map(ImportedSourceListing::getFirstSeenAt)
+                .filter(java.util.Objects::nonNull)
+                .min(LocalDateTime::compareTo)
+                .orElse(fallback);
     }
 }
