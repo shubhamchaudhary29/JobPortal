@@ -20,14 +20,59 @@ The following behavior is frozen: preserve it and avoid unrelated rewrites. Mini
 
 The remaining scope is per-source lifecycle and safe migration; deterministic canonical selection and conflict reconciliation; durable sync history and employer-specific operations; provider reliability and observability; an ADMIN frontend; registry evidence; CI, Docker, and final operational documentation.
 
-- [ ] **M1 — Lifecycle, canonical selection, conflicts, and migration**
+- [ ] **M1A — Additive source-listing schema and safe backfill foundation**
 
-  - Required behavior: persist source-listing state (identity, URL, first/last seen, active/missing count); deactivate imported canonical jobs only when all listings are inactive; reactivate on rediscovery; protect recruiter and application-referenced jobs; select canonical source/link deterministically independent of provider order; persist identity/fingerprint conflicts; provide idempotent, reference-safe reconciliation and documented backfill.
-  - Expected files/components: `JobDocument`, imported-job store, aggregation service, lifecycle/cleanup service and scheduler, conflict document/repository/service, migration/audit scripts, operations documentation.
-  - Tests required: real Mongo tests for misses, partial/failed runs, multisource survival, reactivation, retention, recruiter/reference protection, opposite provider order, concurrent inserts/races, conflicts, reconciliation, and preserved application references.
-  - Verification commands: `cd backend/backend && ./mvnw -Dtest='*Lifecycle*,*JobStoreMongoIntegrationTest,*Conflict*' test`; `mongosh "$MONGODB_URI" backend/backend/scripts/audit-mongo-indexes.js`.
+  - Required behavior: add an additive per-listing model for identity, application URL, first/last seen, active state, and missing-run count; leave legacy documents readable; supply a non-destructive backfill/audit command.
+  - Expected files/components: `backend/backend/src/main/java/.../job/infrastructure/JobDocument.java`, aggregation persistence, Mongo index initializer, `backend/backend/scripts/`, operations documentation.
+  - Tests required: real Mongo persistence/backfill tests for legacy documents, imported documents, and recruiter-job isolation.
+  - Verification commands: `cd backend/backend && ./mvnw -Dtest='*LifecycleSchema*,*JobStoreMongoIntegrationTest' test`; `mongosh "$MONGODB_URI" backend/backend/scripts/audit-mongo-indexes.js`.
   - Dependencies: frozen imported identity/index foundations.
-  - Done when: listing lifecycle is authoritative, no ambiguous document is deleted automatically, canonical links are deterministic, reconciliation is idempotent and reference-safe, and all listed Mongo tests pass.
+  - Done when: additive fields persist/read safely, no document is deleted or ambiguously rewritten, backfill is repeatable, and focused Mongo tests pass.
+
+- [ ] **M1B — Deterministic canonical selection and atomic multi-source upsert**
+
+  - Required behavior: choose primary source/external ID/application URL by a documented stable ordering and preserve all listing identities/URLs during atomic upsert.
+  - Expected files/components: imported-job store, `JobDocument`, normalizer, index/audit support, operations documentation.
+  - Tests required: real Mongo opposite-order, replay, same-source-change, cross-provider, concurrent insert, and duplicate-key race tests.
+  - Verification commands: `cd backend/backend && ./mvnw -Dtest='*Canonical*,*JobStoreMongoIntegrationTest' test`.
+  - Dependencies: M1A.
+  - Done when: order-independent primary fields and idempotent multi-source persistence are demonstrated by focused Mongo tests.
+
+- [ ] **M1C — Successful-run seen-set tracking, missing detection, deactivation and reactivation**
+
+  - Required behavior: update listing seen/missing state only after complete successful runs; deactivate only when every listing is inactive; reactivate on rediscovery.
+  - Expected files/components: aggregation service, lifecycle service, source-listing model, lifecycle configuration.
+  - Tests required: successful miss, failed/locked/lease-lost protection, empty-board policy, multisource survival, threshold deactivation, and reactivation tests.
+  - Verification commands: `cd backend/backend && ./mvnw -Dtest='*Lifecycle*,*EmployerIngestion*' test`.
+  - Dependencies: M1A–M1B.
+  - Done when: all lifecycle transitions are source-specific and every listed lifecycle test passes.
+
+- [ ] **M1D — Retention cleanup with recruiter-job and application-reference protection**
+
+  - Required behavior: run lock-coordinated cleanup of eligible inactive imported data only; never delete recruiter jobs or application-referenced jobs.
+  - Expected files/components: cleanup service/scheduler, application repository query support, configuration, operations documentation.
+  - Tests required: retention age, lock, recruiter, application-reference, and non-eligible imported-job tests.
+  - Verification commands: `cd backend/backend && ./mvnw -Dtest='*Cleanup*,*Lifecycle*' test`.
+  - Dependencies: M1C.
+  - Done when: cleanup is bounded, reference-safe, and all cleanup tests pass.
+
+- [ ] **M1E — Conflict persistence, ADMIN reconciliation API and reference-safe idempotent resolution**
+
+  - Required behavior: persist identity/fingerprint conflicts without deletion; expose ADMIN listing/resolution; make resolution idempotent and preserve all job/application references.
+  - Expected files/components: conflict document/repository/service, admin controller/DTOs, security/OpenAPI documentation.
+  - Tests required: conflict persistence, `401/403/200`, idempotent resolution, and preserved reference tests.
+  - Verification commands: `cd backend/backend && ./mvnw -Dtest='*Conflict*,*Admin*' test`.
+  - Dependencies: M1A–M1D.
+  - Done when: conflicts are durable and administratively resolvable without unsafe automatic deletion.
+
+- [ ] **M1F — Complete lifecycle/conflict migration audit and real-Mongo end-to-end verification**
+
+  - Required behavior: provide rollout evidence covering schema backfill, canonical rules, lifecycle, cleanup, and conflict reconciliation.
+  - Expected files/components: migration/audit scripts, integration fixtures/tests, operations documentation.
+  - Tests required: real Mongo end-to-end migration, lifecycle, conflict, and application-reference tests.
+  - Verification commands: `cd backend/backend && ./mvnw -Dtest='*Lifecycle*,*Conflict*,*JobStoreMongoIntegrationTest' test`; `mongosh "$MONGODB_URI" backend/backend/scripts/audit-mongo-indexes.js`.
+  - Dependencies: M1A–M1E.
+  - Done when: migration audit and all end-to-end real-Mongo tests pass with documented evidence.
 
 - [ ] **M2 — Sync history, manual operations, outcomes, and concurrency tests**
 
@@ -35,7 +80,7 @@ The remaining scope is per-source lifecycle and safe migration; deterministic ca
   - Expected files/components: sync-run document/repository/service, coordinator extensions, admin controllers/DTOs, indexes, API/OpenAPI documentation.
   - Tests required: two-instance acquisition/contention/expiry/renewal/release tests; heartbeat exception/loss/cancellation tests; ADMIN `401/403/200`, provider/employer validation, lock contention, history pagination/filter/detail/last-status tests.
   - Verification commands: `cd backend/backend && ./mvnw -Dtest='*Coordinator*,*Lease*,*SyncHistory*,*Admin*' test`.
-  - Dependencies: M1 supplies lifecycle counts and conflict visibility.
+  - Dependencies: M1A–M1F supply lifecycle counts and conflict visibility.
   - Done when: every execution has durable history, all manual paths share locks, bounded history queries work, and concurrency/security tests pass.
 
 - [ ] **M3 — Greenhouse/Lever reliability and secured observability**
@@ -53,7 +98,7 @@ The remaining scope is per-source lifecycle and safe migration; deterministic ca
   - Expected files/components: React route/navigation guard, page/components, aggregation API service, API/component tests.
   - Tests required: API and component tests for all page states/actions plus unauthenticated/forbidden handling and hidden navigation for non-admins.
   - Verification commands: `cd frontend && npm ci && npm run lint && npm test -- --run && npm run build`.
-  - Dependencies: M1 conflicts and M2 admin/history APIs.
+  - Dependencies: M1A–M1F conflicts and M2 admin/history APIs.
   - Done when: ADMIN can complete all supported operations, non-admin users cannot see/access the page, and frontend checks pass.
 
 - [ ] **M5 — Registry evidence, CI, Docker, documentation, and final audit**
@@ -62,7 +107,7 @@ The remaining scope is per-source lifecycle and safe migration; deterministic ca
   - Expected files/components: registry evidence under `docs/`, validation script, `.github/workflows/verify.yml`, README, architecture/operations docs, `.env.example`, Docker Compose.
   - Tests required: script classification coverage; workflow-equivalent backend/frontend/Mongo/Docker/smoke checks.
   - Verification commands: `cd backend/backend && ./mvnw clean verify`; `cd frontend && npm ci && npm run lint && npm test -- --run && npm run build && npm audit --omit=dev`; `cd .. && docker compose config && docker compose build && git diff --check`; run registry validation when network access permits.
-  - Dependencies: M1–M4 complete.
+  - Dependencies: M1A–M1F and M2–M4 complete.
   - Done when: evidence is dated and truthful, all repository checks and practical smoke tests pass, GitHub Actions are green, PR description is accurate, and the final acceptance audit has no unchecked requirements.
 
 ## Release checklist
