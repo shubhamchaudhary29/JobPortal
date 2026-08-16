@@ -61,8 +61,11 @@ public class EmployerIngestionService {
                 JobSource.FetchResult fetch = source.fetchWithMetadata(request);
                 if (fetch == null) fetch = new JobSource.FetchResult(source.fetch(request), 0);
                 retries += fetch.retries();
+                rejected += fetch.rejectedItems();
+                if (fetch.rejectedItems() > 0) complete = false;
                 List<ExternalJob> response = fetch.jobs();
-                if (response.isEmpty()) log.info("event=employer_board_empty employer={}", employer.company());
+                if (response.isEmpty()) log.info("event=employer_board_empty provider={} board={}",
+                        source.sourceName(), employer.boardId());
                 for (ExternalJob external : response) {
                     if (!leaseValid.getAsBoolean()) {
                         complete = false;
@@ -84,7 +87,8 @@ public class EmployerIngestionService {
                     } catch (RuntimeException itemFailure) {
                         rejected++;
                         complete = false;
-                        log.warn("event=employer_job_rejected employer={}", employer.company());
+                        log.warn("event=employer_job_rejected provider={} board={}",
+                                source.sourceName(), employer.boardId());
                     }
                 }
                 if (complete && leaseValid.getAsBoolean()) {
@@ -97,7 +101,8 @@ public class EmployerIngestionService {
                 }
             } catch (RuntimeException employerFailure) {
                 failed++;
-                log.warn("event=employer_board_failed employer={}", employer.company());
+                log.warn("event=employer_board_failed provider={} board={}",
+                        source.sourceName(), employer.boardId());
             }
         }
         return new Result(inserted, updated, unchanged, rejected, failed,

@@ -17,6 +17,8 @@ class ProviderReliabilityConfiguration {
                 .build();
         JdkClientHttpRequestFactory factory = new JdkClientHttpRequestFactory(client);
         factory.setReadTimeout(properties.readTimeoutMs());
-        return new RestTemplate(factory);
+        RestTemplate restTemplate = new RestTemplate(factory);
+        restTemplate.getInterceptors().add(new ProviderPayloadLimitInterceptor(properties.maxResponseBytes()));
+        return restTemplate;
     }
 }

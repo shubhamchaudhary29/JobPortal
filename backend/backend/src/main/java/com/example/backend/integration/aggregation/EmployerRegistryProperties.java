@@ -7,6 +7,7 @@ public record EmployerRegistryProperties(List<Employer> employers) {
  public record Employer(String company, Source source, String boardId, boolean enabled) { }
  public enum Source { GREENHOUSE, LEVER }
  private static void validate(List<Employer> employers) {
+  if(employers.size()>1000) throw new IllegalArgumentException("Job-aggregation employer registry exceeds 1000 entries");
   java.util.Set<String> boards = new java.util.HashSet<>(); java.util.Set<String> companies = new java.util.HashSet<>();
   for (Employer e: employers) {
    if(e==null||e.company()==null||e.company().isBlank()||e.source()==null||e.boardId()==null||e.boardId().isBlank()||!e.boardId().matches("[A-Za-z0-9_-]+")) throw new IllegalArgumentException("Invalid job-aggregation employer registry entry");

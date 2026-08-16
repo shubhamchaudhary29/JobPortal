@@ -61,7 +61,7 @@ class ProviderReliabilityMockServerTest {
         });
         List<Long> delays = new ArrayList<>();
         Fixture fixture = fixture(3, 2_000, 200, delays);
-        GreenhouseJobSource source = new GreenhouseJobSource(fixture.client(), fixture.retry(), fixture.properties());
+        GreenhouseJobSource source = fixture.greenhouse();
 
         var result = source.fetchWithMetadata(new JobFetchRequest(null, 1, "board", "Acme"));
 
@@ -88,7 +88,7 @@ class ProviderReliabilityMockServerTest {
         });
         List<Long> delays = new ArrayList<>();
         Fixture fixture = fixture(3, 5_000, 100, delays);
-        LeverJobSource source = new LeverJobSource(fixture.client(), fixture.retry(), fixture.properties());
+        LeverJobSource source = fixture.lever();
 
         var result = source.fetchWithMetadata(new JobFetchRequest(null, 1, "board", "Acme"));
 
@@ -117,7 +117,7 @@ class ProviderReliabilityMockServerTest {
             respond(exchange, 502, "bad gateway");
         });
         Fixture fixture = fixture(3, 1_000, 10, new ArrayList<>());
-        LeverJobSource source = new LeverJobSource(fixture.client(), fixture.retry(), fixture.properties());
+        LeverJobSource source = fixture.lever();
 
         ProviderFailureException client = assertThrows(ProviderFailureException.class,
                 () -> source.fetch(new JobFetchRequest(null, 1, "client", "Acme")));
@@ -151,7 +151,7 @@ class ProviderReliabilityMockServerTest {
             respond(exchange, 200, "{\"jobs\":[]}");
         });
         Fixture fixture = fixture(2, 1_000, 75, new ArrayList<>());
-        GreenhouseJobSource source = new GreenhouseJobSource(fixture.client(), fixture.retry(), fixture.properties());
+        GreenhouseJobSource source = fixture.greenhouse();
 
         ProviderFailureException failure = assertThrows(ProviderFailureException.class,
                 () -> source.fetch(new JobFetchRequest(null, 1, "slow", "Acme")));
@@ -199,7 +199,9 @@ class ProviderReliabilityMockServerTest {
         factory.setReadTimeout(properties.readTimeoutMs());
         ProviderHttpClient client = new ProviderHttpClient(new RestTemplate(factory), clock);
         ProviderRetryExecutor retry = new ProviderRetryExecutor(properties, delays::add, bound -> 0);
-        return new Fixture(properties, client, retry);
+        ProviderCircuitBreaker circuit = new ProviderCircuitBreaker(properties, clock);
+        ProviderRequestLimiter limiter = new ProviderRequestLimiter(properties, clock, ignored -> { });
+        return new Fixture(properties, client, retry, circuit, limiter);
     }
 
     private ProviderReliabilityProperties properties(int attempts, long maxBackoff, int readTimeout) {
@@ -216,5 +218,13 @@ class ProviderReliabilityMockServerTest {
     }
 
     private record Fixture(ProviderReliabilityProperties properties, ProviderHttpClient client,
-                           ProviderRetryExecutor retry) { }
+                           ProviderRetryExecutor retry, ProviderCircuitBreaker circuit,
+                           ProviderRequestLimiter limiter) {
+        GreenhouseJobSource greenhouse() {
+            return new GreenhouseJobSource(client, retry, properties, circuit, limiter);
+        }
+        LeverJobSource lever() {
+            return new LeverJobSource(client, retry, properties, circuit, limiter);
+        }
+    }
 }

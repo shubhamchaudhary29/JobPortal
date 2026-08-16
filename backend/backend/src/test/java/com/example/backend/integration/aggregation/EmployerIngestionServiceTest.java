@@ -137,6 +137,29 @@ class EmployerIngestionServiceTest {
     }
 
     @Test
+    void isolatedMalformedProviderItemMakesRunPartialAndProtectsLifecycle() {
+        JobSource greenhouse = mock(JobSource.class);
+        JobSource lever = mock(JobSource.class);
+        AdzunaJobStore store = mock(AdzunaJobStore.class);
+        ImportedJobLifecycleService lifecycle = mock(ImportedJobLifecycleService.class);
+        when(greenhouse.sourceName()).thenReturn("greenhouse");
+        ExternalJob valid = new ExternalJob("one", "Engineer", null, "Acme", null, null,
+                null, null, "https://jobs.test/one", null, null, "fingerprint");
+        when(greenhouse.fetchWithMetadata(any())).thenReturn(new JobSource.FetchResult(List.of(valid), 0, 1));
+        when(store.upsert(any(), any(), any())).thenReturn(UpsertOutcome.INSERTED);
+        EmployerRegistryProperties registry = new EmployerRegistryProperties(List.of(
+                new EmployerRegistryProperties.Employer("Board", EmployerRegistryProperties.Source.GREENHOUSE,
+                        "board", true)));
+
+        var result = new EmployerIngestionService(greenhouse, lever, store, registry, lifecycle)
+                .sync(EmployerRegistryProperties.Source.GREENHOUSE);
+
+        assertEquals(1, result.inserted());
+        assertEquals(1, result.rejected());
+        verifyNoInteractions(lifecycle);
+    }
+
+    @Test
     void leaseLossAfterFirstItemPreventsEveryLaterWriteAndLifecycleProgress() {
         JobSource greenhouse = mock(JobSource.class);
         JobSource lever = mock(JobSource.class);

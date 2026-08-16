@@ -130,7 +130,7 @@ The remaining scope is per-source lifecycle and safe migration; deterministic ca
   - Done when: both providers use the same deterministic transient-only retry policy, all knobs are validated/documented, and focused/full backend tests pass without live calls.
   - Evidence (2026-08-16): Greenhouse and Lever now share provider-neutral failures, a dedicated JDK HTTP transport, validated connect/read timeout and attempt/backoff bounds, transient-only classification, bounded exponential jitter, both `Retry-After` formats, interrupt restoration, and sync-history retry propagation. All reliability tests use a local mock HTTP server. `cd backend/backend && ./mvnw -Dtest='*Greenhouse*,*Lever*,*Reliability*' test` passed 6 tests (0 failures/errors/skips). The expanded focused run `./mvnw -Dtest='*Greenhouse*,*Lever*,*Reliability*,EmployerIngestionServiceTest' test` passed 13 tests (0 failures/errors/skips), including retry-count propagation. `cd backend/backend && ./mvnw test` passed 125 tests (0 failures/errors/skips). `git diff --check` passed.
 
-- [ ] **M3B — Circuit protection, request/payload limits, employer isolation, and sanitized logging**
+- [x] **M3B — Circuit protection, request/payload limits, employer isolation, and sanitized logging**
 
   - Required behavior: apply bounded provider/employer request-rate limiting and payload/item limits, employer-keyed circuit breakers with half-open recovery, malformed-item isolation, and sanitized structured logs that never expose URLs, credentials, or raw payloads.
   - Expected files/components: shared reliability state/rate limiter, provider sources, employer ingestion service, configuration/Compose, operations documentation.
@@ -138,6 +138,7 @@ The remaining scope is per-source lifecycle and safe migration; deterministic ca
   - Verification commands: `cd backend/backend && ./mvnw -Dtest='*Greenhouse*,*Lever*,*Reliability*,*Payload*,*SanitizedLog*' test`; `cd backend/backend && ./mvnw test`; `git diff --check`.
   - Dependencies: M3A.
   - Done when: one employer cannot exhaust or open another employer's controls, all payload/rate bounds and redaction tests pass, and no automated test calls a live provider.
+  - Evidence (2026-08-16): Greenhouse/Lever requests now use provider/board-scoped bounded pacing and circuit state with deterministic half-open recovery. Declared and chunked response bytes and item counts are bounded; oversized payloads are permanent failures. Null/malformed items are isolated and counted while valid siblings proceed, and the partial result cannot advance missing detection. Failure logs contain only controlled provider/board fields. `cd backend/backend && ./mvnw -Dtest='*Greenhouse*,*Lever*,*Reliability*,*Payload*,*SanitizedLog*' test` passed 11 deterministic tests (0 failures/errors/skips) using local HTTP servers only. The expanded focused run including `EmployerIngestionServiceTest` passed 19 tests (0 failures/errors/skips). `cd backend/backend && ./mvnw test` passed 131 tests (0 failures/errors/skips). `git diff --check` passed.
 
 - [ ] **M3C — Secured Actuator/Micrometer observability**
 

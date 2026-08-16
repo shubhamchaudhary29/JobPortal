@@ -38,6 +38,10 @@ public class ProviderHttpClient {
     }
     private ProviderFailureException classify(String provider, RuntimeException failure) {
         if (failure instanceof ProviderFailureException providerFailure) return providerFailure;
+        if (ProviderPayloadLimitInterceptor.causedByLimit(failure)) {
+            return new ProviderFailureException(provider, ProviderFailureException.Kind.PAYLOAD_LIMIT,
+                    false, null, failure);
+        }
         if (failure instanceof HttpStatusCodeException statusFailure) {
             int status = statusFailure.getStatusCode().value();
             if (status == 429) return new ProviderFailureException(provider,

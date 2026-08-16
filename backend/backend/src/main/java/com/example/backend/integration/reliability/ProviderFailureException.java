@@ -19,5 +19,8 @@ public class ProviderFailureException extends RuntimeException {
     public boolean retryable() { return retryable; }
     public Duration retryAfter() { return retryAfter; }
 
-    public enum Kind { TIMEOUT, RATE_LIMITED, SERVER_ERROR, CLIENT_ERROR, MALFORMED_RESPONSE, INTERRUPTED }
+    public enum Kind {
+        TIMEOUT, RATE_LIMITED, SERVER_ERROR, CLIENT_ERROR, MALFORMED_RESPONSE, PAYLOAD_LIMIT,
+        CIRCUIT_OPEN, INTERRUPTED
+    }
 }

@@ -153,8 +153,18 @@ The supported settings and safe defaults are:
 | `JOB_AGGREGATION_PROVIDER_RETRY_MAX_ATTEMPTS` | `3` | `1`–`5`, including the initial request |
 | `JOB_AGGREGATION_PROVIDER_RETRY_INITIAL_BACKOFF_MS` | `200` | initial exponential delay |
 | `JOB_AGGREGATION_PROVIDER_RETRY_MAX_BACKOFF_MS` | `5000` | at most `60000` ms and not below the initial delay |
+| `JOB_AGGREGATION_PROVIDER_MAX_RESPONSE_BYTES` | `2097152` | `1024`–`10485760`; enforced for declared and streamed bodies |
+| `JOB_AGGREGATION_PROVIDER_MAX_ITEMS` | `2000` | `1`–`10000` items per board response |
+| `JOB_AGGREGATION_PROVIDER_REQUESTS_PER_SECOND` | `5` | `1`–`100`, independently paced per provider/board |
+| `JOB_AGGREGATION_PROVIDER_CIRCUIT_FAILURE_THRESHOLD` | `3` | `1`–`20` consecutive transient request failures |
+| `JOB_AGGREGATION_PROVIDER_CIRCUIT_OPEN_MS` | `60000` | `100`–`600000` ms before one half-open probe |
 | `GREENHOUSE_BASE_URL` | official boards API | HTTP(S) endpoint; override only for controlled testing/proxying |
 | `LEVER_BASE_URL` | official postings API | HTTP(S) endpoint; override only for controlled testing/proxying |
 
 Automated reliability tests point these base URLs at an in-process mock HTTP server and never call
 live providers. Keep credentials and query-bearing upstream URLs out of logs and support output.
+Circuit and rate-limit state is scoped to the provider and configured board, so a failing employer
+cannot open or consume another employer's protection. A successful half-open probe closes its
+circuit. Oversized responses fail permanently for that run. Malformed individual items are skipped
+and counted as rejected while valid siblings may still be stored; such a partial run never advances
+missing detection. A valid empty response remains a complete successful board result.
