@@ -24,6 +24,7 @@ public class AdzunaIngestionController {
         if (!recruiter) throw new ForbiddenException("Only recruiters can trigger job ingestion");
         AdzunaIngestionCoordinator.Result result = ingestion.run();
         if (result.locked()) return ResponseEntity.status(HttpStatus.CONFLICT).build();
+        if (result.leaseLost()) return ResponseEntity.status(HttpStatus.SERVICE_UNAVAILABLE).body(java.util.Map.of("status", "LEASE_LOST"));
         return ResponseEntity.ok(result.sync());
     }
 }

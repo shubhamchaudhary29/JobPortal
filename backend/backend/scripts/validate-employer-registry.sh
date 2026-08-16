@@ -11,8 +11,8 @@ while read -r source board; do
   if [[ "$source" == GREENHOUSE ]]; then url="https://boards-api.greenhouse.io/v1/boards/$board/jobs?content=true"; else url="https://api.lever.co/v0/postings/$board?mode=json"; fi
   response=$(mktemp)
   code=$(curl --silent --show-error --location --max-time 15 --output "$response" --write-out '%{http_code}' "$url")
-  if [[ "$source" == GREENHOUSE ]]; then valid=$(jq -e '.jobs | type == "array" and all(.[]?; (.id != null and (.absolute_url|type == "string")))' "$response" >/dev/null && echo valid || echo invalid); else valid=$(jq -e 'type == "array" and all(.[]?; (.id != null and (.hostedUrl|type == "string")))' "$response" >/dev/null && echo valid || echo invalid); fi
+  if [[ "$source" == GREENHOUSE ]]; then valid=$(jq -er 'if (.jobs|type) != "array" then "INVALID" elif (.jobs|length)==0 then "EMPTY" elif all(.jobs[]?; (.id != null and (.absolute_url|type == "string"))) then "ACTIVE" else "INVALID" end' "$response" 2>/dev/null || echo INVALID); else valid=$(jq -er 'if type != "array" then "INVALID" elif length==0 then "EMPTY" elif all(.[]?; (.id != null and (.hostedUrl|type == "string"))) then "ACTIVE" else "INVALID" end' "$response" 2>/dev/null || echo INVALID); fi
   rm -f "$response"
   printf '%s %s %s %s\n' "$source" "$board" "$code" "$valid"
-  [[ "$code" == 200 && "$valid" == valid ]] || exit 1
+  [[ "$code" == 200 && ( "$valid" == ACTIVE || "$valid" == EMPTY ) ]] || exit 1
 done

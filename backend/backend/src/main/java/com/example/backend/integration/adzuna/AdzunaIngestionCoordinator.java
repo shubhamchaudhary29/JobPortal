@@ -18,7 +18,7 @@ public class AdzunaIngestionCoordinator {
     public AdzunaIngestionCoordinator(AdzunaService ingestion, DistributedLeaseLock locks,
             @Value("${job-aggregation.lock-lease-ms:300000}") long leaseMs,
             @Value("${job-aggregation.lock-renewal-ms:60000}") long renewalMs,
-            @Qualifier("ingestionLeaseScheduler") ScheduledExecutorService scheduler) { this.ingestion=ingestion; this.locks=locks; this.leaseMs=leaseMs; this.renewalMs=renewalMs; this.scheduler=scheduler; }
+            @Qualifier("ingestionLeaseScheduler") ScheduledExecutorService scheduler) { if(leaseMs<1_000||renewalMs<250||renewalMs>=leaseMs) throw new IllegalArgumentException("invalid Adzuna lease/renewal configuration"); this.ingestion=ingestion; this.locks=locks; this.leaseMs=leaseMs; this.renewalMs=renewalMs; this.scheduler=scheduler; }
     public Result run() { String owner=locks.acquire(LOCK, leaseMs); if(owner==null) return new Result(null,true,false); AtomicBoolean lost=new AtomicBoolean(); ScheduledFuture<?> heartbeat=scheduler.scheduleAtFixedRate(() -> {try {if(!locks.renew(LOCK,owner,leaseMs)) lost.set(true);}catch(RuntimeException failure){lost.set(true);}},renewalMs,renewalMs,TimeUnit.MILLISECONDS); try { return new Result(ingestion.sync(() -> !lost.get()),false,lost.get()); } finally { heartbeat.cancel(false); locks.release(LOCK,owner); } }
     @Scheduled(fixedDelayString = "${adzuna.schedule-delay-ms:43200000}") void scheduledSync() { run(); }
     public record Result(AdzunaService.SyncResult sync, boolean locked, boolean leaseLost) { }
