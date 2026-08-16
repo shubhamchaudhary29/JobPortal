@@ -150,7 +150,7 @@ The remaining scope is per-source lifecycle and safe migration; deterministic ca
   - Done when: operational metrics are accurate, secured, low-cardinality, documented, and all focused/full backend tests pass.
   - Evidence (2026-08-16): finalized durable sync runs emit Micrometer counters and a duration timer for outcomes, operations, retries, errors, contention, lease loss, and lifecycle work. Every aggregation meter is limited to fixed `provider`, `outcome`, and `trigger` tags; tests reject employer, run ID, URL, exception, or other labels. Actuator exposes only health/info/metrics, requires ADMIN for every path, suppresses health components/details, and omits env/config endpoints. `cd backend/backend && ./mvnw -Dtest='*Metrics*,*Actuator*,*Observability*' test` passed 5 tests (0 failures/errors/skips), including endpoint `401/403/200`, durable-finalization ordering, and exposure/tag assertions. `cd backend/backend && ./mvnw test` passed 136 tests (0 failures/errors/skips). `git diff --check` passed.
 
-- [ ] **M4 — ADMIN frontend and frontend tests**
+- [x] **M4 — ADMIN frontend and frontend tests**
 
   - Required behavior: ADMIN-only aggregation page with provider status/counts, last outcomes, paginated history/detail, provider/employer controls, conflict reconciliation, accessible loading/empty/error/locked/partial/failed/lease-lost states, and duplicate-submit protection.
   - Expected files/components: React route/navigation guard, page/components, aggregation API service, API/component tests.
@@ -158,6 +158,7 @@ The remaining scope is per-source lifecycle and safe migration; deterministic ca
   - Verification commands: `cd frontend && npm ci && npm run lint && npm test -- --run && npm run build`.
   - Dependencies: M1A–M1F conflicts and M2A–M2D admin/history APIs.
   - Done when: ADMIN can complete all supported operations, non-admin users cannot see/access the page, and frontend checks pass.
+  - Evidence (2026-08-16): `/admin/aggregation` is protected by the ADMIN route guard and appears only in ADMIN navigation/login flow. The accessible operations page shows imported/provider/company counts, latest health, paginated history and detail, bounded failure counts, provider-wide/employer sync controls, and explicit loading/empty/error/PARTIAL/FAILED/LOCKED/LEASE_LOST states. Open conflicts require an explicit distinct canonical/duplicate choice; sync and resolution buttons prevent duplicate submission. API tests cover every ADMIN route and safe `401/403/409/503` messaging; component tests cover page states/actions, pagination/detail, conflict resolution, employer scope, duplicate suppression, route redirects, and hidden navigation. `cd frontend && npm ci && npm run lint && npm test -- --run && npm run build` passed: clean install audited 351 packages with 0 vulnerabilities, ESLint passed, Vitest passed 24 tests across 8 files, and Vite built 210 modules successfully. `git diff --check` passed.
 
 - [ ] **M5 — Registry evidence, CI, Docker, documentation, and final audit**
 

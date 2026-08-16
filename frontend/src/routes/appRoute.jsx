@@ -12,6 +12,7 @@ import MyApplications from "../pages/MyApplications";
 import MyProfile from "../pages/MyProfile";
 import ChatList from "../pages/ChatList";
 import ChatRoom from "../pages/ChatRoom";
+import AggregationAdmin from "../pages/AggregationAdmin";
 import ProtectedRoute from "../components/ProtectedRoute";
 
 export default function AppRoutes() {
@@ -75,6 +76,14 @@ export default function AppRoutes() {
         element={
           <ProtectedRoute>
             <ChatRoom />
+          </ProtectedRoute>
+        }
+      />
+      <Route
+        path="/admin/aggregation"
+        element={
+          <ProtectedRoute requiredRole="ADMIN">
+            <AggregationAdmin />
           </ProtectedRoute>
         }
       />
