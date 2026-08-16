@@ -30,9 +30,10 @@ public class IngestionCoordinator {
         if (owner == null) return new Result(null, true, false);
         AtomicBoolean lost = new AtomicBoolean();
         ScheduledFuture<?> heartbeat = scheduler.scheduleAtFixedRate(() -> {
-            if (!locks.renew(name, owner, leaseMs)) lost.set(true);
+            try { if (!locks.renew(name, owner, leaseMs)) lost.set(true); }
+            catch (RuntimeException renewalFailure) { lost.set(true); }
         }, renewalMs, renewalMs, TimeUnit.MILLISECONDS);
-        try { return new Result(ingestion.sync(source), false, lost.get()); }
+        try { return new Result(ingestion.sync(source, () -> !lost.get()), false, lost.get()); }
         finally { heartbeat.cancel(false); locks.release(name, owner); }
     }
     public record Result(EmployerIngestionService.Result sync, boolean locked, boolean leaseLost) { }
