@@ -110,7 +110,7 @@ The remaining scope is per-source lifecycle and safe migration; deterministic ca
   - Done when: every supported manual scope uses the identical scheduled coordinator/lock path and validation/response tests pass.
   - Evidence (2026-08-16): `cd backend/backend && ./mvnw -Dtest='*EmployerIngestion*,*ManualSync*,*Admin*' test` passed 13 tests (0 failures/errors/skips), covering ADMIN `401/403/200`, provider-wide Adzuna/Greenhouse/Lever routing, configured employer-only selection, disabled/unknown/unsafe employer rejection, Adzuna employer rejection, scheduled/manual trigger attribution, and identical provider lock keys for broad and narrow runs. Locked requests return HTTP `409` with their durable run ID. `cd backend/backend && ./mvnw test` initially caught a provider-wide validation regression before lock acquisition; after narrowing validation to employer-scoped calls, the clean rerun passed 110 tests (0 failures/errors/skips). `git diff --check` passed.
 
-- [ ] **M2D — Shared locking, structured outcomes, and complete concurrency/security tests**
+- [x] **M2D — Shared locking, structured outcomes, and complete concurrency/security tests**
 
   - Required behavior: finalize provider-neutral outcomes and prove two-instance exclusion, renewal, heartbeat exception/loss, cancellation, ownership-safe release, expiry recovery, and no post-loss writes/progress for every scheduled/manual provider path.
   - Expected files/components: lease manager/heartbeat/coordinator, structured outcome DTOs, provider schedulers, deterministic concurrency test fixtures, operations documentation.
@@ -118,6 +118,7 @@ The remaining scope is per-source lifecycle and safe migration; deterministic ca
   - Verification commands: `cd backend/backend && ./mvnw -Dtest='*Coordinator*,*Lease*,*Concurrency*,*Admin*' test`; `cd backend/backend && ./mvnw test`; `git diff --check`.
   - Dependencies: M2A–M2C.
   - Done when: all execution paths share safe distributed coordination, lease loss stops writes immediately, structured outcomes are consistent, and every concurrency/security test passes.
+  - Evidence (2026-08-16): `cd backend/backend && ./mvnw -Dtest='*Coordinator*,*Lease*,*Concurrency*,*Admin*,EmployerIngestionServiceTest,AdzunaServiceTest' test` passed 30 tests (0 failures/errors/skips). Deterministic unit and real-Mongo cases cover two-instance overlap, acquisition/contention, long-run renewal, false renewal, Mongo renewal exception, ownership theft, expiry recovery, former-owner release safety, heartbeat scheduling failure, idempotent cancellation, and ADMIN `401/403/200/409/503`. Explicit provider tests prove lease loss after one stored item prevents later writes/lifecycle progress and lease loss during a transient Adzuna failure prevents retries/provider progress. Coordinator responses and history share the same low-cardinality outcomes. `cd backend/backend && ./mvnw test` passed 118 tests (0 failures/errors/skips). `git diff --check` passed.
 
 - [ ] **M3 — Greenhouse/Lever reliability and secured observability**
 

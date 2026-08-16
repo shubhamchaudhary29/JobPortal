@@ -128,3 +128,10 @@ an employer. Manual and scheduled requests call the same coordinator. Employer-s
 the provider-wide lease key deliberately, so they cannot overlap that provider's scheduled or broad
 manual run. A held lease returns HTTP `409` with `LOCKED` and its history run ID; a lost lease returns
 HTTP `503` with `LEASE_LOST`.
+
+Each provider lease is wrapped by one cancellable heartbeat guard. A false renewal, Mongo renewal
+exception, or ownership change atomically marks the guard lost; provider loops check that token
+before fetch retries and every item write, then skip lifecycle progress. Closing the guard cancels
+the heartbeat with interruption and removes the lease only through the `(lock name, owner)` query,
+so an expired/reacquired winner cannot be released by the former owner. Heartbeat scheduling and
+lock acquisition failures are recorded as failed runs.

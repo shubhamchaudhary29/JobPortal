@@ -115,4 +115,33 @@ class EmployerIngestionServiceTest {
         assertThrows(com.example.backend.shared.error.BadRequestException.class,
                 () -> service.sync(EmployerRegistryProperties.Source.GREENHOUSE, "disabled", () -> true));
     }
+
+    @Test
+    void leaseLossAfterFirstItemPreventsEveryLaterWriteAndLifecycleProgress() {
+        JobSource greenhouse = mock(JobSource.class);
+        JobSource lever = mock(JobSource.class);
+        AdzunaJobStore store = mock(AdzunaJobStore.class);
+        ImportedJobLifecycleService lifecycle = mock(ImportedJobLifecycleService.class);
+        when(greenhouse.sourceName()).thenReturn("greenhouse");
+        when(greenhouse.fetch(any())).thenReturn(List.of(
+                new ExternalJob("one", "One", null, "Acme", null, null, null, null,
+                        "https://example.test/one", null, null, "one"),
+                new ExternalJob("two", "Two", null, "Acme", null, null, null, null,
+                        "https://example.test/two", null, null, "two")));
+        java.util.concurrent.atomic.AtomicBoolean valid = new java.util.concurrent.atomic.AtomicBoolean(true);
+        when(store.upsert(any(), any(), any())).thenAnswer(invocation -> {
+            valid.set(false);
+            return UpsertOutcome.INSERTED;
+        });
+        EmployerIngestionService service = new EmployerIngestionService(greenhouse, lever, store,
+                new EmployerRegistryProperties(List.of(new EmployerRegistryProperties.Employer(
+                        "Board", EmployerRegistryProperties.Source.GREENHOUSE, "board", true))), lifecycle);
+
+        EmployerIngestionService.Result result = service.sync(
+                EmployerRegistryProperties.Source.GREENHOUSE, valid::get);
+
+        assertEquals(1, result.inserted());
+        verify(store, times(1)).upsert(any(), any(), any());
+        verifyNoInteractions(lifecycle);
+    }
 }

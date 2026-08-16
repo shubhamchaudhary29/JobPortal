@@ -4,9 +4,6 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.stereotype.Service;
 import java.util.concurrent.ScheduledExecutorService;
-import java.util.concurrent.ScheduledFuture;
-import java.util.concurrent.TimeUnit;
-import java.util.concurrent.atomic.AtomicBoolean;
 
 /** Shared entry point so scheduled and operator initiated runs cannot overlap. */
 @Service
@@ -42,32 +39,39 @@ public class IngestionCoordinator {
                 ? null : ingestion.requireEnabledEmployer(source, employer);
         SyncRunService.Handle run = runs.begin(source.name(), selectedEmployer, trigger);
         String name = "employer-ingestion:" + source;
-        String owner = locks.acquire(name, leaseMs);
+        String owner;
+        try {
+            owner = locks.acquire(name, leaseMs);
+        } catch (RuntimeException lockFailure) {
+            runs.finish(run, SyncRunService.Outcome.FAILED, SyncRunService.Counts.empty(), lockFailure);
+            throw lockFailure;
+        }
         if (owner == null) {
             runs.finish(run, SyncRunService.Outcome.LOCKED, SyncRunService.Counts.empty(), null);
             return new Result(null, true, false, run.runId());
         }
-        AtomicBoolean lost = new AtomicBoolean();
-        ScheduledFuture<?> heartbeat = scheduler.scheduleAtFixedRate(() -> {
-            try { if (!locks.renew(name, owner, leaseMs)) lost.set(true); }
-            catch (RuntimeException renewalFailure) { lost.set(true); }
-        }, renewalMs, renewalMs, TimeUnit.MILLISECONDS);
+        DistributedLeaseGuard guard;
         try {
+            guard = DistributedLeaseGuard.start(locks, name, owner, leaseMs, renewalMs, scheduler);
+        } catch (RuntimeException heartbeatFailure) {
+            runs.finish(run, SyncRunService.Outcome.FAILED, SyncRunService.Counts.empty(), heartbeatFailure);
+            throw heartbeatFailure;
+        }
+        try (guard) {
             EmployerIngestionService.Result sync;
             try {
                 sync = selectedEmployer == null
-                        ? ingestion.sync(source, () -> !lost.get())
-                        : ingestion.sync(source, selectedEmployer, () -> !lost.get());
+                        ? ingestion.sync(source, guard::isValid)
+                        : ingestion.sync(source, selectedEmployer, guard::isValid);
             } catch (RuntimeException failure) {
-                runs.finish(run, lost.get() ? SyncRunService.Outcome.LEASE_LOST : SyncRunService.Outcome.FAILED,
+                runs.finish(run, guard.isLost() ? SyncRunService.Outcome.LEASE_LOST : SyncRunService.Outcome.FAILED,
                         SyncRunService.Counts.empty(), failure);
                 throw failure;
             }
-            boolean leaseLost = lost.get();
+            boolean leaseLost = guard.isLost();
             runs.finish(run, leaseLost ? SyncRunService.Outcome.LEASE_LOST : outcome(sync), counts(sync), null);
             return new Result(sync, false, leaseLost, run.runId());
         }
-        finally { heartbeat.cancel(false); locks.release(name, owner); }
     }
     private SyncRunService.Outcome outcome(EmployerIngestionService.Result sync) {
         if (sync.failedEmployers() == 0 && sync.rejected() == 0) return SyncRunService.Outcome.COMPLETED;
@@ -81,9 +85,24 @@ public class IngestionCoordinator {
                 0, 0, sync.failedEmployers(), sync.lifecycleMatched(), sync.lifecycleModified(), 0,
                 0, sync.attemptedEmployers());
     }
-    public record Result(EmployerIngestionService.Result sync, boolean locked, boolean leaseLost, String runId) {
+    public record Result(EmployerIngestionService.Result sync, boolean locked, boolean leaseLost, String runId,
+                         SyncRunService.Outcome outcome) {
+        public Result(EmployerIngestionService.Result sync, boolean locked, boolean leaseLost, String runId) {
+            this(sync, locked, leaseLost, runId, derive(sync, locked, leaseLost));
+        }
         public Result(EmployerIngestionService.Result sync, boolean locked, boolean leaseLost) {
-            this(sync, locked, leaseLost, null);
+            this(sync, locked, leaseLost, null, derive(sync, locked, leaseLost));
+        }
+        private static SyncRunService.Outcome derive(EmployerIngestionService.Result sync,
+                                                      boolean locked, boolean leaseLost) {
+            if (locked) return SyncRunService.Outcome.LOCKED;
+            if (leaseLost) return SyncRunService.Outcome.LEASE_LOST;
+            if (sync == null) return SyncRunService.Outcome.FAILED;
+            if (sync.failedEmployers() == 0 && sync.rejected() == 0) return SyncRunService.Outcome.COMPLETED;
+            if (sync.inserted() + sync.updated() + sync.unchanged() == 0 && sync.failedEmployers() > 0) {
+                return SyncRunService.Outcome.FAILED;
+            }
+            return SyncRunService.Outcome.PARTIAL;
         }
     }
 }

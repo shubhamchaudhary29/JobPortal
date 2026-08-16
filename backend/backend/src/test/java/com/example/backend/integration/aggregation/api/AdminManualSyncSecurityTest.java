@@ -48,6 +48,7 @@ class AdminManualSyncSecurityTest {
                         .header(HttpHeaders.AUTHORIZATION, bearer("ADMIN")))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.runId").value("run-greenhouse"))
+                .andExpect(jsonPath("$.outcome").value("COMPLETED"))
                 .andExpect(jsonPath("$.sync.inserted").value(1));
     }
 
@@ -81,6 +82,16 @@ class AdminManualSyncSecurityTest {
                 .andExpect(status().isConflict())
                 .andExpect(jsonPath("$.status").value("LOCKED"))
                 .andExpect(jsonPath("$.runId").value("run-locked"));
+
+        when(coordinator.run(EmployerRegistryProperties.Source.GREENHOUSE, null,
+                SyncRunService.Trigger.MANUAL)).thenReturn(
+                new IngestionCoordinator.Result(new EmployerIngestionService.Result(1, 0, 0, 0, 0),
+                        false, true, "run-lost"));
+        mvc.perform(post("/api/v1/admin/ingestion/greenhouse/sync")
+                        .header(HttpHeaders.AUTHORIZATION, bearer("ADMIN")))
+                .andExpect(status().isServiceUnavailable())
+                .andExpect(jsonPath("$.status").value("LEASE_LOST"))
+                .andExpect(jsonPath("$.runId").value("run-lost"));
     }
 
     private String bearer(String role) {

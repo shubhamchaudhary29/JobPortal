@@ -2,14 +2,12 @@ package com.example.backend.integration.adzuna;
 
 import com.example.backend.integration.aggregation.DistributedLeaseLock;
 import com.example.backend.integration.aggregation.SyncRunService;
+import com.example.backend.integration.aggregation.DistributedLeaseGuard;
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
 import java.util.concurrent.ScheduledExecutorService;
-import java.util.concurrent.ScheduledFuture;
-import java.util.concurrent.TimeUnit;
-import java.util.concurrent.atomic.AtomicBoolean;
 
 /** The same Mongo lease protects scheduled and operator Adzuna execution across instances. */
 @Service
@@ -39,34 +37,36 @@ public class AdzunaIngestionCoordinator {
     public Result run() { return run(SyncRunService.Trigger.MANUAL); }
     public Result run(SyncRunService.Trigger trigger) {
         SyncRunService.Handle run = runs.begin("adzuna", null, trigger);
-        String owner = locks.acquire(LOCK, leaseMs);
+        String owner;
+        try {
+            owner = locks.acquire(LOCK, leaseMs);
+        } catch (RuntimeException lockFailure) {
+            runs.finish(run, SyncRunService.Outcome.FAILED, SyncRunService.Counts.empty(), lockFailure);
+            throw lockFailure;
+        }
         if (owner == null) {
             runs.finish(run, SyncRunService.Outcome.LOCKED, SyncRunService.Counts.empty(), null);
             return new Result(null, true, false, run.runId());
         }
-        AtomicBoolean lost = new AtomicBoolean();
-        ScheduledFuture<?> heartbeat = scheduler.scheduleAtFixedRate(() -> {
-            try {
-                if (!locks.renew(LOCK, owner, leaseMs)) lost.set(true);
-            } catch (RuntimeException failure) {
-                lost.set(true);
-            }
-        }, renewalMs, renewalMs, TimeUnit.MILLISECONDS);
+        DistributedLeaseGuard guard;
         try {
+            guard = DistributedLeaseGuard.start(locks, LOCK, owner, leaseMs, renewalMs, scheduler);
+        } catch (RuntimeException heartbeatFailure) {
+            runs.finish(run, SyncRunService.Outcome.FAILED, SyncRunService.Counts.empty(), heartbeatFailure);
+            throw heartbeatFailure;
+        }
+        try (guard) {
             AdzunaService.SyncResult sync;
             try {
-                sync = ingestion.sync(() -> !lost.get());
+                sync = ingestion.sync(guard::isValid);
             } catch (RuntimeException failure) {
-                runs.finish(run, lost.get() ? SyncRunService.Outcome.LEASE_LOST : SyncRunService.Outcome.FAILED,
+                runs.finish(run, guard.isLost() ? SyncRunService.Outcome.LEASE_LOST : SyncRunService.Outcome.FAILED,
                         SyncRunService.Counts.empty(), failure);
                 throw failure;
             }
-            boolean leaseLost = lost.get();
+            boolean leaseLost = guard.isLost();
             runs.finish(run, leaseLost ? SyncRunService.Outcome.LEASE_LOST : outcome(sync), counts(sync), null);
             return new Result(sync, false, leaseLost, run.runId());
-        } finally {
-            heartbeat.cancel(false);
-            locks.release(LOCK, owner);
         }
     }
     private SyncRunService.Outcome outcome(AdzunaService.SyncResult sync) {
@@ -84,9 +84,25 @@ public class AdzunaIngestionCoordinator {
     }
     @Scheduled(fixedDelayString = "${adzuna.schedule-delay-ms:43200000}")
     void scheduledSync() { run(SyncRunService.Trigger.SCHEDULED); }
-    public record Result(AdzunaService.SyncResult sync, boolean locked, boolean leaseLost, String runId) {
+    public record Result(AdzunaService.SyncResult sync, boolean locked, boolean leaseLost, String runId,
+                         SyncRunService.Outcome outcome) {
+        public Result(AdzunaService.SyncResult sync, boolean locked, boolean leaseLost, String runId) {
+            this(sync, locked, leaseLost, runId, derive(sync, locked, leaseLost));
+        }
         public Result(AdzunaService.SyncResult sync, boolean locked, boolean leaseLost) {
-            this(sync, locked, leaseLost, null);
+            this(sync, locked, leaseLost, null, derive(sync, locked, leaseLost));
+        }
+        private static SyncRunService.Outcome derive(AdzunaService.SyncResult sync,
+                                                      boolean locked, boolean leaseLost) {
+            if (locked) return SyncRunService.Outcome.LOCKED;
+            if (leaseLost) return SyncRunService.Outcome.LEASE_LOST;
+            if (sync == null) return SyncRunService.Outcome.FAILED;
+            return switch (sync.outcome()) {
+                case FULL_SUCCESS -> SyncRunService.Outcome.COMPLETED;
+                case PARTIAL_FAILURE -> SyncRunService.Outcome.PARTIAL;
+                case COMPLETE_FAILURE -> SyncRunService.Outcome.FAILED;
+                case OVERLAP_REJECTED -> SyncRunService.Outcome.LOCKED;
+            };
         }
     }
 }

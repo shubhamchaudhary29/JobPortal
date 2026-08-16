@@ -66,6 +66,7 @@ public class AdzunaService {
         long lifecycleMatched = 0, lifecycleModified = 0;
         java.util.concurrent.atomic.AtomicInteger retries = new java.util.concurrent.atomic.AtomicInteger();
         Set<String> seenIdentities = new HashSet<>();
+        ingestionLoop:
         for (String rawKeyword : properties.keywords()) {
             if (!leaseValid.getAsBoolean()) break;
             String keyword = rawKeyword.trim();
@@ -84,6 +85,8 @@ public class AdzunaService {
                     failedBatches++; circuit.recordFailure();
                     log.warn("event=adzuna_batch_failed provider=adzuna retryable={} error={}", ex.retryable(), ex.getMessage());
                     break; // do not pretend a failed page is an empty page
+                } catch (LeaseLostDuringRun leaseLost) {
+                    break ingestionLoop;
                 }
             }
         }
@@ -112,8 +115,9 @@ public class AdzunaService {
     }
     private BatchResult fetchKeyword(String keyword, int page, BooleanSupplier leaseValid,
                                      Set<String> seenIdentities, AtomicInteger retries) {
+        if (!leaseValid.getAsBoolean()) throw new LeaseLostDuringRun();
         if (!circuit.allowRequest()) throw new AdzunaCircuitOpenException();
-        java.util.List<ExternalJob> response = fetchWithRetry(keyword, page, retries);
+        java.util.List<ExternalJob> response = fetchWithRetry(keyword, page, retries, leaseValid);
         int inserted = 0, updated = 0, unchanged = 0, rejected = 0, failed = 0;
         LocalDateTime now = LocalDateTime.now(clock);
         for (ExternalJob source : response) {
@@ -129,13 +133,16 @@ public class AdzunaService {
         circuit.recordSuccess();
         return new BatchResult(inserted, updated, unchanged, rejected, failed);
     }
-    private java.util.List<ExternalJob> fetchWithRetry(String keyword, int page, AtomicInteger retries) {
+    private java.util.List<ExternalJob> fetchWithRetry(String keyword, int page, AtomicInteger retries,
+                                                       BooleanSupplier leaseValid) {
         AdzunaProviderException last = null;
         for (int attempt = 1; attempt <= properties.maxAttempts(); attempt++) {
+            if (!leaseValid.getAsBoolean()) throw new LeaseLostDuringRun();
             try { return source.fetch(new JobFetchRequest(keyword, page)); }
             catch (AdzunaProviderException ex) {
                 last = ex;
                 if (!ex.retryable() || attempt == properties.maxAttempts()) throw ex;
+                if (!leaseValid.getAsBoolean()) throw new LeaseLostDuringRun();
                 retries.incrementAndGet();
                 try { sleeper.sleep(backoff(attempt)); }
                 catch (InterruptedException interrupted) { Thread.currentThread().interrupt(); throw new AdzunaProviderException("Adzuna retry interrupted", false, interrupted); }
@@ -156,4 +163,5 @@ public class AdzunaService {
         public boolean skipped() { return outcome == Outcome.OVERLAP_REJECTED; }
     }
     @FunctionalInterface interface Sleeper { void sleep(long millis) throws InterruptedException; }
+    private static final class LeaseLostDuringRun extends RuntimeException { }
 }

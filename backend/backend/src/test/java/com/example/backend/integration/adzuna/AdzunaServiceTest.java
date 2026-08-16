@@ -71,10 +71,27 @@ class AdzunaServiceTest {
         AdzunaService service = service(client, store, 1, "java", new AtomicInteger(), lifecycle);
         AtomicInteger leaseChecks = new AtomicInteger();
 
-        service.sync(() -> leaseChecks.incrementAndGet() < 4);
+        service.sync(() -> leaseChecks.incrementAndGet() < 6);
 
         verify(store).upsert(any(), any());
         verifyNoInteractions(lifecycle);
+    }
+    @Test
+    void leaseLossDuringTransientFailurePreventsRetriesAndFurtherProviderProgress() {
+        AdzunaClient client = mock(AdzunaClient.class);
+        AdzunaJobStore store = mock(AdzunaJobStore.class);
+        java.util.concurrent.atomic.AtomicBoolean valid = new java.util.concurrent.atomic.AtomicBoolean(true);
+        when(client.fetchPage(anyString(), anyInt())).thenAnswer(invocation -> {
+            valid.set(false);
+            throw new AdzunaProviderException("timeout", true, null);
+        });
+        AtomicInteger sleeps = new AtomicInteger();
+        AdzunaService.SyncResult result = service(client, store, 3, "java", sleeps).sync(valid::get);
+
+        assertEquals(0, result.retries());
+        assertEquals(0, sleeps.get());
+        verify(client, times(1)).fetchPage("java", 1);
+        verifyNoInteractions(store);
     }
     private static AdzunaService service(AdzunaClient client, AdzunaJobStore store, int attempts, String keywords, AtomicInteger sleeps) {
         return service(client, store, attempts, keywords, sleeps, mock(ImportedJobLifecycleService.class));
