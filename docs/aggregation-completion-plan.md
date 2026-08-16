@@ -80,14 +80,41 @@ The remaining scope is per-source lifecycle and safe migration; deterministic ca
   - Done when: migration audit and all end-to-end real-Mongo tests pass with documented evidence.
   - Evidence (2026-08-16): `cd backend/backend && ./mvnw -Dtest='*Lifecycle*,*Conflict*,*JobStoreMongoIntegrationTest,*MigrationEndToEnd*' test` passed 22 tests (0 failures/errors/skips). The combined real-Mongo acceptance flow verified deterministic multi-source canonical state, per-provider misses, all-source deactivation, application-reference cleanup protection, reactivation, durable conflict resolution, reference reassignment, and duplicate removal. `MONGODB_URI=mongodb://localhost:27017 bash backend/backend/scripts/verify-aggregation-migration.sh` passed against its disposable database, accepting a structurally valid rollout and returning status `2` with every expected category for intentionally malformed listing, duplicate-identity, canonical, and lifecycle anomalies. `cd backend/backend && MONGODB_URI=mongodb://localhost:27017 bash scripts/verify-aggregation-migration.sh && ./mvnw test` passed the harness again and all 97 backend tests (0 failures/errors/skips). `git diff --check` passed.
 
-- [ ] **M2 — Sync history, manual operations, outcomes, and concurrency tests**
+- [ ] **M2A — Persistent sync-run schema, indexes, and recording for every outcome**
 
-  - Required behavior: record every scheduled/manual/locked/lease-lost run with bounded sanitized details and counts; support provider-wide and configured-employer ADMIN sync using safe shared locks; return structured completed/partial/failed/locked/lease-lost outcomes.
-  - Expected files/components: sync-run document/repository/service, coordinator extensions, admin controllers/DTOs, indexes, API/OpenAPI documentation.
-  - Tests required: two-instance acquisition/contention/expiry/renewal/release tests; heartbeat exception/loss/cancellation tests; ADMIN `401/403/200`, provider/employer validation, lock contention, history pagination/filter/detail/last-status tests.
-  - Verification commands: `cd backend/backend && ./mvnw -Dtest='*Coordinator*,*Lease*,*SyncHistory*,*Admin*' test`.
-  - Dependencies: M1A–M1F supply lifecycle counts and conflict visibility.
-  - Done when: every execution has durable history, all manual paths share locks, bounded history queries work, and concurrency/security tests pass.
+  - Required behavior: persist one bounded, sanitized sync-run record for scheduled and manual executions, including source/employer, trigger, run ID, timestamps, structured outcome, all ingestion/lifecycle counts, retry count, and safe failure details; record completed, partial, failed, locked, and lease-lost outcomes and retain records by configured TTL.
+  - Expected files/components: `integration/aggregation` sync-run document/service/DTOs, ingestion coordinators, Mongo index initializer, configuration and operations documentation.
+  - Tests required: unit and real-Mongo tests for every outcome, count mapping, bounded failure sanitization, TTL/query indexes, and persistence when ingestion throws.
+  - Verification commands: `cd backend/backend && ./mvnw -Dtest='*SyncRun*,*IngestionCoordinator*,AdzunaServiceTest' test`; `cd backend/backend && ./mvnw test`; `git diff --check`.
+  - Dependencies: M1A–M1F.
+  - Done when: every existing coordinator exit path creates exactly one durable, indexed, retention-controlled run record and focused/full backend tests pass.
+
+- [ ] **M2B — Paginated/filterable ADMIN history, detail, and last-status APIs**
+
+  - Required behavior: expose ADMIN-only bounded history pagination and filtering by provider/employer/outcome/trigger, stable detail lookup, and latest status/provider-company counts without exposing unsanitized data.
+  - Expected files/components: admin ingestion controller/DTOs, sync-run query service, security/OpenAPI and operations documentation.
+  - Tests required: `401/403/200`, page/size bounds, valid and invalid filters, stable sorting, detail not-found, latest status, counts, and response sanitization tests.
+  - Verification commands: `cd backend/backend && ./mvnw -Dtest='*SyncHistory*,*Admin*' test`; `cd backend/backend && ./mvnw test`; `git diff --check`.
+  - Dependencies: M2A.
+  - Done when: secured bounded ADMIN history/detail/status queries return deterministic documented responses and all tests pass.
+
+- [ ] **M2C — Provider-wide and employer-specific manual synchronization**
+
+  - Required behavior: support ADMIN provider-wide sync and optional configured-employer Greenhouse/Lever sync while preserving provider-wide behavior; validate provider/employer combinations and route scheduled/manual execution through the same coordinator and distributed lock.
+  - Expected files/components: employer registry lookup, provider coordinators/schedulers, admin controller/DTOs, configuration/OpenAPI documentation.
+  - Tests required: provider-wide and employer-specific success, unknown/disabled employer, unsupported Adzuna employer, scheduled/manual path equivalence, and lock-key tests.
+  - Verification commands: `cd backend/backend && ./mvnw -Dtest='*EmployerIngestion*,*ManualSync*,*Admin*' test`; `cd backend/backend && ./mvnw test`; `git diff --check`.
+  - Dependencies: M2A–M2B.
+  - Done when: every supported manual scope uses the identical scheduled coordinator/lock path and validation/response tests pass.
+
+- [ ] **M2D — Shared locking, structured outcomes, and complete concurrency/security tests**
+
+  - Required behavior: finalize provider-neutral outcomes and prove two-instance exclusion, renewal, heartbeat exception/loss, cancellation, ownership-safe release, expiry recovery, and no post-loss writes/progress for every scheduled/manual provider path.
+  - Expected files/components: lease manager/heartbeat/coordinator, structured outcome DTOs, provider schedulers, deterministic concurrency test fixtures, operations documentation.
+  - Tests required: deterministic long-run renewal, Mongo renewal failure/exception, ownership theft, expiry recovery, two-instance overlap, cancellation/release ownership, locked/conflict HTTP mapping, and `401/403/200` coverage.
+  - Verification commands: `cd backend/backend && ./mvnw -Dtest='*Coordinator*,*Lease*,*Concurrency*,*Admin*' test`; `cd backend/backend && ./mvnw test`; `git diff --check`.
+  - Dependencies: M2A–M2C.
+  - Done when: all execution paths share safe distributed coordination, lease loss stops writes immediately, structured outcomes are consistent, and every concurrency/security test passes.
 
 - [ ] **M3 — Greenhouse/Lever reliability and secured observability**
 
@@ -95,7 +122,7 @@ The remaining scope is per-source lifecycle and safe migration; deterministic ca
   - Expected files/components: shared reliability package, provider clients/configuration, Micrometer/Actuator configuration, metrics recorder, environment/Docker documentation.
   - Tests required: deterministic mock-server tests for timeout, 429, 5xx, permanent 4xx, malformed/oversized/empty payloads, exhaustion, recovery, and isolation; metric and endpoint-security tests.
   - Verification commands: `cd backend/backend && ./mvnw -Dtest='*Greenhouse*,*Lever*,*Reliability*,*Metrics*' test`.
-  - Dependencies: M2 run outcomes/history provide bounded metric semantics.
+  - Dependencies: M2A–M2D run outcomes/history provide bounded metric semantics.
   - Done when: no live provider calls occur in tests, transient-only retry/circuit behavior is proven, and operational metrics are secured and low-cardinality.
 
 - [ ] **M4 — ADMIN frontend and frontend tests**
