@@ -1,6 +1,7 @@
 // Usage: mongosh "$MONGODB_URI" backend/backend/scripts/backfill-source-listings.js [--apply]
 // Default is dry-run. It never deletes, merges, or guesses ambiguous records.
-const apply = typeof process !== 'undefined' && process.argv.includes('--apply');
+// mongosh does not pass arbitrary trailing arguments to scripts; use a portable env flag.
+const apply = typeof process !== 'undefined' && process.env.BACKFILL_APPLY === 'true';
 const query = {recruiterId: null, source: {$type: 'string'}, externalId: {$type: 'string'}};
 let candidates=0, ambiguous=0, changed=0;
 db.jobs.find(query).forEach(job => {

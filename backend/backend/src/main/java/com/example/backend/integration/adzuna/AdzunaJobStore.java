@@ -51,20 +51,21 @@ public class AdzunaJobStore {
         listing.setApplicationUrl(job.getApplicationUrl()); listing.setFirstSeenAt(existingListingFirstSeen(identityMatch, fingerprintMatch, identity, now)); listing.setLastSeenAt(now); listing.setActive(true);
         try {
             UpsertOutcome result = outcome(mongo.findAndModify(query, update, FindAndModifyOptions.options().upsert(true), JobDocument.class), job);
-            // Mongo forbids $pull/$push on one array in the same update. Both operations
-            // are identity-scoped, so no unrelated provider listing is removed.
-            mongo.updateFirst(query, new Update().pull("sourceListings", Query.query(Criteria.where("identity").is(identity))), JobDocument.class);
-            mongo.updateFirst(query, new Update().addToSet("sourceListings", listing), JobDocument.class);
+            refreshListing(query, identity, listing);
             return result;
         }
         catch (DuplicateKeyException race) {
-            try { return outcome(mongo.findAndModify(query, update, FindAndModifyOptions.options().upsert(true), JobDocument.class), job); }
+            try { UpsertOutcome result=outcome(mongo.findAndModify(query, update, FindAndModifyOptions.options().upsert(true), JobDocument.class), job); refreshListing(query, identity, listing); return result; }
             catch (RuntimeException failure) { throw new AdzunaPersistenceException(failure); }
         } catch (RuntimeException failure) { throw new AdzunaPersistenceException(failure); }
     }
     private UpsertOutcome outcome(JobDocument previous, JobDocument incoming) {
         if (previous == null) return UpsertOutcome.INSERTED;
         return same(previous, incoming) ? UpsertOutcome.UNCHANGED : UpsertOutcome.UPDATED;
+    }
+    private void refreshListing(Query query, String identity, ImportedSourceListing listing) {
+        mongo.updateFirst(query, new Update().pull("sourceListings", Query.query(Criteria.where("identity").is(identity))), JobDocument.class);
+        mongo.updateFirst(query, new Update().addToSet("sourceListings", listing), JobDocument.class);
     }
     private boolean same(JobDocument a, JobDocument b) {
         return java.util.Objects.equals(a.getTitle(), b.getTitle()) && java.util.Objects.equals(a.getDescription(), b.getDescription())
