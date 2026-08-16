@@ -120,14 +120,32 @@ The remaining scope is per-source lifecycle and safe migration; deterministic ca
   - Done when: all execution paths share safe distributed coordination, lease loss stops writes immediately, structured outcomes are consistent, and every concurrency/security test passes.
   - Evidence (2026-08-16): `cd backend/backend && ./mvnw -Dtest='*Coordinator*,*Lease*,*Concurrency*,*Admin*,EmployerIngestionServiceTest,AdzunaServiceTest' test` passed 30 tests (0 failures/errors/skips). Deterministic unit and real-Mongo cases cover two-instance overlap, acquisition/contention, long-run renewal, false renewal, Mongo renewal exception, ownership theft, expiry recovery, former-owner release safety, heartbeat scheduling failure, idempotent cancellation, and ADMIN `401/403/200/409/503`. Explicit provider tests prove lease loss after one stored item prevents later writes/lifecycle progress and lease loss during a transient Adzuna failure prevents retries/provider progress. Coordinator responses and history share the same low-cardinality outcomes. `cd backend/backend && ./mvnw test` passed 118 tests (0 failures/errors/skips). `git diff --check` passed.
 
-- [ ] **M3 — Greenhouse/Lever reliability and secured observability**
+- [ ] **M3A — Configurable timeouts, transient retries, backoff/jitter, and `Retry-After`**
 
-  - Required behavior: provider-neutral transient failure handling; configured timeouts, retry/backoff/jitter and `Retry-After`; payload limits; employer-isolated circuit/rate control; sanitized logs; secured metrics for outcomes, operation counts, durations, retries, errors, contention, and lease loss.
-  - Expected files/components: shared reliability package, provider clients/configuration, Micrometer/Actuator configuration, metrics recorder, environment/Docker documentation.
-  - Tests required: deterministic mock-server tests for timeout, 429, 5xx, permanent 4xx, malformed/oversized/empty payloads, exhaustion, recovery, and isolation; metric and endpoint-security tests.
-  - Verification commands: `cd backend/backend && ./mvnw -Dtest='*Greenhouse*,*Lever*,*Reliability*,*Metrics*' test`.
-  - Dependencies: M2A–M2D run outcomes/history provide bounded metric semantics.
-  - Done when: no live provider calls occur in tests, transient-only retry/circuit behavior is proven, and operational metrics are secured and low-cardinality.
+  - Required behavior: give Greenhouse and Lever a shared provider-neutral failure model, bounded configurable connect/read timeouts and retry attempts, exponential backoff with injectable jitter, HTTP-date/seconds `Retry-After`, and transient-only retry classification for timeout/429/5xx; permanent 4xx and malformed responses must not retry.
+  - Expected files/components: shared reliability package, Greenhouse/Lever HTTP sources and configuration, environment/Compose forwarding, operations documentation.
+  - Tests required: deterministic local mock-HTTP-server tests for success, connect/read timeout, 429 with both `Retry-After` forms, 5xx recovery/exhaustion, permanent 4xx, malformed response, retry bounds, and interruption; no live provider calls.
+  - Verification commands: `cd backend/backend && ./mvnw -Dtest='*Greenhouse*,*Lever*,*Reliability*' test`; `cd backend/backend && ./mvnw test`; `git diff --check`.
+  - Dependencies: M2A–M2D.
+  - Done when: both providers use the same deterministic transient-only retry policy, all knobs are validated/documented, and focused/full backend tests pass without live calls.
+
+- [ ] **M3B — Circuit protection, request/payload limits, employer isolation, and sanitized logging**
+
+  - Required behavior: apply bounded provider/employer request-rate limiting and payload/item limits, employer-keyed circuit breakers with half-open recovery, malformed-item isolation, and sanitized structured logs that never expose URLs, credentials, or raw payloads.
+  - Expected files/components: shared reliability state/rate limiter, provider sources, employer ingestion service, configuration/Compose, operations documentation.
+  - Tests required: deterministic circuit open/recovery and employer-isolation tests; rate-limit/bounds tests; oversized, malformed-item, malformed-payload, and legitimate-empty payload tests; log-capture redaction tests using local mock servers only.
+  - Verification commands: `cd backend/backend && ./mvnw -Dtest='*Greenhouse*,*Lever*,*Reliability*,*Payload*,*SanitizedLog*' test`; `cd backend/backend && ./mvnw test`; `git diff --check`.
+  - Dependencies: M3A.
+  - Done when: one employer cannot exhaust or open another employer's controls, all payload/rate bounds and redaction tests pass, and no automated test calls a live provider.
+
+- [ ] **M3C — Secured Actuator/Micrometer observability**
+
+  - Required behavior: expose secured health/metrics for run outcomes, operation counts, duration, retries, errors, contention, and lease loss using only provider/outcome/trigger tags from fixed allowlists; do not use employer, run ID, URL, exception text, or other high-cardinality labels.
+  - Expected files/components: Actuator/Micrometer dependencies/configuration, aggregation metrics recorder, coordinators/reliability hooks, security rules, environment and operations documentation.
+  - Tests required: metric counter/timer/tag assertions, forbidden-tag regression tests, endpoint `401/403/200`, health sanitization, and disabled/exposure configuration tests.
+  - Verification commands: `cd backend/backend && ./mvnw -Dtest='*Metrics*,*Actuator*,*Observability*' test`; `cd backend/backend && ./mvnw test`; `git diff --check`.
+  - Dependencies: M3A–M3B.
+  - Done when: operational metrics are accurate, secured, low-cardinality, documented, and all focused/full backend tests pass.
 
 - [ ] **M4 — ADMIN frontend and frontend tests**
 
@@ -135,7 +153,7 @@ The remaining scope is per-source lifecycle and safe migration; deterministic ca
   - Expected files/components: React route/navigation guard, page/components, aggregation API service, API/component tests.
   - Tests required: API and component tests for all page states/actions plus unauthenticated/forbidden handling and hidden navigation for non-admins.
   - Verification commands: `cd frontend && npm ci && npm run lint && npm test -- --run && npm run build`.
-  - Dependencies: M1A–M1F conflicts and M2 admin/history APIs.
+  - Dependencies: M1A–M1F conflicts and M2A–M2D admin/history APIs.
   - Done when: ADMIN can complete all supported operations, non-admin users cannot see/access the page, and frontend checks pass.
 
 - [ ] **M5 — Registry evidence, CI, Docker, documentation, and final audit**
@@ -144,7 +162,7 @@ The remaining scope is per-source lifecycle and safe migration; deterministic ca
   - Expected files/components: registry evidence under `docs/`, validation script, `.github/workflows/verify.yml`, README, architecture/operations docs, `.env.example`, Docker Compose.
   - Tests required: script classification coverage; workflow-equivalent backend/frontend/Mongo/Docker/smoke checks.
   - Verification commands: `cd backend/backend && ./mvnw clean verify`; `cd frontend && npm ci && npm run lint && npm test -- --run && npm run build && npm audit --omit=dev`; `cd .. && docker compose config && docker compose build && git diff --check`; run registry validation when network access permits.
-  - Dependencies: M1A–M1F and M2–M4 complete.
+  - Dependencies: M1A–M1F, M2A–M2D, M3A–M3C, and M4 complete.
   - Done when: evidence is dated and truthful, all repository checks and practical smoke tests pass, GitHub Actions are green, PR description is accurate, and the final acceptance audit has no unchecked requirements.
 
 ## Release checklist
