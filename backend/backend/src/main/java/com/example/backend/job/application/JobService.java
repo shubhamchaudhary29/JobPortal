@@ -66,7 +66,9 @@ public class JobService {
     public void delete(String id) { jobs.delete(requireOwned(id)); }
 
     public JobDocument requireJob(String id) {
-        return jobs.findById(id).orElseThrow(() -> new ResourceNotFoundException("Job not found"));
+        JobDocument job = jobs.findById(id).orElseThrow(() -> new ResourceNotFoundException("Job not found"));
+        if (job.getReconciliationTargetId() != null) throw new ResourceNotFoundException("Job not found");
+        return job;
     }
 
     public JobDocument requireOwnedJob(String id, String email) {

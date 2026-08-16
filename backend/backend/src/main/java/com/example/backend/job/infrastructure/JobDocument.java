@@ -49,5 +49,8 @@ public class JobDocument {
     private int consecutiveMissingRuns;
     private String inactiveReason;
     private LocalDateTime inactiveAt;
+    private String reconciliationTargetId;
+    private String reconciliationConflictId;
+    private String reconciliationOriginalFingerprint;
 
 }

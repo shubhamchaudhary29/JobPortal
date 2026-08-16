@@ -60,7 +60,7 @@ The remaining scope is per-source lifecycle and safe migration; deterministic ca
   - Done when: cleanup is bounded, reference-safe, and all cleanup tests pass.
   - Evidence (2026-08-16): `cd backend/backend && ./mvnw -Dtest='*Cleanup*,*Lifecycle*' test` passed 8 tests (0 failures/errors/skips), including real-Mongo retention age, deterministic batch bounds, recruiter/active/recent/undated protection, retained application references, and distributed lock contention/owner release. Cleanup uses the indexed imported/inactive/`inactiveAt` eligibility query, checks `applications.jobId`, and conditionally rechecks eligibility at deletion. `cd backend/backend && ./mvnw test` passed 89 tests (0 failures/errors/skips). `git diff --check` passed.
 
-- [ ] **M1E — Conflict persistence, ADMIN reconciliation API and reference-safe idempotent resolution**
+- [x] **M1E — Conflict persistence, ADMIN reconciliation API and reference-safe idempotent resolution**
 
   - Required behavior: persist identity/fingerprint conflicts without deletion; expose ADMIN listing/resolution; make resolution idempotent and preserve all job/application references.
   - Expected files/components: conflict document/repository/service, admin controller/DTOs, security/OpenAPI documentation.
@@ -68,6 +68,7 @@ The remaining scope is per-source lifecycle and safe migration; deterministic ca
   - Verification commands: `cd backend/backend && ./mvnw -Dtest='*Conflict*,*Admin*' test`.
   - Dependencies: M1A–M1D.
   - Done when: conflicts are durable and administratively resolvable without unsafe automatic deletion.
+  - Evidence (2026-08-16): `cd backend/backend && ./mvnw -Dtest='*Conflict*,*Admin*' test` passed 7 tests (0 failures/errors/skips), including real-Mongo conflict coalescing, bounded/filterable pagination, ADMIN `401/403/200`, explicit resolution, same-candidate ambiguity refusal without mutation, application/conversation reference rewrites, duplicate removal only after rewrites, completed replay idempotence, and recovery from a persisted mid-flight reconciliation marker. `cd backend/backend && ./mvnw test` initially found and then verified the fix for a shared/integration architecture cycle; the clean rerun passed 96 tests (0 failures/errors/skips). `git diff --check` passed.
 
 - [ ] **M1F — Complete lifecycle/conflict migration audit and real-Mongo end-to-end verification**
 

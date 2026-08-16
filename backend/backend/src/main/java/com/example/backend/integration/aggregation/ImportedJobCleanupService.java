@@ -56,7 +56,8 @@ public class ImportedJobCleanupService {
         return new Criteria().andOperator(
                 Criteria.where("recruiterId").is(null),
                 Criteria.where("active").is(false),
-                Criteria.where("inactiveAt").lte(cutoff));
+                Criteria.where("inactiveAt").lte(cutoff),
+                Criteria.where("reconciliationTargetId").exists(false));
     }
 
     public record Result(int scanned, int deleted, int protectedReferences) { }

@@ -1,6 +1,7 @@
 package com.example.backend.integration.adzuna;
 
 import com.example.backend.job.infrastructure.JobDocument;
+import com.example.backend.integration.aggregation.AggregationConflictService;
 import org.bson.Document;
 import org.springframework.dao.DuplicateKeyException;
 import org.springframework.data.mongodb.core.FindAndModifyOptions;
@@ -11,6 +12,7 @@ import org.springframework.data.mongodb.core.query.Criteria;
 import org.springframework.data.mongodb.core.query.Query;
 import org.springframework.data.mongodb.core.query.UpdateDefinition;
 import org.springframework.stereotype.Repository;
+import org.springframework.beans.factory.annotation.Autowired;
 import java.time.LocalDateTime;
 import java.time.ZoneId;
 import java.util.Date;
@@ -20,7 +22,13 @@ import com.example.backend.job.infrastructure.ImportedSourceListing;
 @Repository
 public class AdzunaJobStore {
     private final MongoTemplate mongo;
-    public AdzunaJobStore(MongoTemplate mongo) { this.mongo = mongo; }
+    private final AggregationConflictService conflicts;
+    @Autowired
+    public AdzunaJobStore(MongoTemplate mongo, AggregationConflictService conflicts) {
+        this.mongo = mongo;
+        this.conflicts = conflicts;
+    }
+    AdzunaJobStore(MongoTemplate mongo) { this(mongo, null); }
     public UpsertOutcome upsert(JobDocument job, LocalDateTime now) {
         return upsert(job, now, null);
     }
@@ -38,6 +46,10 @@ public class AdzunaJobStore {
             // This is a legacy conflict, not an ordinary duplicate.  Deleting or rewriting
             // either document here can orphan applications that retain its job id.  Surface it
             // for the documented audit/migration instead of making an unsafe guess at runtime.
+            if (conflicts != null) {
+                conflicts.recordIdentityFingerprint(identity, job.getFingerprint(), identityMatch.getId(),
+                        fingerprintMatch.getId(), now);
+            }
             throw new AdzunaPersistenceException(new IllegalStateException("Imported identity/fingerprint conflict requires reconciliation"));
         }
         Query query = identityMatch != null ? Query.query(Criteria.where("_id").is(identityMatch.getId()))

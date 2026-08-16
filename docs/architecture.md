@@ -52,6 +52,8 @@ cookie paths would increase risk. Requests to old paths are unsupported.
 | `GET /chat/rooms/{id}/messages` | `GET /api/v1/conversations/{id}/messages` |
 | `GET /chat/unread` | `GET /api/v1/conversations/unread-count` |
 
+Aggregation administration is exposed only below `/api/v1/admin/ingestion`: summaries and manual provider runs are joined by paginated conflict listing and explicit conflict resolution. Reconciliation requests name both the retained canonical job ID and duplicate job ID; the backend preserves and rewrites application/conversation references before any duplicate removal.
+
 The STOMP/SockJS handshake remains at `/ws`, with messages published to `/app/chat.send`. Its request property
 is `conversationId`.
 
