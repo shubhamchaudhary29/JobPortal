@@ -40,7 +40,7 @@ The remaining scope is per-source lifecycle and safe migration; deterministic ca
   - Done when: order-independent primary fields and idempotent multi-source persistence are demonstrated by focused Mongo tests.
   - Evidence (2026-08-16): `cd backend/backend && ./mvnw -Dtest='*Canonical*,*JobStoreMongoIntegrationTest' test` passed 10 real-Mongo tests (0 failures/errors/skips), covering opposite provider order, lexical same-provider tie-breaking, non-primary replay, changed fingerprints, 20-way concurrent cross-provider ingestion, same-source concurrency, and a forced duplicate-key winner. The Mongo aggregation update atomically de-duplicates and sorts source listings, preserves earliest listing timestamps and every deep link, and derives canonical content/source/link only from the stable primary listing. `cd backend/backend && ./mvnw test` passed 77 tests (0 failures/errors/skips). `git diff --check` passed.
 
-- [ ] **M1C — Successful-run seen-set tracking, missing detection, deactivation and reactivation**
+- [x] **M1C — Successful-run seen-set tracking, missing detection, deactivation and reactivation**
 
   - Required behavior: update listing seen/missing state only after complete successful runs; deactivate only when every listing is inactive; reactivate on rediscovery.
   - Expected files/components: aggregation service, lifecycle service, source-listing model, lifecycle configuration.
@@ -48,6 +48,7 @@ The remaining scope is per-source lifecycle and safe migration; deterministic ca
   - Verification commands: `cd backend/backend && ./mvnw -Dtest='*Lifecycle*,*EmployerIngestion*' test`.
   - Dependencies: M1A–M1B.
   - Done when: all lifecycle transitions are source-specific and every listed lifecycle test passes.
+  - Evidence (2026-08-16): `cd backend/backend && ./mvnw -Dtest='*Lifecycle*,*EmployerIngestion*,AdzunaServiceTest' test` passed 14 tests (0 failures/errors/skips), including real-Mongo successful misses, threshold deactivation, rediscovery reactivation, multi-source survival/canonical switching, seen-set reset, recruiter isolation, legitimate empty boards, provider failure, rejected/partial items, lock contention, and employer/Adzuna lease-loss protection. Missing state advances through one source/employer-scoped Mongo update pipeline only after a complete lease-valid run; `JOB_AGGREGATION_MISSING_THRESHOLD` is validated and defaults to 3. `cd backend/backend && ./mvnw test` passed 85 tests (0 failures/errors/skips). `git diff --check` passed.
 
 - [ ] **M1D — Retention cleanup with recruiter-job and application-reference protection**
 

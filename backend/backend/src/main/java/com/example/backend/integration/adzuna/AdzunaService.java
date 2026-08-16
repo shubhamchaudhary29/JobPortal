@@ -4,6 +4,7 @@ import com.example.backend.job.infrastructure.JobDocument;
 import com.example.backend.integration.jobs.ExternalJob;
 import com.example.backend.integration.jobs.JobFetchRequest;
 import com.example.backend.integration.jobs.JobSource;
+import com.example.backend.integration.aggregation.ImportedJobLifecycleService;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
@@ -15,6 +16,8 @@ import java.util.concurrent.ThreadLocalRandom;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.function.LongUnaryOperator;
 import java.util.function.BooleanSupplier;
+import java.util.HashSet;
+import java.util.Set;
 
 @Service
 public class AdzunaService {
@@ -28,16 +31,19 @@ public class AdzunaService {
     private final Sleeper sleeper;
     private final LongUnaryOperator jitter;
     private final AtomicBoolean running = new AtomicBoolean();
+    private final ImportedJobLifecycleService lifecycle;
     @Autowired
     public AdzunaService(@Qualifier("adzunaJobSource") JobSource source, AdzunaJobStore jobs, AdzunaProperties properties,
-                         AdzunaCircuitBreaker circuit, AdzunaSyncMetrics metrics) {
-        this(source, jobs, properties, circuit, metrics, Clock.systemUTC(), Thread::sleep,
+                         AdzunaCircuitBreaker circuit, AdzunaSyncMetrics metrics,
+                         ImportedJobLifecycleService lifecycle) {
+        this(source, jobs, properties, circuit, metrics, lifecycle, Clock.systemUTC(), Thread::sleep,
                 bound -> ThreadLocalRandom.current().nextLong(Math.max(1, bound)));
     }
     AdzunaService(JobSource source, AdzunaJobStore jobs, AdzunaProperties properties,
-                  AdzunaCircuitBreaker circuit, AdzunaSyncMetrics metrics, Clock clock, Sleeper sleeper, LongUnaryOperator jitter) {
+                  AdzunaCircuitBreaker circuit, AdzunaSyncMetrics metrics, ImportedJobLifecycleService lifecycle,
+                  Clock clock, Sleeper sleeper, LongUnaryOperator jitter) {
         this.source = source; this.jobs = jobs; this.properties = properties; this.circuit = circuit;
-        this.metrics = metrics; this.clock = clock; this.sleeper = sleeper; this.jitter = jitter;
+        this.metrics = metrics; this.lifecycle = lifecycle; this.clock = clock; this.sleeper = sleeper; this.jitter = jitter;
     }
 
     public SyncResult sync() { return sync(() -> true); }
@@ -47,31 +53,46 @@ public class AdzunaService {
             metrics.record(AdzunaSyncMetrics.Outcome.REJECTED, 0);
             return new SyncResult(0, 0, 0, 0, 0, 0, Outcome.OVERLAP_REJECTED);
         }
+        try {
+            return executeSync(leaseValid);
+        } finally {
+            running.set(false);
+        }
+    }
+    private SyncResult executeSync(BooleanSupplier leaseValid) {
         long startedAt = System.nanoTime();
         int failedBatches = 0, failedItems = 0, inserted = 0, updated = 0, unchanged = 0, rejected = 0, attemptedBatches = 0;
-        try {
-            for (String rawKeyword : properties.keywords()) {
+        Set<String> seenIdentities = new HashSet<>();
+        for (String rawKeyword : properties.keywords()) {
+            if (!leaseValid.getAsBoolean()) break;
+            String keyword = rawKeyword.trim();
+            if (keyword.isEmpty()) continue;
+            for (int page = 1; page <= properties.pagesPerKeyword(); page++) {
                 if (!leaseValid.getAsBoolean()) break;
-                String keyword = rawKeyword.trim();
-                if (keyword.isEmpty()) continue;
-                for (int page = 1; page <= properties.pagesPerKeyword(); page++) {
-                    if (!leaseValid.getAsBoolean()) break;
-                    attemptedBatches++;
-                    try {
-                        BatchResult batch = fetchKeyword(keyword, page, leaseValid);
-                        inserted += batch.inserted(); updated += batch.updated(); unchanged += batch.unchanged(); rejected += batch.rejected(); failedItems += batch.failed();
-                    } catch (AdzunaCircuitOpenException ex) {
-                        failedBatches++;
-                        log.warn("event=adzuna_batch_rejected provider=adzuna reason=circuit_open");
-                        break;
-                    } catch (AdzunaProviderException ex) {
-                        failedBatches++; circuit.recordFailure();
-                        log.warn("event=adzuna_batch_failed provider=adzuna retryable={} error={}", ex.retryable(), ex.getMessage());
-                        break; // do not pretend a failed page is an empty page
-                    }
+                attemptedBatches++;
+                try {
+                    BatchResult batch = fetchKeyword(keyword, page, leaseValid, seenIdentities);
+                    inserted += batch.inserted(); updated += batch.updated(); unchanged += batch.unchanged(); rejected += batch.rejected(); failedItems += batch.failed();
+                } catch (AdzunaCircuitOpenException ex) {
+                    failedBatches++;
+                    log.warn("event=adzuna_batch_rejected provider=adzuna reason=circuit_open");
+                    break;
+                } catch (AdzunaProviderException ex) {
+                    failedBatches++; circuit.recordFailure();
+                    log.warn("event=adzuna_batch_failed provider=adzuna retryable={} error={}", ex.retryable(), ex.getMessage());
+                    break; // do not pretend a failed page is an empty page
                 }
             }
-        } finally { running.set(false); }
+        }
+        boolean leaseStillValid = leaseValid.getAsBoolean();
+        if (leaseStillValid && attemptedBatches > 0 && failedBatches == 0 && failedItems == 0 && rejected == 0) {
+            try {
+                lifecycle.completeSuccessfulRun(source.sourceName(), null, seenIdentities, LocalDateTime.now(clock));
+            } catch (RuntimeException lifecycleFailure) {
+                failedBatches++;
+                log.warn("event=adzuna_lifecycle_failed provider=adzuna");
+            }
+        }
         long elapsed = (System.nanoTime() - startedAt) / 1_000_000;
         Outcome outcome = inserted + updated == 0 && (failedBatches > 0 || failedItems > 0) ? Outcome.COMPLETE_FAILURE
                 : (failedBatches > 0 || failedItems > 0 || rejected > 0 ? Outcome.PARTIAL_FAILURE : Outcome.FULL_SUCCESS);
@@ -80,7 +101,8 @@ public class AdzunaService {
         log.info("event=adzuna_sync_completed outcome={} attempted_batches={} inserted={} updated={} unchanged={} rejected={} failed_items={} failed_batches={} latency_ms={}", outcome, attemptedBatches, inserted, updated, unchanged, rejected, failedItems, failedBatches, elapsed);
         return new SyncResult(inserted, updated, unchanged, rejected, failedBatches, failedItems, outcome);
     }
-    private BatchResult fetchKeyword(String keyword, int page, BooleanSupplier leaseValid) {
+    private BatchResult fetchKeyword(String keyword, int page, BooleanSupplier leaseValid,
+                                     Set<String> seenIdentities) {
         if (!circuit.allowRequest()) throw new AdzunaCircuitOpenException();
         java.util.List<ExternalJob> response = fetchWithRetry(keyword, page);
         int inserted = 0, updated = 0, unchanged = 0, rejected = 0, failed = 0;
@@ -91,7 +113,8 @@ public class AdzunaService {
                     || source.applicationUrl() == null || source.fingerprint() == null) { rejected++; continue; }
             JobDocument mapped = new JobDocument(); mapped.setSource(this.source.sourceName()); mapped.setExternalId(source.externalId());
             mapped.setTitle(source.title()); mapped.setDescription(source.description()); mapped.setCompany(source.company()); mapped.setLocation(source.location()); mapped.setEmploymentType(source.employmentType()); mapped.setSalaryMin(source.salaryMin()); mapped.setSalaryMax(source.salaryMax()); mapped.setSalary(source.salaryMin() == null ? 0 : source.salaryMin()); mapped.setApplicationUrl(source.applicationUrl()); mapped.setSourceUrl(source.applicationUrl()); mapped.setPublishedAt(source.publishedAt()); mapped.setExpiresAt(source.expiresAt()); mapped.setFingerprint(source.fingerprint());
-            try { switch (jobs.upsert(mapped, now)) { case INSERTED -> inserted++; case UPDATED -> updated++; case UNCHANGED -> unchanged++; } }
+            try { switch (jobs.upsert(mapped, now)) { case INSERTED -> inserted++; case UPDATED -> updated++; case UNCHANGED -> unchanged++; }
+                seenIdentities.add(mapped.getSource() + ":" + mapped.getExternalId()); }
             catch (AdzunaPersistenceException ex) { failed++; log.warn("event=adzuna_item_store_failed provider=adzuna error={}", ex.getMessage()); }
         }
         circuit.recordSuccess();
