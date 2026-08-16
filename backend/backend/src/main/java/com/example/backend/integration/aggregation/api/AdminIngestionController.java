@@ -5,6 +5,7 @@ import com.example.backend.integration.aggregation.EmployerRegistryProperties;
 import com.example.backend.integration.aggregation.IngestionAdminService;
 import com.example.backend.integration.aggregation.IngestionCoordinator;
 import com.example.backend.integration.aggregation.AggregationConflictService;
+import com.example.backend.integration.aggregation.SyncRunService;
 import com.example.backend.shared.pagination.PageResponse;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.NotBlank;
@@ -23,11 +24,13 @@ public class AdminIngestionController {
     private final IngestionCoordinator coordinator;
     private final IngestionAdminService admin;
     private final AggregationConflictService conflicts;
+    private final SyncRunService runs;
     public AdminIngestionController(IngestionCoordinator coordinator, IngestionAdminService admin,
-                                    AggregationConflictService conflicts) {
+                                    AggregationConflictService conflicts, SyncRunService runs) {
         this.coordinator = coordinator;
         this.admin = admin;
         this.conflicts = conflicts;
+        this.runs = runs;
     }
     @GetMapping("/summary")
     public Summary summary() {
@@ -53,6 +56,31 @@ public class AdminIngestionController {
         return conflicts.resolve(conflictId, request.canonicalJobId(), request.duplicateJobId(),
                 authentication == null ? "unknown" : authentication.getName());
     }
+    @GetMapping("/history")
+    public PageResponse<SyncRunService.RunView> history(
+            @org.springframework.web.bind.annotation.RequestParam(required = false) String provider,
+            @org.springframework.web.bind.annotation.RequestParam(required = false) String employer,
+            @org.springframework.web.bind.annotation.RequestParam(required = false) String outcome,
+            @org.springframework.web.bind.annotation.RequestParam(required = false) String trigger,
+            @org.springframework.web.bind.annotation.RequestParam(defaultValue = "0") int page,
+            @org.springframework.web.bind.annotation.RequestParam(defaultValue = "20") int size) {
+        return runs.history(provider, employer, outcome, trigger, page, size);
+    }
+    @GetMapping("/history/{runId}")
+    public SyncRunService.RunView historyDetail(@PathVariable String runId) {
+        return runs.detail(runId);
+    }
+    @GetMapping("/status")
+    public Status status(
+            @org.springframework.web.bind.annotation.RequestParam(required = false) String provider,
+            @org.springframework.web.bind.annotation.RequestParam(required = false) String employer) {
+        IngestionAdminService.Counts counts = admin.counts();
+        return new Status(runs.latest(provider, employer), counts.active(), counts.inactive(),
+                admin.providerCompanyCounts());
+    }
     public record Summary(long activeImportedJobs, long inactiveImportedJobs) { }
+    public record Status(java.util.List<SyncRunService.RunView> latestRuns,
+                         long activeImportedJobs, long inactiveImportedJobs,
+                         java.util.List<IngestionAdminService.ProviderCompanyCount> providerCompanyCounts) { }
     public record ResolutionRequest(@NotBlank String canonicalJobId, @NotBlank String duplicateJobId) { }
 }

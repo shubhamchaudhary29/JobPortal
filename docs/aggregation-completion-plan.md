@@ -90,7 +90,7 @@ The remaining scope is per-source lifecycle and safe migration; deterministic ca
   - Done when: every existing coordinator exit path creates exactly one durable, indexed, retention-controlled run record and focused/full backend tests pass.
   - Evidence (2026-08-16): `cd backend/backend && ./mvnw -Dtest='*SyncRun*,*IngestionCoordinator*,AdzunaServiceTest' test` passed 10 tests (0 failures/errors/skips), including real-Mongo records for completed, partial, failed, locked, and lease-lost exits from employer and Adzuna coordinators; scheduled/manual triggers; run IDs; ingestion, retry, and lifecycle counts; bounded URL/credential sanitization; duplicate completion protection; and scope/outcome/TTL indexes. A deterministic thrown-ingestion case remained durably `FAILED`. `cd backend/backend && ./mvnw test` passed 100 tests (0 failures/errors/skips). `git diff --check` passed.
 
-- [ ] **M2B — Paginated/filterable ADMIN history, detail, and last-status APIs**
+- [x] **M2B — Paginated/filterable ADMIN history, detail, and last-status APIs**
 
   - Required behavior: expose ADMIN-only bounded history pagination and filtering by provider/employer/outcome/trigger, stable detail lookup, and latest status/provider-company counts without exposing unsanitized data.
   - Expected files/components: admin ingestion controller/DTOs, sync-run query service, security/OpenAPI and operations documentation.
@@ -98,6 +98,7 @@ The remaining scope is per-source lifecycle and safe migration; deterministic ca
   - Verification commands: `cd backend/backend && ./mvnw -Dtest='*SyncHistory*,*Admin*' test`; `cd backend/backend && ./mvnw test`; `git diff --check`.
   - Dependencies: M2A.
   - Done when: secured bounded ADMIN history/detail/status queries return deterministic documented responses and all tests pass.
+  - Evidence (2026-08-16): `cd backend/backend && ./mvnw -Dtest='*SyncHistory*,*Admin*' test` passed 7 tests (0 failures/errors/skips), covering ADMIN `401/403/200`, bounded pagination, all filters and invalid values, deterministic tie ordering, detail/not-found, latest-per-scope status, provider/company per-listing counts, recruiter exclusion, and defensive response sanitization. History responses omit TTL metadata and retain only bounded failure fields. `cd backend/backend && ./mvnw test` passed 105 tests (0 failures/errors/skips). `git diff --check` passed.
 
 - [ ] **M2C — Provider-wide and employer-specific manual synchronization**
 

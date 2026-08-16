@@ -110,3 +110,13 @@ failure type/detail. The `runId` is included in structured start/completion logs
 history through the `expiresAt` TTL index after `JOB_AGGREGATION_SYNC_HISTORY_RETENTION_DAYS` (30 by
 default); changing retention affects new records, so apply an explicit reviewed migration if old
 expiry dates must also change.
+
+ADMIN history endpoints are database-backed and bounded to 100 records per page:
+
+- `GET /api/v1/admin/ingestion/history` accepts `provider`, `employer`, `outcome`, `trigger`, `page`, and `size`.
+- `GET /api/v1/admin/ingestion/history/{runId}` returns a stable sanitized detail view.
+- `GET /api/v1/admin/ingestion/status` returns the latest run per provider/employer scope plus imported-job and provider/company listing counts.
+
+History is ordered by start time descending and run ID ascending. Unsupported filters, unsafe board
+identifiers, negative pages, and sizes outside 1–100 are rejected; retention metadata and exception
+stacks are never returned.

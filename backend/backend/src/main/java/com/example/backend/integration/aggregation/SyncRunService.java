@@ -4,6 +4,9 @@ import java.time.Clock;
 import java.time.Instant;
 import java.time.temporal.ChronoUnit;
 import java.util.Locale;
+import java.util.LinkedHashMap;
+import java.util.List;
+import java.util.Map;
 import java.util.UUID;
 import java.util.regex.Pattern;
 import org.slf4j.Logger;
@@ -14,6 +17,12 @@ import org.springframework.data.mongodb.core.query.Criteria;
 import org.springframework.data.mongodb.core.query.Query;
 import org.springframework.data.mongodb.core.query.Update;
 import org.springframework.stereotype.Service;
+import org.springframework.data.domain.PageImpl;
+import org.springframework.data.domain.PageRequest;
+import org.springframework.data.domain.Sort;
+import com.example.backend.shared.error.BadRequestException;
+import com.example.backend.shared.error.ResourceNotFoundException;
+import com.example.backend.shared.pagination.PageResponse;
 
 @Service
 public class SyncRunService {
@@ -85,6 +94,101 @@ public class SyncRunService {
                 handle.runId(), outcome, Math.max(0, completedAt.toEpochMilli() - handle.startedAt().toEpochMilli()));
     }
 
+    public PageResponse<RunView> history(String provider, String employer, String outcome, String trigger,
+                                         int page, int size) {
+        validatePage(page, size);
+        Criteria criteria = filters(provider, employer, outcome, trigger);
+        Sort sort = Sort.by(Sort.Order.desc("startedAt"), Sort.Order.asc("id"));
+        Query contentQuery = Query.query(criteria).with(PageRequest.of(page, size, sort));
+        List<RunView> content = mongo.find(contentQuery, SyncRunDocument.class).stream().map(this::view).toList();
+        long total = mongo.count(Query.query(criteria), SyncRunDocument.class);
+        return PageResponse.from(new PageImpl<>(content, PageRequest.of(page, size, sort), total));
+    }
+
+    public RunView detail(String runId) {
+        if (runId == null || runId.isBlank() || runId.length() > 80) throw new BadRequestException("Invalid run ID");
+        SyncRunDocument run = mongo.findById(runId, SyncRunDocument.class);
+        if (run == null) throw new ResourceNotFoundException("Sync run not found");
+        return view(run);
+    }
+
+    public List<RunView> latest(String provider, String employer) {
+        Criteria criteria = filters(provider, employer, null, null);
+        Query query = Query.query(criteria).with(Sort.by(Sort.Order.desc("startedAt"), Sort.Order.asc("id")))
+                .limit(200);
+        Map<String, RunView> latestByScope = new LinkedHashMap<>();
+        for (SyncRunDocument run : mongo.find(query, SyncRunDocument.class)) {
+            String key = run.getProvider() + "\u0000" + (run.getEmployer() == null ? "" : run.getEmployer());
+            latestByScope.putIfAbsent(key, view(run));
+        }
+        return List.copyOf(latestByScope.values());
+    }
+
+    private Criteria filters(String provider, String employer, String outcome, String trigger) {
+        java.util.ArrayList<Criteria> filters = new java.util.ArrayList<>();
+        String normalizedProvider = normalizedProvider(provider);
+        if (normalizedProvider != null) filters.add(Criteria.where("provider").is(normalizedProvider));
+        String normalizedEmployer = normalizedEmployer(employer);
+        if (normalizedEmployer != null) filters.add(Criteria.where("employer").is(normalizedEmployer));
+        if (outcome != null && !outcome.isBlank()) {
+            filters.add(Criteria.where("outcome").is(parseEnum(Outcome.class, outcome, "outcome")));
+        }
+        if (trigger != null && !trigger.isBlank()) {
+            filters.add(Criteria.where("trigger").is(parseEnum(Trigger.class, trigger, "trigger")));
+        }
+        return filters.isEmpty() ? new Criteria() : new Criteria().andOperator(filters);
+    }
+
+    private String normalizedProvider(String provider) {
+        if (provider == null || provider.isBlank()) return null;
+        String normalized = provider.trim().toLowerCase(Locale.ROOT);
+        if (!List.of("adzuna", "greenhouse", "lever").contains(normalized)) {
+            throw new BadRequestException("Unsupported provider");
+        }
+        return normalized;
+    }
+
+    private String normalizedEmployer(String employer) {
+        if (employer == null || employer.isBlank()) return null;
+        String normalized = employer.trim();
+        if (normalized.length() > 100 || !normalized.matches("[A-Za-z0-9._-]+")) {
+            throw new BadRequestException("Invalid employer");
+        }
+        return normalized;
+    }
+
+    private <T extends Enum<T>> T parseEnum(Class<T> type, String raw, String label) {
+        try {
+            return Enum.valueOf(type, raw.trim().toUpperCase(Locale.ROOT));
+        } catch (IllegalArgumentException invalid) {
+            throw new BadRequestException("Invalid " + label);
+        }
+    }
+
+    private void validatePage(int page, int size) {
+        if (page < 0) throw new BadRequestException("Page must not be negative");
+        if (size < 1 || size > 100) throw new BadRequestException("Size must be between 1 and 100");
+    }
+
+    private RunView view(SyncRunDocument run) {
+        String failureType = run.getFailureType();
+        if (failureType != null && !failureType.matches("[A-Za-z0-9_$]{1,80}")) failureType = "ProviderFailure";
+        String failureDetail = run.getFailureDetail();
+        if (failureDetail != null) {
+            failureDetail = URL.matcher(failureDetail).replaceAll("[redacted-url]");
+            failureDetail = SECRET.matcher(failureDetail).replaceAll("$1$2[redacted]")
+                    .replace('\n', ' ').replace('\r', ' ').trim();
+            if (failureDetail.length() > MAX_FAILURE_DETAIL) {
+                failureDetail = failureDetail.substring(0, MAX_FAILURE_DETAIL);
+            }
+        }
+        return new RunView(run.getRunId(), run.getProvider(), run.getEmployer(), run.getTrigger(),
+                run.getStartedAt(), run.getCompletedAt(), run.getOutcome(), run.getInserted(), run.getUpdated(),
+                run.getUnchanged(), run.getRejected(), run.getFailedItems(), run.getFailedBatches(),
+                run.getFailedEmployers(), run.getAttemptedBatches(), run.getAttemptedEmployers(),
+                run.getLifecycleMatched(), run.getLifecycleModified(), run.getRetries(), failureType, failureDetail);
+    }
+
     Failure sanitize(Throwable failure) {
         if (failure == null) return null;
         String detail = failure.getMessage();
@@ -110,4 +214,11 @@ public class SyncRunService {
                          int attemptedEmployers) {
         public static Counts empty() { return new Counts(0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0); }
     }
+    public record RunView(String runId, String provider, String employer, Trigger trigger,
+                          Instant startedAt, Instant completedAt, Outcome outcome,
+                          int inserted, int updated, int unchanged, int rejected,
+                          int failedItems, int failedBatches, int failedEmployers,
+                          int attemptedBatches, int attemptedEmployers,
+                          long lifecycleMatched, long lifecycleModified, int retries,
+                          String failureType, String failureDetail) { }
 }
