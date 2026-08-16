@@ -62,6 +62,7 @@ public class SecurityConfig {
                         .requestMatchers(HttpMethod.DELETE, "/api/v1/auth/sessions/current").permitAll()
                         .requestMatchers(HttpMethod.GET, "/api/v1/jobs", "/api/v1/health",
                                 "/v3/api-docs/**", "/swagger-ui/**", "/swagger-ui.html").permitAll()
+                        .requestMatchers("/api/v1/admin/**").hasRole("ADMIN")
                         .requestMatchers(new RegexRequestMatcher("^/api/v1/jobs/(?!mine$)[^/]+$", "GET")).permitAll()
                         .requestMatchers("/ws/**").permitAll()
                         .anyRequest().authenticated())

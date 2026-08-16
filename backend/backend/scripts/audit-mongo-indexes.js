@@ -5,6 +5,12 @@ const duplicates = db.jobs.aggregate([
   {$group: {_id: {source: "$source", externalId: "$externalId"}, ids: {$push: "$_id"}, count: {$sum: 1}}},
   {$match: {count: {$gt: 1}}}
 ]).toArray();
+const fingerprintDuplicates = db.jobs.aggregate([
+  {$match: {fingerprint: {$type: "string"}, recruiterId: null}},
+  {$group: {_id: "$fingerprint", ids: {$push: "$_id"}, count: {$sum: 1}}},
+  {$match: {count: {$gt: 1}}}
+]).toArray();
 printjson({duplicateSourceExternalIds: duplicates});
+printjson({duplicateImportedFingerprints: fingerprintDuplicates});
 printjson({jobIndexes: db.jobs.getIndexes()});
-if (duplicates.length) quit(2);
+if (duplicates.length || fingerprintDuplicates.length) quit(2);

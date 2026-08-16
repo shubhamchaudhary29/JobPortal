@@ -3,6 +3,7 @@ package com.example.backend.job.infrastructure;
 import lombok.Data;
 import org.springframework.data.annotation.Id;
 import org.springframework.data.mongodb.core.mapping.Document;
+import org.springframework.data.mongodb.core.index.CompoundIndex;
 
 import java.time.LocalDateTime;
 import java.util.LinkedHashSet;
@@ -10,6 +11,8 @@ import java.util.Set;
 
 @Data
 @Document(collection = "jobs")
+@CompoundIndex(name = "imported_fingerprint_unique", def = "{'fingerprint': 1}", unique = true,
+        partialFilter = "{'fingerprint': {$type: 'string'}, 'recruiterId': null}")
 public class JobDocument {
 
     @Id
@@ -42,5 +45,11 @@ public class JobDocument {
     private Boolean active = true;
     private String fingerprint;
     private Set<String> sourceIdentities = new LinkedHashSet<>();
+    /** Every original provider deep link associated with the canonical job. */
+    private Set<String> applicationUrls = new LinkedHashSet<>();
+    private LocalDateTime lastSuccessfulSyncAt;
+    private int consecutiveMissingRuns;
+    private String inactiveReason;
+    private LocalDateTime inactiveAt;
 
 }

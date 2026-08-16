@@ -46,3 +46,17 @@ Indexes consume storage and make writes slower. These are limited to current rep
 Backend unit/contract tests do not call Adzuna: `cd backend/backend && ./mvnw test`.
 
 For Compose, create a local ignored `.env` with placeholders for `MONGODB_URI`, `JWT_SECRET`, `ADZUNA_APP_ID`, `ADZUNA_APP_KEY`, and `CORS_ALLOWED_ORIGINS`, then run `docker compose config` followed by `docker compose build`. Do not commit `.env` files. Docker image creation exercises the wrapper build inside the backend image; a live Adzuna sync still requires valid provider credentials and is not part of automated verification.
+## Employer ingestion operations
+
+Public job search reads MongoDB only; it never invokes Greenhouse, Lever, or Adzuna.
+Greenhouse and Lever are independently scheduled every six hours by default and can be globally disabled with `JOB_AGGREGATION_SCHEDULING_ENABLED=false` (the test profile does this).
+
+Imported records use a provider-independent SHA-256 fingerprint of normalized company, title, and location. The original provider identity and each original application deep link are retained on the canonical record. Apply the `imported_fingerprint_unique` index only after running the read-only audit:
+
+```bash
+mongosh "$MONGODB_URI" backend/backend/scripts/audit-mongo-indexes.js
+```
+
+Do not automatically delete ambiguous duplicate records; resolve them before enabling the unique index in a production rollout. Mongo lease locks in `ingestion_locks` prevent scheduled instances from overlapping and expire after five minutes, allowing crash recovery.
+
+`/api/v1/admin/ingestion/**` is ADMIN-only. Public registration can create only USER or RECRUITER accounts. Provision an administrator through a controlled database migration by changing an existing trusted user's `role` to `ADMIN`, then have that user sign in again to receive a role-bearing token.

@@ -15,20 +15,24 @@ public class AdzunaJobStore {
     private final MongoTemplate mongo;
     public AdzunaJobStore(MongoTemplate mongo) { this.mongo = mongo; }
     public UpsertOutcome upsert(JobDocument job, LocalDateTime now) {
+        if (job.getFingerprint() == null || job.getFingerprint().isBlank()) job.setFingerprint(legacyFingerprint(job));
         String identity = job.getSource() + ":" + job.getExternalId();
-        if (job.getFingerprint() != null && mongo.exists(Query.query(Criteria.where("fingerprint").is(job.getFingerprint()).and("source").ne(job.getSource())), JobDocument.class)) {
-            mongo.updateMulti(Query.query(Criteria.where("fingerprint").is(job.getFingerprint())), new Update().set("lastSeenAt", now).set("active", true).addToSet("sourceIdentities", identity), JobDocument.class);
-            return UpsertOutcome.UNCHANGED;
-        }
-        Query query = Query.query(Criteria.where("source").is(job.getSource()).and("externalId").is(job.getExternalId()));
+        // The fingerprint unique index makes this an atomic identity resolution.  There is
+        // intentionally no exists/update window: all providers converge on one canonical row.
+        Criteria canonicalOrSourceIdentity = new Criteria().orOperator(
+                Criteria.where("fingerprint").is(job.getFingerprint()),
+                Criteria.where("source").is(job.getSource()).and("externalId").is(job.getExternalId()));
+        Query query = Query.query(new Criteria().andOperator(canonicalOrSourceIdentity, Criteria.where("recruiterId").is(null)));
         Update update = new Update().set("title", job.getTitle()).set("description", job.getDescription())
                 .set("sourceUrl", job.getSourceUrl()).set("company", job.getCompany()).set("location", job.getLocation())
                 .set("salary", job.getSalary()).set("experience", job.getExperience()).set("fetchedAt", now)
                 .set("lastSeenAt", now).set("employmentType", job.getEmploymentType()).set("salaryMin", job.getSalaryMin())
                 .set("salaryMax", job.getSalaryMax()).set("applicationUrl", job.getApplicationUrl()).set("publishedAt", job.getPublishedAt())
                 .set("expiresAt", job.getExpiresAt()).set("active", true).set("fingerprint", job.getFingerprint())
+                .set("lastSuccessfulSyncAt", now).set("consecutiveMissingRuns", 0).unset("inactiveReason").unset("inactiveAt")
                 .setOnInsert("firstSeenAt", now).setOnInsert("source", job.getSource()).setOnInsert("externalId", job.getExternalId())
                 .setOnInsert("recruiterId", null).setOnInsert("createdAt", now).addToSet("sourceIdentities", identity);
+        if (job.getApplicationUrl() != null) update.addToSet("applicationUrls", job.getApplicationUrl());
         try { return outcome(mongo.findAndModify(query, update, FindAndModifyOptions.options().upsert(true), JobDocument.class), job); }
         catch (DuplicateKeyException race) {
             try { return outcome(mongo.findAndModify(query, update, FindAndModifyOptions.options().upsert(true), JobDocument.class), job); }
@@ -49,4 +53,10 @@ public class AdzunaJobStore {
                 && java.util.Objects.equals(a.getActive(), b.getActive()) && Double.compare(a.getSalary(), b.getSalary()) == 0
                 && Double.compare(a.getExperience(), b.getExperience()) == 0;
     }
+    private String legacyFingerprint(JobDocument job) {
+        String value = String.join("|", safe(job.getCompany()), safe(job.getTitle()), safe(job.getLocation())).toLowerCase(java.util.Locale.ROOT);
+        try { return java.util.HexFormat.of().formatHex(java.security.MessageDigest.getInstance("SHA-256").digest(value.getBytes(java.nio.charset.StandardCharsets.UTF_8))); }
+        catch (java.security.NoSuchAlgorithmException impossible) { throw new IllegalStateException(impossible); }
+    }
+    private String safe(String value) { return value == null ? "" : value.trim().replaceAll("\\s+", " "); }
 }
