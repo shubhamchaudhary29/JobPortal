@@ -59,6 +59,7 @@ class AdzunaJobStoreMongoIntegrationTest {
         JobDocument persisted = mongo.findAll(JobDocument.class).get(0);
         assertEquals(1, persisted.getSourceListings().size());
         assertEquals("adzuna:listing", persisted.getSourceListings().get(0).getIdentity());
+        assertEquals(first, persisted.getSourceListings().get(0).getFirstSeenAt());
         assertEquals(first.plusMinutes(1), persisted.getSourceListings().get(0).getLastSeenAt());
 
         JobDocument manual = job("manual", "manual"); manual.setRecruiterId("recruiter"); manual.setSource("manual");

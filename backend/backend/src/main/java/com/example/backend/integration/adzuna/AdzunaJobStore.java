@@ -48,7 +48,7 @@ public class AdzunaJobStore {
         if (job.getApplicationUrl() != null) update.addToSet("applicationUrls", job.getApplicationUrl());
         ImportedSourceListing listing = new ImportedSourceListing();
         listing.setIdentity(identity); listing.setProvider(job.getSource()); listing.setExternalId(job.getExternalId());
-        listing.setApplicationUrl(job.getApplicationUrl()); listing.setFirstSeenAt(now); listing.setLastSeenAt(now); listing.setActive(true);
+        listing.setApplicationUrl(job.getApplicationUrl()); listing.setFirstSeenAt(existingListingFirstSeen(identityMatch, fingerprintMatch, identity, now)); listing.setLastSeenAt(now); listing.setActive(true);
         try {
             UpsertOutcome result = outcome(mongo.findAndModify(query, update, FindAndModifyOptions.options().upsert(true), JobDocument.class), job);
             // Mongo forbids $pull/$push on one array in the same update. Both operations
@@ -82,4 +82,10 @@ public class AdzunaJobStore {
         catch (java.security.NoSuchAlgorithmException impossible) { throw new IllegalStateException(impossible); }
     }
     private String safe(String value) { return value == null ? "" : value.trim().replaceAll("\\s+", " "); }
+    private LocalDateTime existingListingFirstSeen(JobDocument identityMatch, JobDocument fingerprintMatch, String identity, LocalDateTime fallback) {
+        JobDocument match = identityMatch != null ? identityMatch : fingerprintMatch;
+        if (match != null && match.getSourceListings() != null) for (ImportedSourceListing listing : match.getSourceListings())
+            if (identity.equals(listing.getIdentity()) && listing.getFirstSeenAt() != null) return listing.getFirstSeenAt();
+        return fallback;
+    }
 }
