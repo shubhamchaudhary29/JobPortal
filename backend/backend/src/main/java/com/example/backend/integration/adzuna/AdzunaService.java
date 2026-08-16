@@ -14,6 +14,7 @@ import java.time.LocalDateTime;
 import java.util.concurrent.ThreadLocalRandom;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.function.LongUnaryOperator;
+import java.util.function.BooleanSupplier;
 
 @Service
 public class AdzunaService {
@@ -39,7 +40,8 @@ public class AdzunaService {
         this.metrics = metrics; this.clock = clock; this.sleeper = sleeper; this.jitter = jitter;
     }
 
-    public SyncResult sync() {
+    public SyncResult sync() { return sync(() -> true); }
+    public SyncResult sync(BooleanSupplier leaseValid) {
         if (!running.compareAndSet(false, true)) {
             log.warn("event=adzuna_sync_skipped reason=already_running");
             metrics.record(AdzunaSyncMetrics.Outcome.REJECTED, 0);
@@ -49,12 +51,14 @@ public class AdzunaService {
         int failedBatches = 0, failedItems = 0, inserted = 0, updated = 0, unchanged = 0, rejected = 0, attemptedBatches = 0;
         try {
             for (String rawKeyword : properties.keywords()) {
+                if (!leaseValid.getAsBoolean()) break;
                 String keyword = rawKeyword.trim();
                 if (keyword.isEmpty()) continue;
                 for (int page = 1; page <= properties.pagesPerKeyword(); page++) {
+                    if (!leaseValid.getAsBoolean()) break;
                     attemptedBatches++;
                     try {
-                        BatchResult batch = fetchKeyword(keyword, page);
+                        BatchResult batch = fetchKeyword(keyword, page, leaseValid);
                         inserted += batch.inserted(); updated += batch.updated(); unchanged += batch.unchanged(); rejected += batch.rejected(); failedItems += batch.failed();
                     } catch (AdzunaCircuitOpenException ex) {
                         failedBatches++;
@@ -76,12 +80,13 @@ public class AdzunaService {
         log.info("event=adzuna_sync_completed outcome={} attempted_batches={} inserted={} updated={} unchanged={} rejected={} failed_items={} failed_batches={} latency_ms={}", outcome, attemptedBatches, inserted, updated, unchanged, rejected, failedItems, failedBatches, elapsed);
         return new SyncResult(inserted, updated, unchanged, rejected, failedBatches, failedItems, outcome);
     }
-    private BatchResult fetchKeyword(String keyword, int page) {
+    private BatchResult fetchKeyword(String keyword, int page, BooleanSupplier leaseValid) {
         if (!circuit.allowRequest()) throw new AdzunaCircuitOpenException();
         java.util.List<ExternalJob> response = fetchWithRetry(keyword, page);
         int inserted = 0, updated = 0, unchanged = 0, rejected = 0, failed = 0;
         LocalDateTime now = LocalDateTime.now(clock);
         for (ExternalJob source : response) {
+            if (!leaseValid.getAsBoolean()) break;
             if (source.externalId() == null || source.externalId().isBlank() || source.title() == null || source.title().isBlank()
                     || source.applicationUrl() == null || source.fingerprint() == null) { rejected++; continue; }
             JobDocument mapped = new JobDocument(); mapped.setSource(this.source.sourceName()); mapped.setExternalId(source.externalId());
