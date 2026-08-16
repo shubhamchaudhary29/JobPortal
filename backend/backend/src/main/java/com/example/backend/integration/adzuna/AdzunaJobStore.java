@@ -25,8 +25,10 @@ public class AdzunaJobStore {
         JobDocument identityMatch = mongo.findOne(identityQuery, JobDocument.class);
         JobDocument fingerprintMatch = mongo.findOne(Query.query(Criteria.where("fingerprint").is(job.getFingerprint()).and("recruiterId").is(null)), JobDocument.class);
         if (identityMatch != null && fingerprintMatch != null && !identityMatch.getId().equals(fingerprintMatch.getId())) {
-            mergeCanonicalRecords(identityMatch, fingerprintMatch, now);
-            fingerprintMatch = identityMatch;
+            // This is a legacy conflict, not an ordinary duplicate.  Deleting or rewriting
+            // either document here can orphan applications that retain its job id.  Surface it
+            // for the documented audit/migration instead of making an unsafe guess at runtime.
+            throw new AdzunaPersistenceException(new IllegalStateException("Imported identity/fingerprint conflict requires reconciliation"));
         }
         Query query = identityMatch != null ? Query.query(Criteria.where("_id").is(identityMatch.getId()))
                 : fingerprintMatch != null ? Query.query(Criteria.where("_id").is(fingerprintMatch.getId()))
@@ -69,12 +71,4 @@ public class AdzunaJobStore {
         catch (java.security.NoSuchAlgorithmException impossible) { throw new IllegalStateException(impossible); }
     }
     private String safe(String value) { return value == null ? "" : value.trim().replaceAll("\\s+", " "); }
-    private void mergeCanonicalRecords(JobDocument target, JobDocument duplicate, LocalDateTime now) {
-        java.util.Set<String> identities = new java.util.LinkedHashSet<>(target.getSourceIdentities() == null ? java.util.Set.of() : target.getSourceIdentities());
-        if (duplicate.getSourceIdentities() != null) identities.addAll(duplicate.getSourceIdentities());
-        java.util.Set<String> urls = new java.util.LinkedHashSet<>(target.getApplicationUrls() == null ? java.util.Set.of() : target.getApplicationUrls());
-        if (duplicate.getApplicationUrls() != null) urls.addAll(duplicate.getApplicationUrls());
-        mongo.updateFirst(Query.query(Criteria.where("_id").is(target.getId())), new Update().set("sourceIdentities", identities).set("applicationUrls", urls).set("lastSeenAt", now), JobDocument.class);
-        mongo.remove(Query.query(Criteria.where("_id").is(duplicate.getId()).and("recruiterId").is(null)), JobDocument.class);
-    }
 }

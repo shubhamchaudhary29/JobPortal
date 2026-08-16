@@ -9,7 +9,10 @@ awk -F= '
  END {for(i in board) if(enabled[i]=="true") print source[i],board[i]}' |
 while read -r source board; do
   if [[ "$source" == GREENHOUSE ]]; then url="https://boards-api.greenhouse.io/v1/boards/$board/jobs?content=true"; else url="https://api.lever.co/v0/postings/$board?mode=json"; fi
-  code=$(curl --silent --show-error --location --max-time 15 --output /dev/null --write-out '%{http_code}' "$url")
-  printf '%s %s %s\n' "$source" "$board" "$code"
-  [[ "$code" == 200 ]] || exit 1
+  response=$(mktemp)
+  code=$(curl --silent --show-error --location --max-time 15 --output "$response" --write-out '%{http_code}' "$url")
+  if [[ "$source" == GREENHOUSE ]]; then valid=$(jq -e '.jobs | type == "array" and all(.[]?; (.id != null and (.absolute_url|type == "string")))' "$response" >/dev/null && echo valid || echo invalid); else valid=$(jq -e 'type == "array" and all(.[]?; (.id != null and (.hostedUrl|type == "string")))' "$response" >/dev/null && echo valid || echo invalid); fi
+  rm -f "$response"
+  printf '%s %s %s %s\n' "$source" "$board" "$code" "$valid"
+  [[ "$code" == 200 && "$valid" == valid ]] || exit 1
 done
