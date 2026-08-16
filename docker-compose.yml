@@ -38,7 +38,6 @@ services:
       ADZUNA_RETRY_INITIAL_BACKOFF_MS: ${ADZUNA_RETRY_INITIAL_BACKOFF_MS:-200}
       ADZUNA_CIRCUIT_FAILURE_THRESHOLD: ${ADZUNA_CIRCUIT_FAILURE_THRESHOLD:-3}
       ADZUNA_CIRCUIT_OPEN_MS: ${ADZUNA_CIRCUIT_OPEN_MS:-60000}
-      ADZUNA_SCHEDULE_CRON: ${ADZUNA_SCHEDULE_CRON:-0 0 */6 * * *}
       ADZUNA_PAGES_PER_KEYWORD: ${ADZUNA_PAGES_PER_KEYWORD:-2}
       ADZUNA_RESULTS_PER_PAGE: ${ADZUNA_RESULTS_PER_PAGE:-20}
       ADZUNA_KEYWORDS: ${ADZUNA_KEYWORDS:-java developer,python developer,react developer}
@@ -49,7 +48,6 @@ services:
       MAX_REQUEST_SIZE: ${MAX_REQUEST_SIZE:-5MB}
       RESUME_MAX_BYTES: ${RESUME_MAX_BYTES:-5242880}
       SWAGGER_ENABLED: ${SWAGGER_ENABLED:-true}
-      APP_SCHEDULING_ENABLED: ${APP_SCHEDULING_ENABLED:-true}
       JOB_AGGREGATION_SCHEDULING_ENABLED: ${JOB_AGGREGATION_SCHEDULING_ENABLED:-true}
       GREENHOUSE_SYNC_DELAY_MS: ${GREENHOUSE_SYNC_DELAY_MS:-21600000}
       LEVER_SYNC_DELAY_MS: ${LEVER_SYNC_DELAY_MS:-21600000}
@@ -77,6 +75,12 @@ services:
     depends_on:
       mongodb:
         condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "--fail", "--silent", "http://localhost:8080/api/v1/health"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+      start_period: 20s
 
   frontend:
     build:
@@ -90,7 +94,14 @@ services:
     volumes:
       - /etc/letsencrypt:/etc/letsencrypt:ro
     depends_on:
-      - backend
+      backend:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "--quiet", "--spider", "http://127.0.0.1/"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+      start_period: 5s
 
 volumes:
   mongo-data:

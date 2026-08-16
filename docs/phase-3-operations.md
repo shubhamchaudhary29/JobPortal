@@ -1,8 +1,8 @@
-# Phase 3: Adzuna reliability and MongoDB operations
+# Job aggregation reliability and MongoDB operations
 
 ## Runtime behavior
 
-The public `GET /api/v1/jobs` API reads only from MongoDB. It never waits for a live Adzuna request. Trigger an import explicitly with `POST /api/v1/jobs/ingestion/adzuna` using a recruiter JWT; there is no periodic scheduler.
+The public `GET /api/v1/jobs` API reads only from MongoDB and never waits for a live provider request. Adzuna, Greenhouse, Lever, and retention schedules run through their Mongo-backed coordinators when `JOB_AGGREGATION_SCHEDULING_ENABLED=true`. ADMIN manual requests use the same coordinator and distributed lease as scheduled requests. The legacy recruiter Adzuna trigger is retained for compatibility and also uses that coordinator.
 
 `ADZUNA_APP_ID` and `ADZUNA_APP_KEY` are required server environment variables. They are only used to create the outbound Adzuna request and are never logged or returned in errors. Do not place either value in source code, frontend configuration, screenshots, or issue comments.
 
@@ -15,7 +15,12 @@ Configuration defaults (all can be overridden through the matching environment v
 
 Network failures, 429s, and 5xx responses receive bounded exponential backoff with jitter. 4xx authentication/validation responses and malformed provider payloads are not retried. Repeated failed batches open a small in-process circuit; after its open interval one successful probe closes it. Completion logs contain sanitized event names, counts, and latency only; the lightweight counters report cumulative successful runs, failed batches, and total latency.
 
-Every provider record is validated and atomically upserted using `(source, externalId)`. Imported jobs carry `source`, `externalId`, `fetchedAt`, and `lastSeenAt`. A failed or partial sync does not delete or alter previously imported jobs. The current stale-data policy is **retain and label by `lastSeenAt`**: operators should query/report jobs not seen within their business freshness window before any separately approved cleanup. The manual sync endpoint is authenticated and recruiter-only.
+Every provider record is validated and atomically upserted into an additive `sourceListings` set.
+Canonical fields follow the deterministic selection policy documented below. Failed, partial,
+locked, and lease-lost runs cannot advance missing counts. Completed runs apply per-listing missing
+state, deactivation, and reactivation, while the reference-safe daily retention task handles only
+eligible inactive imports. ADMIN operations are role-protected; the older recruiter Adzuna trigger
+does not grant access to ADMIN history, metrics, employer controls, or conflict reconciliation.
 
 ## Indexes and query rationale
 
@@ -45,7 +50,7 @@ Indexes consume storage and make writes slower. These are limited to current rep
 
 Backend unit/contract tests do not call Adzuna: `cd backend/backend && ./mvnw test`.
 
-For Compose, create a local ignored `.env` with placeholders for `MONGODB_URI`, `JWT_SECRET`, `ADZUNA_APP_ID`, `ADZUNA_APP_KEY`, and `CORS_ALLOWED_ORIGINS`, then run `docker compose config` followed by `docker compose build`. Do not commit `.env` files. Docker image creation exercises the wrapper build inside the backend image; a live Adzuna sync still requires valid provider credentials and is not part of automated verification.
+For Compose, create a local ignored `.env` with placeholders for `MONGODB_URI`, `JWT_SECRET`, `ADZUNA_APP_ID`, `ADZUNA_APP_KEY`, and `CORS_ALLOWED_ORIGINS`, then run `docker compose config` followed by `docker compose build`. Do not commit `.env` files. `bash backend/backend/scripts/compose-smoke-test.sh` starts an isolated project with scheduling disabled, waits for MongoDB/backend/frontend health, verifies the direct and proxied health APIs and ADMIN SPA fallback, and removes its disposable volumes. The harness uses ports 80 and 8080 and must not share a project name or database with a persistent environment.
 ## Employer ingestion operations
 
 ### Source-listing backfill (M1A)
@@ -181,3 +186,36 @@ duration, inserted/updated/unchanged/rejected counts, retries, provider failures
 lock contention, and lease loss. Every meter has exactly three bounded tags: `provider` (`adzuna`,
 `greenhouse`, `lever`, or `other`), `outcome`, and `trigger`. Employer/board, run ID, URLs, exception
 text, credentials, and arbitrary failure types are never metric labels.
+
+### Employer-registry verification
+
+Run the deterministic classifier test from any working directory:
+
+```bash
+bash backend/backend/scripts/verify-employer-registry-classification.sh
+```
+
+When outbound network access is available, validate the configured registry and save its complete
+output before release:
+
+```bash
+date -u +%FT%TZ
+bash backend/backend/scripts/validate-employer-registry.sh
+```
+
+The validator distinguishes `ACTIVE`, legitimately `EMPTY`, `MALFORMED`, provider-confirmed
+`INVALID` (`404`/`410`), `UNREACHABLE`, and configured `DISABLED` boards. Exit status `0` means all
+enabled boards were active or legitimately empty, `1` means invalid/malformed data, `2` means the
+network/provider was unreachable, and `3` means a local prerequisite or argument was invalid.
+Disable confirmed invalid entries in `application.properties`; do not disable or claim verification
+for an unreachable provider. The latest dated result and exact counts are in
+[`employer-registry-verification.md`](employer-registry-verification.md).
+
+### Release verification
+
+CI runs the clean backend verification against MongoDB 7, deterministic mock-provider reliability
+tests, registry classifier fixtures, frontend clean install/lint/tests/build/audit, Compose config,
+image builds, the isolated smoke harness, whitespace checks, and secret scanning. Local release
+verification must run the same commands documented in the completion plan. Automated tests never
+contact a live job provider; only the explicit registry-validation step performs live read-only
+requests.

@@ -10,7 +10,7 @@ user/{api,application,domain,infrastructure}
 job/{api,application,infrastructure}
 application/{api,application,domain,infrastructure}
 messaging/{api,application,infrastructure,security}
-integration/adzuna
+integration/{adzuna,greenhouse,lever,aggregation,reliability}
 shared/{api,configuration,error,pagination,security}
 ```
 
@@ -123,7 +123,7 @@ tokens or backend secrets in Swagger examples or `VITE_*` variables.
 
 ```bash
 cd backend/backend && ./mvnw clean verify
-cd frontend && npm ci && npm run lint && npm test && npm run build
+cd frontend && npm ci && npm run lint && npm test -- --run && npm run build && npm audit --omit=dev
 docker compose config
 docker compose build backend frontend
 docker compose up -d --wait
@@ -133,5 +133,6 @@ The frontend container selects HTTPS when the configured Let’s Encrypt certifi
 uses its local HTTP configuration. Production must mount the certificate or terminate TLS at a trusted reverse
 proxy; the HTTP fallback is for local Compose use.
 
-Adzuna scheduling can be disabled for isolated environments with `app.scheduling.enabled=false`. Phase 3 owns
-retry/backoff, ingestion observability, and broader query-index optimization.
+All provider and retention scheduling can be disabled for isolated environments with
+`JOB_AGGREGATION_SCHEDULING_ENABLED=false`. Adzuna, Greenhouse, and Lever otherwise use their configured
+fixed delays and shared Mongo-backed coordinator/lease paths.

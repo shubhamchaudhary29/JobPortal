@@ -35,7 +35,12 @@ jobs:
           distribution: temurin
           java-version: '17'
           cache: maven
-      - run: ./mvnw test
+      - name: Mock-provider reliability tests
+        run: ./mvnw -Dtest='*Reliability*,*Payload*,*SanitizedLog*' test
+      - name: Clean backend verification with real MongoDB
+        run: ./mvnw clean verify
+      - name: Registry classifier fixtures
+        run: bash scripts/verify-employer-registry-classification.sh
   frontend:
     runs-on: ubuntu-latest
     defaults:
@@ -49,4 +54,28 @@ jobs:
           cache: npm
           cache-dependency-path: frontend/package-lock.json
       - run: npm ci
+      - run: npm run lint
+      - run: npm test -- --run
       - run: npm run build
+      - run: npm audit --omit=dev
+  compose:
+    runs-on: ubuntu-latest
+    needs: [backend, frontend]
+    env:
+      MONGODB_URI: mongodb://mongodb:27017/jobportal
+      JWT_SECRET: test-only-jwt-secret-that-is-at-least-thirty-two-characters
+      ADZUNA_APP_ID: test-id
+      ADZUNA_APP_KEY: test-key
+      CORS_ALLOWED_ORIGINS: http://localhost
+      REFRESH_COOKIE_SECURE: 'false'
+      JOB_AGGREGATION_SCHEDULING_ENABLED: 'false'
+    steps:
+      - uses: actions/checkout@v4
+      - name: Validate Compose configuration
+        run: docker compose config
+      - name: Build Compose images
+        run: docker compose build
+      - name: Deterministic Compose smoke test
+        run: bash backend/backend/scripts/compose-smoke-test.sh
+      - name: Whitespace verification
+        run: git diff --check

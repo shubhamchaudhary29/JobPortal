@@ -11,6 +11,8 @@ import com.example.backend.shared.error.BadRequestException;
 import com.example.backend.shared.pagination.PageResponse;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.NotBlank;
+import io.swagger.v3.oas.annotations.security.SecurityRequirement;
+import io.swagger.v3.oas.annotations.tags.Tag;
 import org.springframework.security.core.Authentication;
 import org.springframework.http.ResponseEntity;
 import org.springframework.http.HttpStatus;
@@ -23,6 +25,8 @@ import org.springframework.web.bind.annotation.RestController;
 /** Operational data deliberately excludes provider URLs and exception details. */
 @RestController
 @RequestMapping("/api/v1/admin/ingestion")
+@Tag(name = "Aggregation administration", description = "ADMIN-only bounded operational APIs")
+@SecurityRequirement(name = "bearerAuth")
 public class AdminIngestionController {
     private final IngestionCoordinator coordinator;
     private final IngestionAdminService admin;

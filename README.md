@@ -14,7 +14,7 @@ Connecting <b>Recruiters</b> and <b>Candidates</b> through a secure, scalable, a
 
 <p align="center">
 
-![Java](https://img.shields.io/badge/Java-21-red?style=for-the-badge&logo=openjdk)
+![Java](https://img.shields.io/badge/Java-17-red?style=for-the-badge&logo=openjdk)
 ![Spring Boot](https://img.shields.io/badge/Spring%20Boot-3.x-brightgreen?style=for-the-badge&logo=springboot)
 ![React](https://img.shields.io/badge/React-19-61DAFB?style=for-the-badge&logo=react)
 ![MongoDB](https://img.shields.io/badge/MongoDB-Database-green?style=for-the-badge&logo=mongodb)
@@ -38,7 +38,7 @@ Coming Soon
 
 See [Backend architecture and API v1](docs/architecture.md).
 
-For the Adzuna ingestion reliability, MongoDB index migration, and local/Docker verification guide, see [Phase 3 operations](docs/phase-3-operations.md).
+For aggregation reliability, migrations, registry evidence, and local/Docker verification, see [aggregation operations](docs/phase-3-operations.md).
 
 </div>
 
@@ -48,7 +48,7 @@ For the Adzuna ingestion reliability, MongoDB index migration, and local/Docker 
 
 **JobPortal** is a modern full-stack recruitment platform that streamlines the hiring process for both **Recruiters** and **Candidates**.
 
-Unlike conventional job portals that only display jobs created within their own application, **JobPortal combines recruiter-posted jobs with thousands of external opportunities aggregated from multiple leading job platforms using the Adzuna Job Search API.**
+Unlike conventional job portals that only display jobs created within their own application, **JobPortal combines recruiter-posted jobs with cached external opportunities imported from Adzuna and configured public Greenhouse and Lever boards. Public search always reads MongoDB.**
 
 The platform provides:
 
@@ -84,23 +84,19 @@ The platform provides:
 
 One of the biggest highlights of **JobPortal** is its ability to aggregate jobs from multiple recruitment platforms.
 
-Instead of limiting candidates to only jobs posted inside the application, JobPortal integrates with the **Adzuna Job Search API**, allowing users to discover opportunities from multiple popular job platforms through a single interface.
+Instead of limiting candidates to jobs posted inside the application, scheduled or ADMIN-triggered coordinators import external listings into MongoDB. Adzuna provides keyword results, while Greenhouse and Lever provide configured employer boards. Provider requests never occur in the candidate search path.
 
-## Supported Platforms
+## Supported Providers
 
-- 💼 LinkedIn
-- 🔵 Indeed
-- 🟢 Glassdoor
-- 🟣 ZipRecruiter
-- 🟠 Reed
-- 🌍 Adzuna Partner Network
-- 📰 Various Global Job Boards
+- Adzuna
+- Greenhouse
+- Lever
 
-> The available job sources depend on the results returned by the Adzuna API for the selected country and search query.
+> Available external jobs depend on successful ingestion and the explicitly configured provider registry.
 
 ### Benefits
 
-- Search thousands of jobs instantly
+- Search cached jobs without provider latency
 - Unified job discovery experience
 - Search by keywords
 - Filter by location
@@ -135,7 +131,7 @@ This transforms JobPortal into a **centralized recruitment hub** instead of just
 - Search by Keywords
 - Filter by Location
 - View Job Details
-- Explore External Jobs via Adzuna
+- Explore cached Adzuna, Greenhouse, and Lever jobs
 
 ### Applications
 
@@ -229,7 +225,7 @@ This eliminates the need for third-party communication platforms and keeps the h
 
 ## Backend
 
-- Java 21
+- Java 17
 - Spring Boot 3.x
 - Spring Security
 - Spring Data MongoDB
@@ -255,7 +251,7 @@ This eliminates the need for third-party communication platforms and keeps the h
 
 ## Third-Party Integrations
 
-- Adzuna Job Search API
+- Adzuna, Greenhouse, and Lever APIs
 - JWT
 - WebSocket (STOMP)
 
@@ -290,7 +286,7 @@ Before you begin, ensure you have the following installed:
 
 | Software | Version |
 |----------|---------|
-| Java | 21+ |
+| Java | 17+ |
 | Node.js | 18+ |
 | Maven | Latest |
 | MongoDB | Latest |
@@ -700,33 +696,31 @@ Backend Service
 
         │
 
-        ├──────── Local Jobs
+        ▼
+
+MongoDB Jobs Collection
 
         │
 
-        └──────── Adzuna API
+        ├──────── Recruiter Jobs
+
+        │
+
+        └──────── Cached Imported Jobs
 
                       │
 
-                      ▼
+                      ├──────── Adzuna
 
-      LinkedIn
+                      ├──────── Greenhouse
 
-      Indeed
-
-      Glassdoor
-
-      ZipRecruiter
-
-      Reed
-
-      Other Sources
+                      └──────── Lever
 
               │
 
               ▼
 
-Unified Results
+MongoDB-filtered Results
 
               │
 
@@ -816,7 +810,7 @@ db.applications.updateMany({ status: "UNDER_REVIEW" }, { $set: { status: "IN_REV
 db.users.find().forEach(function(user) { var normalized = user.email.trim().toLowerCase(); if (normalized !== user.email) db.users.updateOne({ _id: user._id }, { $set: { email: normalized } }); })
 ```
 
-Run backend verification with `cd backend/backend && ./mvnw clean verify`; run frontend checks with `cd frontend && npm run lint && npm test && npm run build`; validate and start the stack with `docker compose config` and `docker compose up --build` after configuring `.env`.
+Run backend verification with `cd backend/backend && ./mvnw clean verify`; run frontend checks with `cd frontend && npm ci && npm run lint && npm test -- --run && npm run build && npm audit --omit=dev`; validate and build the stack with `docker compose config` and `docker compose build`, then run `bash backend/backend/scripts/compose-smoke-test.sh` after configuring `.env`.
 
 ---
 
@@ -877,7 +871,7 @@ The backend exposes RESTful APIs for:
 - Resume Management
 - Chat System
 - External Job Aggregation
-- Adzuna Integration
+- Adzuna, Greenhouse, and Lever aggregation
 
 ---
 
@@ -896,34 +890,30 @@ The backend follows a RESTful architecture and exposes well-structured endpoints
 | Applications | Apply for jobs and manage applications |
 | Resume | Upload and download candidate resumes |
 | Chat | Real-time recruiter-candidate messaging |
-| External Jobs | Fetch jobs from Adzuna Job Search API |
+| External Jobs | Search normalized provider listings cached in MongoDB |
 
 ---
 
 # 🌐 Third-Party Integrations
 
-## 🔍 Adzuna Job Search API
+## 🔍 External provider APIs
 
-JobPortal integrates with the **Adzuna Job Search API** to provide candidates with access to thousands of external job opportunities.
+JobPortal imports from **Adzuna**, **Greenhouse**, and **Lever** through scheduled and ADMIN-triggered Mongo-backed coordinators. Candidate searches query MongoDB only.
 
 ### Features
 
-- Search jobs from multiple platforms
+- Scheduled and manual cached ingestion
 - Keyword-based search
 - Location-based search
-- Real-time job listings
+- Per-listing lifecycle and deterministic canonical links
 - Unified search experience
 - External application links
 
-### Job Sources
+### Providers
 
-- LinkedIn
-- Indeed
-- Glassdoor
-- ZipRecruiter
-- Reed
-- Adzuna Partner Network
-- Other supported job boards
+- Adzuna keyword search
+- Configured Greenhouse employer boards
+- Configured Lever employer boards
 
 ---
 
@@ -980,7 +970,7 @@ Each collection is designed to maintain a clean separation of responsibilities w
 
        ┌────────────────────────────────┐
 
-       │ Local Jobs + Adzuna API Results │
+       │ Recruiter + Cached Imported Jobs │
 
        └────────────────────────────────┘
 
@@ -1151,7 +1141,7 @@ Special thanks to the amazing open-source community and technologies that made t
 - JWT
 - Maven
 - Axios
-- Adzuna Job Search API
+- Adzuna, Greenhouse, and Lever APIs
 
 ---
 

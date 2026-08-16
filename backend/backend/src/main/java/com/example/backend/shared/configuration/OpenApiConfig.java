@@ -12,7 +12,10 @@ public class OpenApiConfig {
     @Bean
     OpenAPI jobPortalOpenApi() {
         return new OpenAPI().info(new Info().title("JobPortal API").version("v1")
-                        .description("Versioned JobPortal REST API. Access tokens use Bearer authentication; refresh sessions use an HttpOnly cookie."))
+                        .description("Versioned JobPortal REST API. Public job search is MongoDB-backed. "
+                                + "ADMIN aggregation endpoints expose bounded history, provider/employer sync, "
+                                + "status, and conflict reconciliation. Access tokens use Bearer authentication; "
+                                + "refresh sessions use an HttpOnly cookie."))
                 .components(new Components()
                         .addSecuritySchemes("bearerAuth", new SecurityScheme().type(SecurityScheme.Type.HTTP)
                                 .scheme("bearer").bearerFormat("JWT"))
