@@ -140,7 +140,7 @@ The remaining scope is per-source lifecycle and safe migration; deterministic ca
   - Done when: one employer cannot exhaust or open another employer's controls, all payload/rate bounds and redaction tests pass, and no automated test calls a live provider.
   - Evidence (2026-08-16): Greenhouse/Lever requests now use provider/board-scoped bounded pacing and circuit state with deterministic half-open recovery. Declared and chunked response bytes and item counts are bounded; oversized payloads are permanent failures. Null/malformed items are isolated and counted while valid siblings proceed, and the partial result cannot advance missing detection. Failure logs contain only controlled provider/board fields. `cd backend/backend && ./mvnw -Dtest='*Greenhouse*,*Lever*,*Reliability*,*Payload*,*SanitizedLog*' test` passed 11 deterministic tests (0 failures/errors/skips) using local HTTP servers only. The expanded focused run including `EmployerIngestionServiceTest` passed 19 tests (0 failures/errors/skips). `cd backend/backend && ./mvnw test` passed 131 tests (0 failures/errors/skips). `git diff --check` passed.
 
-- [ ] **M3C — Secured Actuator/Micrometer observability**
+- [x] **M3C — Secured Actuator/Micrometer observability**
 
   - Required behavior: expose secured health/metrics for run outcomes, operation counts, duration, retries, errors, contention, and lease loss using only provider/outcome/trigger tags from fixed allowlists; do not use employer, run ID, URL, exception text, or other high-cardinality labels.
   - Expected files/components: Actuator/Micrometer dependencies/configuration, aggregation metrics recorder, coordinators/reliability hooks, security rules, environment and operations documentation.
@@ -148,6 +148,7 @@ The remaining scope is per-source lifecycle and safe migration; deterministic ca
   - Verification commands: `cd backend/backend && ./mvnw -Dtest='*Metrics*,*Actuator*,*Observability*' test`; `cd backend/backend && ./mvnw test`; `git diff --check`.
   - Dependencies: M3A–M3B.
   - Done when: operational metrics are accurate, secured, low-cardinality, documented, and all focused/full backend tests pass.
+  - Evidence (2026-08-16): finalized durable sync runs emit Micrometer counters and a duration timer for outcomes, operations, retries, errors, contention, lease loss, and lifecycle work. Every aggregation meter is limited to fixed `provider`, `outcome`, and `trigger` tags; tests reject employer, run ID, URL, exception, or other labels. Actuator exposes only health/info/metrics, requires ADMIN for every path, suppresses health components/details, and omits env/config endpoints. `cd backend/backend && ./mvnw -Dtest='*Metrics*,*Actuator*,*Observability*' test` passed 5 tests (0 failures/errors/skips), including endpoint `401/403/200`, durable-finalization ordering, and exposure/tag assertions. `cd backend/backend && ./mvnw test` passed 136 tests (0 failures/errors/skips). `git diff --check` passed.
 
 - [ ] **M4 — ADMIN frontend and frontend tests**
 

@@ -2,6 +2,7 @@ package com.example.backend.integration.aggregation;
 
 import java.time.Clock;
 import java.time.Instant;
+import java.time.Duration;
 import java.time.temporal.ChronoUnit;
 import java.util.Locale;
 import java.util.LinkedHashMap;
@@ -34,15 +35,18 @@ public class SyncRunService {
     private final MongoTemplate mongo;
     private final Clock clock;
     private final int retentionDays;
+    private final AggregationMetrics metrics;
 
     public SyncRunService(MongoTemplate mongo, Clock clock,
-            @Value("${job-aggregation.sync-history.retention-days:30}") int retentionDays) {
+            @Value("${job-aggregation.sync-history.retention-days:30}") int retentionDays,
+            AggregationMetrics metrics) {
         if (retentionDays < 1 || retentionDays > 3650) {
             throw new IllegalArgumentException("sync history retention must be between 1 and 3650 days");
         }
         this.mongo = mongo;
         this.clock = clock;
         this.retentionDays = retentionDays;
+        this.metrics = metrics;
     }
 
     public Handle begin(String provider, String employer, Trigger trigger) {
@@ -60,7 +64,7 @@ public class SyncRunService {
         mongo.insert(run);
         log.info("event=aggregation_sync_started run_id={} provider={} trigger={}",
                 runId, run.getProvider(), trigger);
-        return new Handle(runId, startedAt);
+        return new Handle(runId, startedAt, run.getProvider(), trigger);
     }
 
     public void finish(Handle handle, Outcome outcome, Counts counts, Throwable failure) {
@@ -90,6 +94,8 @@ public class SyncRunService {
                         Criteria.where("_id").is(handle.runId()), Criteria.where("outcome").is(Outcome.RUNNING))),
                 update, SyncRunDocument.class).getModifiedCount();
         if (modified != 1) throw new IllegalStateException("Sync run is missing or already completed");
+        metrics.record(handle.provider(), outcome, handle.trigger(), counts,
+                Duration.between(handle.startedAt(), completedAt), failure != null);
         log.info("event=aggregation_sync_completed run_id={} outcome={} duration_ms={}",
                 handle.runId(), outcome, Math.max(0, completedAt.toEpochMilli() - handle.startedAt().toEpochMilli()));
     }
@@ -206,7 +212,9 @@ public class SyncRunService {
 
     public enum Trigger { SCHEDULED, MANUAL }
     public enum Outcome { RUNNING, COMPLETED, PARTIAL, FAILED, LOCKED, LEASE_LOST }
-    public record Handle(String runId, Instant startedAt) { }
+    public record Handle(String runId, Instant startedAt, String provider, Trigger trigger) {
+        public Handle(String runId, Instant startedAt) { this(runId, startedAt, "other", null); }
+    }
     public record Failure(String type, String detail) { }
     public record Counts(int inserted, int updated, int unchanged, int rejected, int failedItems,
                          int failedBatches, int failedEmployers, long lifecycleMatched,

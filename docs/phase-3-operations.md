@@ -168,3 +168,16 @@ cannot open or consume another employer's protection. A successful half-open pro
 circuit. Oversized responses fail permanently for that run. Malformed individual items are skipped
 and counted as rejected while valid siblings may still be stored; such a partial run never advances
 missing detection. A valid empty response remains a complete successful board result.
+
+### Secured health and metrics
+
+Actuator exposes only `/actuator/health`, `/actuator/info`, and `/actuator/metrics`; every Actuator
+path requires an ADMIN JWT. Health component details are disabled even for administrators, and
+environment/configuration endpoints are not exposed. Do not proxy these paths around backend
+authentication.
+
+Aggregation metrics use the `jobportal.aggregation.*` prefix. They cover finalized run outcomes,
+duration, inserted/updated/unchanged/rejected counts, retries, provider failures, lifecycle work,
+lock contention, and lease loss. Every meter has exactly three bounded tags: `provider` (`adzuna`,
+`greenhouse`, `lever`, or `other`), `outcome`, and `trigger`. Employer/board, run ID, URLs, exception
+text, credentials, and arbitrary failure types are never metric labels.
