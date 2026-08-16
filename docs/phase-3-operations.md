@@ -120,3 +120,11 @@ ADMIN history endpoints are database-backed and bounded to 100 records per page:
 History is ordered by start time descending and run ID ascending. Unsupported filters, unsafe board
 identifiers, negative pages, and sizes outside 1–100 are rejected; retention metadata and exception
 stacks are never returned.
+
+An administrator starts a provider-wide run with `POST /api/v1/admin/ingestion/{provider}/sync` for
+`adzuna`, `greenhouse`, or `lever`. Greenhouse and Lever also accept an optional configured board,
+for example `?employer=airbnb`; unknown or disabled boards are rejected and Adzuna does not accept
+an employer. Manual and scheduled requests call the same coordinator. Employer-specific runs retain
+the provider-wide lease key deliberately, so they cannot overlap that provider's scheduled or broad
+manual run. A held lease returns HTTP `409` with `LOCKED` and its history run ID; a lost lease returns
+HTTP `503` with `LEASE_LOST`.

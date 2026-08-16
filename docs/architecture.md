@@ -54,6 +54,8 @@ cookie paths would increase risk. Requests to old paths are unsupported.
 
 Aggregation administration is exposed only below `/api/v1/admin/ingestion`: summaries and manual provider runs are joined by bounded sync history/detail/latest-status queries, provider/company counts, paginated conflict listing, and explicit conflict resolution. Reconciliation requests name both the retained canonical job ID and duplicate job ID; the backend preserves and rewrites application/conversation references before any duplicate removal.
 
+Provider-wide and optional Greenhouse/Lever employer-specific manual runs enter the exact coordinator used by scheduling. Employer scope affects fetching and history, but not the provider lease key; this prevents a narrow run from overlapping a full-provider run on another instance. Adzuna uses its own equivalent Mongo-backed coordinator and accepts provider-wide scope only.
+
 The STOMP/SockJS handshake remains at `/ws`, with messages published to `/app/chat.send`. Its request property
 is `conversationId`.
 

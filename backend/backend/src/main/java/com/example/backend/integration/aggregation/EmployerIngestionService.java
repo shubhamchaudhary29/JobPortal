@@ -15,6 +15,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.stereotype.Service;
+import com.example.backend.shared.error.BadRequestException;
 
 @Service
 public class EmployerIngestionService {
@@ -38,11 +39,18 @@ public class EmployerIngestionService {
     public Result sync(EmployerRegistryProperties.Source selected) { return sync(selected, () -> true); }
 
     public Result sync(EmployerRegistryProperties.Source selected, BooleanSupplier leaseValid) {
+        return sync(selected, null, leaseValid);
+    }
+
+    public Result sync(EmployerRegistryProperties.Source selected, String selectedEmployer,
+                       BooleanSupplier leaseValid) {
+        String employerBoard = requireEnabledEmployer(selected, selectedEmployer);
         int inserted = 0, updated = 0, unchanged = 0, failed = 0, rejected = 0, attemptedEmployers = 0;
         long lifecycleMatched = 0, lifecycleModified = 0;
         for (var employer : registry.employers()) {
             if (!leaseValid.getAsBoolean()) break;
-            if (!employer.enabled() || (selected != null && employer.source() != selected)) continue;
+            if (!employer.enabled() || (selected != null && employer.source() != selected)
+                    || (employerBoard != null && !employer.boardId().equalsIgnoreCase(employerBoard))) continue;
             attemptedEmployers++;
             JobSource source = sources.get(employer.source());
             Set<String> seenIdentities = new HashSet<>();
@@ -91,6 +99,20 @@ public class EmployerIngestionService {
         }
         return new Result(inserted, updated, unchanged, rejected, failed,
                 lifecycleMatched, lifecycleModified, attemptedEmployers);
+    }
+
+    String requireEnabledEmployer(EmployerRegistryProperties.Source source, String employer) {
+        if (employer == null || employer.isBlank()) return null;
+        if (source == null) throw new BadRequestException("Provider is required for employer synchronization");
+        String normalized = employer.trim();
+        if (normalized.length() > 100 || !normalized.matches("[A-Za-z0-9_-]+")) {
+            throw new BadRequestException("Invalid employer");
+        }
+        return registry.employers().stream()
+                .filter(candidate -> candidate.source() == source
+                        && candidate.boardId().equalsIgnoreCase(normalized) && candidate.enabled())
+                .map(EmployerRegistryProperties.Employer::boardId)
+                .findFirst().orElseThrow(() -> new BadRequestException("Employer is not enabled for provider"));
     }
 
     private boolean valid(ExternalJob job) {

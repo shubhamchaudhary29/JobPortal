@@ -88,4 +88,31 @@ class EmployerIngestionServiceTest {
         verify(store).upsert(any(), any(), eq("board"));
         verifyNoInteractions(lifecycle);
     }
+
+    @Test
+    void employerSpecificSyncFetchesOnlyTheEnabledSelectedBoard() {
+        JobSource greenhouse = mock(JobSource.class);
+        JobSource lever = mock(JobSource.class);
+        AdzunaJobStore store = mock(AdzunaJobStore.class);
+        ImportedJobLifecycleService lifecycle = mock(ImportedJobLifecycleService.class);
+        when(greenhouse.sourceName()).thenReturn("greenhouse");
+        when(greenhouse.fetch(any())).thenReturn(List.of());
+        EmployerRegistryProperties registry = new EmployerRegistryProperties(List.of(
+                new EmployerRegistryProperties.Employer("One", EmployerRegistryProperties.Source.GREENHOUSE, "one", true),
+                new EmployerRegistryProperties.Employer("Two", EmployerRegistryProperties.Source.GREENHOUSE, "two", true),
+                new EmployerRegistryProperties.Employer("Disabled", EmployerRegistryProperties.Source.GREENHOUSE, "disabled", false)));
+        EmployerIngestionService service = new EmployerIngestionService(
+                greenhouse, lever, store, registry, lifecycle);
+
+        EmployerIngestionService.Result result = service.sync(
+                EmployerRegistryProperties.Source.GREENHOUSE, "TWO", () -> true);
+
+        assertEquals(1, result.attemptedEmployers());
+        verify(greenhouse).fetch(argThat(request -> "two".equals(request.boardId())));
+        verify(greenhouse, never()).fetch(argThat(request -> "one".equals(request.boardId())));
+        assertThrows(com.example.backend.shared.error.BadRequestException.class,
+                () -> service.sync(EmployerRegistryProperties.Source.GREENHOUSE, "missing", () -> true));
+        assertThrows(com.example.backend.shared.error.BadRequestException.class,
+                () -> service.sync(EmployerRegistryProperties.Source.GREENHOUSE, "disabled", () -> true));
+    }
 }

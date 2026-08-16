@@ -6,11 +6,14 @@ import com.example.backend.integration.aggregation.IngestionAdminService;
 import com.example.backend.integration.aggregation.IngestionCoordinator;
 import com.example.backend.integration.aggregation.AggregationConflictService;
 import com.example.backend.integration.aggregation.SyncRunService;
+import com.example.backend.integration.adzuna.AdzunaIngestionCoordinator;
+import com.example.backend.shared.error.BadRequestException;
 import com.example.backend.shared.pagination.PageResponse;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.NotBlank;
 import org.springframework.security.core.Authentication;
 import org.springframework.http.ResponseEntity;
+import org.springframework.http.HttpStatus;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -25,12 +28,15 @@ public class AdminIngestionController {
     private final IngestionAdminService admin;
     private final AggregationConflictService conflicts;
     private final SyncRunService runs;
+    private final AdzunaIngestionCoordinator adzuna;
     public AdminIngestionController(IngestionCoordinator coordinator, IngestionAdminService admin,
-                                    AggregationConflictService conflicts, SyncRunService runs) {
+                                    AggregationConflictService conflicts, SyncRunService runs,
+                                    AdzunaIngestionCoordinator adzuna) {
         this.coordinator = coordinator;
         this.admin = admin;
         this.conflicts = conflicts;
         this.runs = runs;
+        this.adzuna = adzuna;
     }
     @GetMapping("/summary")
     public Summary summary() {
@@ -38,9 +44,31 @@ public class AdminIngestionController {
         return new Summary(counts.active(), counts.inactive());
     }
     @PostMapping("/{provider}/sync")
-    public ResponseEntity<IngestionCoordinator.Result> sync(@PathVariable String provider) {
-        try { return ResponseEntity.ok(coordinator.run(EmployerRegistryProperties.Source.valueOf(provider.toUpperCase()))); }
-        catch (IllegalArgumentException badProvider) { return ResponseEntity.badRequest().build(); }
+    public ResponseEntity<?> sync(@PathVariable String provider,
+            @org.springframework.web.bind.annotation.RequestParam(required = false) String employer) {
+        if ("adzuna".equalsIgnoreCase(provider)) {
+            if (employer != null && !employer.isBlank()) {
+                throw new BadRequestException("Adzuna does not support employer-specific synchronization");
+            }
+            AdzunaIngestionCoordinator.Result result = adzuna.run(SyncRunService.Trigger.MANUAL);
+            if (result.locked()) return operationalFailure(HttpStatus.CONFLICT, "LOCKED", result.runId());
+            if (result.leaseLost()) {
+                return operationalFailure(HttpStatus.SERVICE_UNAVAILABLE, "LEASE_LOST", result.runId());
+            }
+            return ResponseEntity.ok(result);
+        }
+        EmployerRegistryProperties.Source source;
+        try {
+            source = EmployerRegistryProperties.Source.valueOf(provider.toUpperCase(java.util.Locale.ROOT));
+        } catch (IllegalArgumentException badProvider) {
+            throw new BadRequestException("Unsupported provider");
+        }
+        IngestionCoordinator.Result result = coordinator.run(source, employer, SyncRunService.Trigger.MANUAL);
+        if (result.locked()) return operationalFailure(HttpStatus.CONFLICT, "LOCKED", result.runId());
+        if (result.leaseLost()) {
+            return operationalFailure(HttpStatus.SERVICE_UNAVAILABLE, "LEASE_LOST", result.runId());
+        }
+        return ResponseEntity.ok(result);
     }
     @GetMapping("/conflicts")
     public PageResponse<AggregationConflictService.ConflictView> conflicts(
@@ -83,4 +111,11 @@ public class AdminIngestionController {
                          long activeImportedJobs, long inactiveImportedJobs,
                          java.util.List<IngestionAdminService.ProviderCompanyCount> providerCompanyCounts) { }
     public record ResolutionRequest(@NotBlank String canonicalJobId, @NotBlank String duplicateJobId) { }
+    private ResponseEntity<java.util.Map<String, String>> operationalFailure(
+            HttpStatus status, String outcome, String runId) {
+        java.util.LinkedHashMap<String, String> body = new java.util.LinkedHashMap<>();
+        body.put("status", outcome);
+        if (runId != null) body.put("runId", runId);
+        return ResponseEntity.status(status).body(body);
+    }
 }

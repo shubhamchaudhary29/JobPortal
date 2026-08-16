@@ -100,7 +100,7 @@ The remaining scope is per-source lifecycle and safe migration; deterministic ca
   - Done when: secured bounded ADMIN history/detail/status queries return deterministic documented responses and all tests pass.
   - Evidence (2026-08-16): `cd backend/backend && ./mvnw -Dtest='*SyncHistory*,*Admin*' test` passed 7 tests (0 failures/errors/skips), covering ADMIN `401/403/200`, bounded pagination, all filters and invalid values, deterministic tie ordering, detail/not-found, latest-per-scope status, provider/company per-listing counts, recruiter exclusion, and defensive response sanitization. History responses omit TTL metadata and retain only bounded failure fields. `cd backend/backend && ./mvnw test` passed 105 tests (0 failures/errors/skips). `git diff --check` passed.
 
-- [ ] **M2C — Provider-wide and employer-specific manual synchronization**
+- [x] **M2C — Provider-wide and employer-specific manual synchronization**
 
   - Required behavior: support ADMIN provider-wide sync and optional configured-employer Greenhouse/Lever sync while preserving provider-wide behavior; validate provider/employer combinations and route scheduled/manual execution through the same coordinator and distributed lock.
   - Expected files/components: employer registry lookup, provider coordinators/schedulers, admin controller/DTOs, configuration/OpenAPI documentation.
@@ -108,6 +108,7 @@ The remaining scope is per-source lifecycle and safe migration; deterministic ca
   - Verification commands: `cd backend/backend && ./mvnw -Dtest='*EmployerIngestion*,*ManualSync*,*Admin*' test`; `cd backend/backend && ./mvnw test`; `git diff --check`.
   - Dependencies: M2A–M2B.
   - Done when: every supported manual scope uses the identical scheduled coordinator/lock path and validation/response tests pass.
+  - Evidence (2026-08-16): `cd backend/backend && ./mvnw -Dtest='*EmployerIngestion*,*ManualSync*,*Admin*' test` passed 13 tests (0 failures/errors/skips), covering ADMIN `401/403/200`, provider-wide Adzuna/Greenhouse/Lever routing, configured employer-only selection, disabled/unknown/unsafe employer rejection, Adzuna employer rejection, scheduled/manual trigger attribution, and identical provider lock keys for broad and narrow runs. Locked requests return HTTP `409` with their durable run ID. `cd backend/backend && ./mvnw test` initially caught a provider-wide validation regression before lock acquisition; after narrowing validation to employer-scoped calls, the clean rerun passed 110 tests (0 failures/errors/skips). `git diff --check` passed.
 
 - [ ] **M2D — Shared locking, structured outcomes, and complete concurrency/security tests**
 

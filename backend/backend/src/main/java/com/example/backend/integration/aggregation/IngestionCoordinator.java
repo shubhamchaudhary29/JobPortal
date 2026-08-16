@@ -35,7 +35,12 @@ public class IngestionCoordinator {
         return run(source, SyncRunService.Trigger.MANUAL);
     }
     public Result run(EmployerRegistryProperties.Source source, SyncRunService.Trigger trigger) {
-        SyncRunService.Handle run = runs.begin(source.name(), null, trigger);
+        return run(source, null, trigger);
+    }
+    public Result run(EmployerRegistryProperties.Source source, String employer, SyncRunService.Trigger trigger) {
+        String selectedEmployer = employer == null || employer.isBlank()
+                ? null : ingestion.requireEnabledEmployer(source, employer);
+        SyncRunService.Handle run = runs.begin(source.name(), selectedEmployer, trigger);
         String name = "employer-ingestion:" + source;
         String owner = locks.acquire(name, leaseMs);
         if (owner == null) {
@@ -50,7 +55,9 @@ public class IngestionCoordinator {
         try {
             EmployerIngestionService.Result sync;
             try {
-                sync = ingestion.sync(source, () -> !lost.get());
+                sync = selectedEmployer == null
+                        ? ingestion.sync(source, () -> !lost.get())
+                        : ingestion.sync(source, selectedEmployer, () -> !lost.get());
             } catch (RuntimeException failure) {
                 runs.finish(run, lost.get() ? SyncRunService.Outcome.LEASE_LOST : SyncRunService.Outcome.FAILED,
                         SyncRunService.Counts.empty(), failure);
