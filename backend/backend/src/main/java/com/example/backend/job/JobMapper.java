@@ -24,7 +24,11 @@ public final class JobMapper {
     public static JobResponse toResponse(JobDocument document) {
         return new JobResponse(document.getId(), document.getTitle(), document.getDescription(), document.getLocation(),
                 document.getCompany(), document.getSalary(), document.getExperience(), document.getCreatedAt(),
-                SafeExternalUrl.parse(document.getSourceUrl()).orElse(null), document.getSource());
+                SafeExternalUrl.parse(document.getSourceUrl()).orElse(null), document.getSource(),
+                SafeExternalUrl.parse(document.getApplicationUrl()).orElse(null),
+                document.getApplicationUrls() == null ? java.util.List.of() : document.getApplicationUrls().stream()
+                        .map(SafeExternalUrl::parse).flatMap(java.util.Optional::stream).toList(),
+                document.getSourceIdentities() == null ? java.util.List.of() : java.util.List.copyOf(document.getSourceIdentities()));
     }
 
     private static void apply(String title, String description, String location, String company, double salary,
