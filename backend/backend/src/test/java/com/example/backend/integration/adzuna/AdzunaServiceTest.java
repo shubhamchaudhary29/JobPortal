@@ -1,5 +1,6 @@
 package com.example.backend.integration.adzuna;
 
+import com.example.backend.integration.aggregation.ImportedJobLifecycleService;
 import org.junit.jupiter.api.Test;
 import java.util.List;
 import java.util.concurrent.atomic.AtomicInteger;
@@ -18,7 +19,7 @@ class AdzunaServiceTest {
         AtomicInteger sleeps = new AtomicInteger();
         AdzunaService service = service(client, store, 3, "java", sleeps);
         AdzunaService.SyncResult result = service.sync();
-        assertEquals(1, result.inserted()); assertEquals(2, sleeps.get()); verify(client, times(3)).fetchPage("java", 1); verify(store).upsert(any(), any());
+        assertEquals(1, result.inserted()); assertEquals(2, result.retries()); assertEquals(2, sleeps.get()); verify(client, times(3)).fetchPage("java", 1); verify(store).upsert(any(), any());
     }
     @Test
     void doesNotRetryAuthenticationOrInvalidProviderRequest() {
@@ -30,11 +31,13 @@ class AdzunaServiceTest {
     @Test
     void keepsSuccessfulBatchesWhenAnotherKeywordFailsAndRejectsMalformedRecords() {
         AdzunaClient client = mock(AdzunaClient.class); AdzunaJobStore store = mock(AdzunaJobStore.class);
+        ImportedJobLifecycleService lifecycle = mock(ImportedJobLifecycleService.class);
         when(client.fetchPage(eq("java"), eq(1))).thenThrow(new AdzunaProviderException("HTTP 503", false, null));
         when(client.fetchPage(eq("python"), eq(1))).thenReturn(new AdzunaResponse(List.of(valid("good"), new AdzunaResponse.AdzunaJob("", "bad", "x", null, null, null, null))));
         when(store.upsert(any(), any())).thenReturn(UpsertOutcome.INSERTED);
-        AdzunaService.SyncResult result = service(client, store, 1, "java,python", new AtomicInteger()).sync();
+        AdzunaService.SyncResult result = service(client, store, 1, "java,python", new AtomicInteger(), lifecycle).sync();
         assertEquals(1, result.failedBatches()); assertEquals(1, result.inserted()); assertEquals(1, result.rejected()); verify(store, times(1)).upsert(any(), any());
+        verifyNoInteractions(lifecycle);
     }
     @Test
     void skipsOverlappingRuns() {
@@ -44,9 +47,61 @@ class AdzunaServiceTest {
         when(client.fetchPage(anyString(), anyInt())).thenAnswer(invocation -> { nested.set(service.sync()); return response("one"); });
         assertFalse(service.sync().skipped()); assertTrue(nested.get().skipped()); verify(client, times(1)).fetchPage("java", 1);
     }
+    @Test
+    void onlyCompleteLeaseValidRunAdvancesLifecycle() {
+        AdzunaClient client = mock(AdzunaClient.class);
+        AdzunaJobStore store = mock(AdzunaJobStore.class);
+        ImportedJobLifecycleService lifecycle = mock(ImportedJobLifecycleService.class);
+        when(client.fetchPage(anyString(), anyInt())).thenReturn(response("one"));
+        when(store.upsert(any(), any())).thenReturn(UpsertOutcome.INSERTED);
+        AdzunaService service = service(client, store, 1, "java", new AtomicInteger(), lifecycle);
+
+        assertEquals(AdzunaService.Outcome.FULL_SUCCESS, service.sync().outcome());
+
+        verify(lifecycle).completeSuccessfulRun(eq("adzuna"), isNull(),
+                eq(java.util.Set.of("adzuna:one")), any());
+    }
+    @Test
+    void leaseLossAfterStoredItemDoesNotAdvanceLifecycle() {
+        AdzunaClient client = mock(AdzunaClient.class);
+        AdzunaJobStore store = mock(AdzunaJobStore.class);
+        ImportedJobLifecycleService lifecycle = mock(ImportedJobLifecycleService.class);
+        when(client.fetchPage(anyString(), anyInt())).thenReturn(response("one"));
+        when(store.upsert(any(), any())).thenReturn(UpsertOutcome.INSERTED);
+        AdzunaService service = service(client, store, 1, "java", new AtomicInteger(), lifecycle);
+        AtomicInteger leaseChecks = new AtomicInteger();
+
+        service.sync(() -> leaseChecks.incrementAndGet() < 6);
+
+        verify(store).upsert(any(), any());
+        verifyNoInteractions(lifecycle);
+    }
+    @Test
+    void leaseLossDuringTransientFailurePreventsRetriesAndFurtherProviderProgress() {
+        AdzunaClient client = mock(AdzunaClient.class);
+        AdzunaJobStore store = mock(AdzunaJobStore.class);
+        java.util.concurrent.atomic.AtomicBoolean valid = new java.util.concurrent.atomic.AtomicBoolean(true);
+        when(client.fetchPage(anyString(), anyInt())).thenAnswer(invocation -> {
+            valid.set(false);
+            throw new AdzunaProviderException("timeout", true, null);
+        });
+        AtomicInteger sleeps = new AtomicInteger();
+        AdzunaService.SyncResult result = service(client, store, 3, "java", sleeps).sync(valid::get);
+
+        assertEquals(0, result.retries());
+        assertEquals(0, sleeps.get());
+        verify(client, times(1)).fetchPage("java", 1);
+        verifyNoInteractions(store);
+    }
     private static AdzunaService service(AdzunaClient client, AdzunaJobStore store, int attempts, String keywords, AtomicInteger sleeps) {
+        return service(client, store, attempts, keywords, sleeps, mock(ImportedJobLifecycleService.class));
+    }
+    private static AdzunaService service(AdzunaClient client, AdzunaJobStore store, int attempts, String keywords,
+                                         AtomicInteger sleeps, ImportedJobLifecycleService lifecycle) {
         AdzunaProperties p = properties(attempts, keywords); AdzunaCircuitBreaker circuit = new AdzunaCircuitBreaker(p);
-        return new AdzunaService(new AdzunaJobSource(client), store, p, circuit, new AdzunaSyncMetrics(), java.time.Clock.systemUTC(), millis -> sleeps.incrementAndGet(), bound -> 0);
+        return new AdzunaService(new AdzunaJobSource(client), store, p, circuit, new AdzunaSyncMetrics(),
+                lifecycle, java.time.Clock.systemUTC(),
+                millis -> sleeps.incrementAndGet(), bound -> 0);
     }
     static AdzunaProperties properties(int attempts, String keywords) { return new AdzunaProperties("id-not-secret", "key-not-secret", 1, 1, attempts, 1, 2, 100, 1, 1, keywords); }
     private static AdzunaResponse response(String id) { return new AdzunaResponse(List.of(valid(id))); }

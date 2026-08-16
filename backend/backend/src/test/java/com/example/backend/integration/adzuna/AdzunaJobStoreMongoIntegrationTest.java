@@ -3,15 +3,25 @@ package com.example.backend.integration.adzuna;
 import static org.junit.jupiter.api.Assertions.*;
 
 import com.example.backend.job.infrastructure.JobDocument;
+import org.bson.Document;
 import java.time.LocalDateTime;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.concurrent.Callable;
 import java.util.concurrent.Executors;
+import java.util.concurrent.atomic.AtomicBoolean;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.springframework.dao.DuplicateKeyException;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.data.mongodb.core.FindAndModifyOptions;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.data.mongodb.core.MongoTemplate;
 import org.springframework.data.mongodb.core.query.Query;
+import org.springframework.data.mongodb.core.query.UpdateDefinition;
+import com.example.backend.job.infrastructure.ImportedSourceListing;
+import static org.mockito.ArgumentMatchers.*;
+import static org.mockito.Mockito.*;
 
 /** Exercises atomic upserts against the same MongoDB used by the application. */
 @SpringBootTest
@@ -48,6 +58,24 @@ class AdzunaJobStoreMongoIntegrationTest {
         store.upsert(adzuna, LocalDateTime.now());
         store.upsert(other, LocalDateTime.now());
         assertEquals(2, mongo.findAll(JobDocument.class).size());
+    }
+
+    @Test
+    void persistsOneAdditiveListingPerIdentityAndLeavesRecruiterJobsUntouched() {
+        LocalDateTime first = LocalDateTime.of(2026, 2, 1, 0, 0);
+        JobDocument imported = job("listing", "one");
+        store.upsert(imported, first);
+        store.upsert(job("listing", "two"), first.plusMinutes(1));
+        JobDocument persisted = mongo.findAll(JobDocument.class).get(0);
+        assertEquals(1, persisted.getSourceListings().size());
+        assertEquals("adzuna:listing", persisted.getSourceListings().get(0).getIdentity());
+        assertEquals(first, persisted.getSourceListings().get(0).getFirstSeenAt());
+        assertEquals(first.plusMinutes(1), persisted.getSourceListings().get(0).getLastSeenAt());
+
+        JobDocument manual = job("manual", "manual"); manual.setRecruiterId("recruiter"); manual.setSource("manual");
+        mongo.save(manual);
+        assertTrue(mongo.findAll(JobDocument.class).stream().filter(j -> "manual".equals(j.getSource()))
+                .allMatch(j -> j.getSourceListings().isEmpty()));
     }
 
     @Test
@@ -93,6 +121,62 @@ class AdzunaJobStoreMongoIntegrationTest {
                 () -> assertEquals(first.plusDays(1), persisted.getPublishedAt()), () -> assertEquals(first.plusDays(30), persisted.getExpiresAt()),
                 () -> assertEquals("changed-fingerprint", persisted.getFingerprint()), () -> assertEquals(first, persisted.getFirstSeenAt()),
                 () -> assertEquals("adzuna", persisted.getSource()), () -> assertEquals("meaningful", persisted.getExternalId()));
+    }
+
+    @Test
+    void forcedDuplicateKeyRetryPreservesWinnerListingAndUnrelatedSources() {
+        LocalDateTime originalFirstSeen = LocalDateTime.of(2025, 12, 1, 9, 0);
+        LocalDateTime retryTime = LocalDateTime.of(2026, 1, 1, 10, 0);
+        String identity = "adzuna:provider-1";
+        ImportedSourceListing unrelated = listing("lever:other", originalFirstSeen.minusDays(1));
+        ImportedSourceListing original = listing(identity, originalFirstSeen);
+        ImportedSourceListing duplicate = listing(identity, originalFirstSeen.plusDays(1));
+        JobDocument winner = job("provider-1", "winner description");
+        winner.setSourceListings(new ArrayList<>(List.of(unrelated, original, duplicate)));
+
+        MongoTemplate racingMongo = spy(mongo);
+        AtomicBoolean firstFindAndModify = new AtomicBoolean(true);
+        doAnswer(invocation -> {
+            if (firstFindAndModify.compareAndSet(true, false)) {
+                mongo.insert(winner);
+                throw new DuplicateKeyException("forced race");
+            }
+            return invocation.callRealMethod();
+        }).when(racingMongo).findAndModify(any(Query.class), any(UpdateDefinition.class),
+                any(FindAndModifyOptions.class), eq(JobDocument.class));
+
+        UpsertOutcome outcome = new AdzunaJobStore(racingMongo)
+                .upsert(job("provider-1", "incoming description"), retryTime);
+
+        assertEquals(UpsertOutcome.UPDATED, outcome);
+        JobDocument persisted = mongo.findById(winner.getId(), JobDocument.class);
+        assertNotNull(persisted);
+        assertEquals(1, persisted.getSourceListings().stream()
+                .filter(item -> identity.equals(item.getIdentity())).count());
+        assertTrue(persisted.getSourceListings().stream()
+                .anyMatch(item -> "lever:other".equals(item.getIdentity())));
+        ImportedSourceListing refreshed = persisted.getSourceListings().stream()
+                .filter(item -> identity.equals(item.getIdentity())).findFirst().orElseThrow();
+        assertAll(
+                () -> assertEquals(originalFirstSeen, refreshed.getFirstSeenAt()),
+                () -> assertEquals(retryTime, refreshed.getLastSeenAt()),
+                () -> assertTrue(refreshed.isActive()),
+                () -> assertEquals(0, refreshed.getConsecutiveMissingRuns()));
+        verify(racingMongo, times(2)).findAndModify(any(Query.class), any(UpdateDefinition.class),
+                any(FindAndModifyOptions.class), eq(JobDocument.class));
+    }
+
+    private ImportedSourceListing listing(String identity, LocalDateTime firstSeenAt) {
+        ImportedSourceListing listing = new ImportedSourceListing();
+        listing.setIdentity(identity);
+        listing.setProvider(identity.substring(0, identity.indexOf(':')));
+        listing.setExternalId(identity.substring(identity.indexOf(':') + 1));
+        listing.setApplicationUrl("https://example.test/" + listing.getExternalId());
+        listing.setFirstSeenAt(firstSeenAt);
+        listing.setLastSeenAt(firstSeenAt.plusHours(1));
+        listing.setActive(false);
+        listing.setConsecutiveMissingRuns(3);
+        return listing;
     }
 
     private JobDocument job(String id, String description) {

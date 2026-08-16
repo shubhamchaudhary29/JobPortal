@@ -8,6 +8,7 @@ import com.example.backend.application.infrastructure.ApplicationDocument;
 import com.example.backend.application.infrastructure.ApplicationRepository;
 import com.example.backend.job.application.JobService;
 import com.example.backend.job.infrastructure.JobDocument;
+import com.example.backend.job.infrastructure.JobApplicationReferenceCoordinator;
 import com.example.backend.messaging.application.CreateConversationCommand;
 import com.example.backend.messaging.application.MessagingService;
 import com.example.backend.shared.error.ConflictException;
@@ -40,16 +41,18 @@ public class ApplicationService implements ApplicationStatsProvider {
     private final MessagingService messaging;
     private final ResumeStorageService storage;
     private final CurrentUserProvider currentUser;
+    private final JobApplicationReferenceCoordinator jobReferences;
 
     public ApplicationService(ApplicationRepository applications, JobService jobs, UserRepository users,
                               MessagingService messaging, ResumeStorageService storage,
-                              CurrentUserProvider currentUser) {
+                              CurrentUserProvider currentUser, JobApplicationReferenceCoordinator jobReferences) {
         this.applications = applications;
         this.jobs = jobs;
         this.users = users;
         this.messaging = messaging;
         this.storage = storage;
         this.currentUser = currentUser;
+        this.jobReferences = jobReferences;
     }
 
     public ApplicationResponse apply(String jobId, MultipartFile file) throws IOException {
@@ -58,13 +61,22 @@ public class ApplicationService implements ApplicationStatsProvider {
         if (candidate.getRole() != UserRole.USER) throw new ForbiddenException("Only candidates can apply");
         jobs.requireJob(jobId);
         if (applications.existsByUserIdAndJobId(email, jobId)) throw new ConflictException("Application already exists");
-        String storedName = storage.store(file);
-        ApplicationDocument document = new ApplicationDocument();
-        document.setJobId(jobId);
-        document.setUserId(email);
-        document.setResumeUrl(storedName);
-        try { return ApplicationMapper.toResponse(applications.save(document)); }
-        catch (RuntimeException ex) { storage.deleteQuietly(storedName); throw ex; }
+        if (!jobReferences.acquireApplicationReference(jobId)) {
+            throw new ConflictException("Job is not accepting applications");
+        }
+        String storedName = null;
+        try {
+            storedName = storage.store(file);
+            ApplicationDocument document = new ApplicationDocument();
+            document.setJobId(jobId);
+            document.setUserId(email);
+            document.setResumeUrl(storedName);
+            return ApplicationMapper.toResponse(applications.save(document));
+        } catch (IOException | RuntimeException failure) {
+            if (storedName != null) storage.deleteQuietly(storedName);
+            jobReferences.releaseApplicationReference(jobId);
+            throw failure;
+        }
     }
 
     public PageResponse<ApplicationResponse> applicants(String jobId, Pageable pageable) {

@@ -34,7 +34,7 @@ public class JwtFilter extends OncePerRequestFilter {
                 String token = header.substring(7);
                 String email = jwt.extractEmail(token);
                 String role = jwt.extractRole(token);
-                if (!role.equals("USER") && !role.equals("RECRUITER")) throw new IllegalArgumentException("Invalid role");
+                if (!role.equals("USER") && !role.equals("RECRUITER") && !role.equals("ADMIN")) throw new IllegalArgumentException("Invalid role");
                 SecurityContextHolder.getContext().setAuthentication(new UsernamePasswordAuthenticationToken(email, null,
                         List.of(new SimpleGrantedAuthority("ROLE_" + role))));
             } catch (RuntimeException ex) { SecurityContextHolder.clearContext(); }

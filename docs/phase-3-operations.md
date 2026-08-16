@@ -1,8 +1,8 @@
-# Phase 3: Adzuna reliability and MongoDB operations
+# Job aggregation reliability and MongoDB operations
 
 ## Runtime behavior
 
-The public `GET /api/v1/jobs` API reads only from MongoDB. It never waits for a live Adzuna request. Trigger an import explicitly with `POST /api/v1/jobs/ingestion/adzuna` using a recruiter JWT; there is no periodic scheduler.
+The public `GET /api/v1/jobs` API reads only from MongoDB and never waits for a live provider request. Adzuna, Greenhouse, Lever, and retention schedules run through their Mongo-backed coordinators when `JOB_AGGREGATION_SCHEDULING_ENABLED=true`. ADMIN manual requests use the same coordinator and distributed lease as scheduled requests. The legacy recruiter Adzuna trigger is retained for compatibility and also uses that coordinator.
 
 `ADZUNA_APP_ID` and `ADZUNA_APP_KEY` are required server environment variables. They are only used to create the outbound Adzuna request and are never logged or returned in errors. Do not place either value in source code, frontend configuration, screenshots, or issue comments.
 
@@ -15,7 +15,12 @@ Configuration defaults (all can be overridden through the matching environment v
 
 Network failures, 429s, and 5xx responses receive bounded exponential backoff with jitter. 4xx authentication/validation responses and malformed provider payloads are not retried. Repeated failed batches open a small in-process circuit; after its open interval one successful probe closes it. Completion logs contain sanitized event names, counts, and latency only; the lightweight counters report cumulative successful runs, failed batches, and total latency.
 
-Every provider record is validated and atomically upserted using `(source, externalId)`. Imported jobs carry `source`, `externalId`, `fetchedAt`, and `lastSeenAt`. A failed or partial sync does not delete or alter previously imported jobs. The current stale-data policy is **retain and label by `lastSeenAt`**: operators should query/report jobs not seen within their business freshness window before any separately approved cleanup. The manual sync endpoint is authenticated and recruiter-only.
+Every provider record is validated and atomically upserted into an additive `sourceListings` set.
+Canonical fields follow the deterministic selection policy documented below. Failed, partial,
+locked, and lease-lost runs cannot advance missing counts. Completed runs apply per-listing missing
+state, deactivation, and reactivation, while the reference-safe daily retention task handles only
+eligible inactive imports. ADMIN operations are role-protected; the older recruiter Adzuna trigger
+does not grant access to ADMIN history, metrics, employer controls, or conflict reconciliation.
 
 ## Indexes and query rationale
 
@@ -45,4 +50,174 @@ Indexes consume storage and make writes slower. These are limited to current rep
 
 Backend unit/contract tests do not call Adzuna: `cd backend/backend && ./mvnw test`.
 
-For Compose, create a local ignored `.env` with placeholders for `MONGODB_URI`, `JWT_SECRET`, `ADZUNA_APP_ID`, `ADZUNA_APP_KEY`, and `CORS_ALLOWED_ORIGINS`, then run `docker compose config` followed by `docker compose build`. Do not commit `.env` files. Docker image creation exercises the wrapper build inside the backend image; a live Adzuna sync still requires valid provider credentials and is not part of automated verification.
+For Compose, create a local ignored `.env` with placeholders for `MONGODB_URI`, `JWT_SECRET`, `ADZUNA_APP_ID`, `ADZUNA_APP_KEY`, and `CORS_ALLOWED_ORIGINS`, then run `docker compose config` followed by `docker compose build`. Do not commit `.env` files. `bash backend/backend/scripts/compose-smoke-test.sh` starts an isolated project with scheduling disabled, waits for MongoDB/backend/frontend health, verifies the direct and proxied health APIs and ADMIN SPA fallback, and removes its disposable volumes. The harness uses ports 80 and 8080 and must not share a project name or database with a persistent environment.
+## Employer ingestion operations
+
+### Source-listing backfill (M1A)
+
+Imported jobs now retain additive `sourceListings` entries. Before lifecycle work is enabled, inspect legacy data without mutation:
+
+```bash
+mongosh "$MONGODB_URI" backend/backend/scripts/backfill-source-listings.js
+```
+
+Apply only after reviewing the reported candidates and ambiguous records:
+
+```bash
+BACKFILL_APPLY=true mongosh "$MONGODB_URI" backend/backend/scripts/backfill-source-listings.js
+```
+
+The script is idempotent and does not delete, merge, or guess ambiguous documents. Back up the `jobs` collection before applying; rollback consists of restoring that backup or manually removing only the reviewed additive `sourceListings` fields. Recruiter-created jobs are excluded.
+
+Public job search reads MongoDB only; it never invokes Greenhouse, Lever, or Adzuna.
+Greenhouse and Lever are independently scheduled every six hours by default and can be globally disabled with `JOB_AGGREGATION_SCHEDULING_ENABLED=false` (the test profile does this).
+
+Imported records use a provider-independent SHA-256 fingerprint of normalized company, title, and location. The original provider identity and each original application deep link are retained on the canonical record. Apply the `imported_fingerprint_unique` index only after running the read-only audit:
+
+```bash
+mongosh "$MONGODB_URI" backend/backend/scripts/audit-mongo-indexes.js
+```
+
+Do not automatically delete ambiguous duplicate records; resolve them before enabling the unique index in a production rollout. Mongo lease locks in `ingestion_locks` prevent scheduled instances from overlapping and expire after five minutes, allowing crash recovery.
+
+Canonical imported-job fields follow one stable policy: active source listings are ordered by provider name, then full source identity, then application URL, all ascending. The first listing owns the top-level `source`, `externalId`, `applicationUrl`, and `sourceUrl`; every identity and deep link remains in the additive listing and compatibility collections. Mongo applies listing replacement, de-duplication, ordering, and primary-field selection in one update pipeline, so provider arrival order and concurrent ingestion cannot change the selected application link.
+
+Per-listing missing state advances only after a complete, lease-valid source/employer fetch. Provider errors, rejected or failed items, lock contention, and lease loss skip missing detection; a genuinely empty successful board is a valid seen set and does advance it. `JOB_AGGREGATION_MISSING_THRESHOLD` defaults to `3` consecutive successful misses. A canonical job is hidden only after every source listing is inactive, and any later successful upsert reactivates that listing and the canonical job while preserving its original first-seen timestamp.
+
+The daily retention task uses the distributed `maintenance:imported-job-retention` lease and defaults to `02:30`, 90 days after deactivation, and batches of 100 (`JOB_AGGREGATION_CLEANUP_CRON`, `JOB_AGGREGATION_RETENTION_DAYS`, and `JOB_AGGREGATION_CLEANUP_BATCH_SIZE`). It selects only inactive imported jobs with an old `inactiveAt`, then takes an atomic per-job cleanup claim before the final application-reference check and token-guarded deletion. Application creation atomically takes the opposing reference claim, rejects inactive or reconciliation-pending imported jobs, and cannot cross a live cleanup claim. Thus a concurrent application either reserves the job before cleanup or is rejected before its resume/application is stored. Existing applications remain readable, legacy application references receive the same final protection, stale cleanup claims are recoverable, and recruiter-created jobs remain unaffected. Operators should take a database backup before lowering retention and can disable all maintenance scheduling with `JOB_AGGREGATION_SCHEDULING_ENABLED=false`.
+
+`/api/v1/admin/ingestion/**` is ADMIN-only. Public registration can create only USER or RECRUITER accounts. Provision an administrator through a controlled database migration by changing an existing trusted user's `role` to `ADMIN`, then have that user sign in again to receive a role-bearing token.
+
+Identity/fingerprint collisions are retained in `aggregation_conflicts`; ingestion records a bounded conflict reference and leaves both jobs untouched. Administrators can page/filter them with `GET /api/v1/admin/ingestion/conflicts` and submit an explicit canonical/duplicate choice to `POST /api/v1/admin/ingestion/conflicts/{id}/resolution`. Resolution is distributed-lock protected and resumable: it refuses same-candidate application collisions, merges every source listing, rewrites application and conversation job references, and removes the duplicate only after those rewrites. Repeating the same completed resolution is safe; a different choice returns a conflict. Back up `jobs`, `applications`, `chat_rooms`, and `aggregation_conflicts` before production reconciliation.
+
+### Final Phase 1 migration audit (M1F)
+
+The read-only index audit also validates the additive source-listing shape, duplicate listing
+identities within a job, source identities duplicated across imported jobs, compatibility between
+`sourceIdentities`/`applicationUrls` and `sourceListings`, deterministic canonical fields, lifecycle
+state, conflict records, and interrupted reconciliation markers. Diagnostic categories and IDs are
+bounded, and the audit exits with status `2` when any rollout anomaly is found. Validate the
+audit itself only against a disposable local server because its harness drops
+`jobportal_m1f_verify`:
+
+```bash
+MONGODB_URI=mongodb://localhost:27017 bash backend/backend/scripts/verify-aggregation-migration.sh
+```
+
+Do not continue a rollout when the audit reports an anomaly. Retain affected documents, capture the
+output, and resolve identity/fingerprint ambiguity through the ADMIN conflict endpoint. Recovery is
+additive: restore a database snapshot if needed, leave legacy fields intact, and rerun the
+idempotent source-listing backfill before repeating the audit. Never automatically delete an
+ambiguous or reference-bearing job.
+
+Every scheduled and manual provider coordinator creates a `sync_runs` record before attempting its
+distributed lease. Records use a low-cardinality outcome (`COMPLETED`, `PARTIAL`, `FAILED`, `LOCKED`,
+or `LEASE_LOST`), retain ingestion/retry/lifecycle counts, and contain only a bounded sanitized
+failure type/detail. The `runId` is included in structured start/completion logs. MongoDB removes
+history through the `expiresAt` TTL index after `JOB_AGGREGATION_SYNC_HISTORY_RETENTION_DAYS` (30 by
+default); changing retention affects new records, so apply an explicit reviewed migration if old
+expiry dates must also change.
+
+ADMIN history endpoints are database-backed and bounded to 100 records per page:
+
+- `GET /api/v1/admin/ingestion/history` accepts `provider`, `employer`, `outcome`, `trigger`, `page`, and `size`.
+- `GET /api/v1/admin/ingestion/history/{runId}` returns a stable sanitized detail view.
+- `GET /api/v1/admin/ingestion/status` returns the latest run per provider/employer scope plus imported-job and provider/company listing counts.
+
+History is ordered by start time descending and run ID ascending. Unsupported filters, unsafe board
+identifiers, negative pages, and sizes outside 1–100 are rejected; retention metadata and exception
+stacks are never returned.
+
+An administrator starts a provider-wide run with `POST /api/v1/admin/ingestion/{provider}/sync` for
+`adzuna`, `greenhouse`, or `lever`. Greenhouse and Lever also accept an optional configured board,
+for example `?employer=airbnb`; unknown or disabled boards are rejected and Adzuna does not accept
+an employer. Manual and scheduled requests call the same coordinator. Employer-specific runs retain
+the provider-wide lease key deliberately, so they cannot overlap that provider's scheduled or broad
+manual run. A held lease returns HTTP `409` with `LOCKED` and its history run ID; a lost lease returns
+HTTP `503` with `LEASE_LOST`.
+
+Each provider lease is wrapped by one cancellable heartbeat guard. A false renewal, Mongo renewal
+exception, or ownership change atomically marks the guard lost; provider loops check that token
+before fetch retries and every item write, then skip lifecycle progress. Closing the guard cancels
+the heartbeat with interruption and removes the lease only through the `(lock name, owner)` query,
+so an expired/reacquired winner cannot be released by the former owner. Heartbeat scheduling and
+lock acquisition failures are recorded as failed runs.
+
+### Greenhouse and Lever transport reliability
+
+Greenhouse and Lever use one provider-neutral HTTP failure and retry policy. Timeouts, HTTP `429`,
+and HTTP `5xx` are transient; other `4xx` responses and malformed JSON are permanent for that run.
+Retries are bounded, use exponential backoff with jitter, and honor both delta-seconds and HTTP-date
+`Retry-After` values without exceeding the configured maximum delay. An interrupted backoff stops
+the run and restores the thread interrupt flag. Retry totals are persisted in the sync-run history.
+
+The supported settings and safe defaults are:
+
+| Environment variable | Default | Bound/purpose |
+| --- | ---: | --- |
+| `JOB_AGGREGATION_PROVIDER_CONNECT_TIMEOUT_MS` | `3000` | `1`–`60000` ms |
+| `JOB_AGGREGATION_PROVIDER_READ_TIMEOUT_MS` | `5000` | `1`–`120000` ms |
+| `JOB_AGGREGATION_PROVIDER_RETRY_MAX_ATTEMPTS` | `3` | `1`–`5`, including the initial request |
+| `JOB_AGGREGATION_PROVIDER_RETRY_INITIAL_BACKOFF_MS` | `200` | initial exponential delay |
+| `JOB_AGGREGATION_PROVIDER_RETRY_MAX_BACKOFF_MS` | `5000` | at most `60000` ms and not below the initial delay |
+| `JOB_AGGREGATION_PROVIDER_MAX_RESPONSE_BYTES` | `2097152` | `1024`–`10485760`; enforced for declared and streamed bodies |
+| `JOB_AGGREGATION_PROVIDER_MAX_ITEMS` | `2000` | `1`–`10000` items per board response |
+| `JOB_AGGREGATION_PROVIDER_REQUESTS_PER_SECOND` | `5` | `1`–`100`, independently paced per provider/board |
+| `JOB_AGGREGATION_PROVIDER_CIRCUIT_FAILURE_THRESHOLD` | `3` | `1`–`20` consecutive transient request failures |
+| `JOB_AGGREGATION_PROVIDER_CIRCUIT_OPEN_MS` | `60000` | `100`–`600000` ms before one half-open probe |
+| `GREENHOUSE_BASE_URL` | official boards API | HTTP(S) endpoint; override only for controlled testing/proxying |
+| `LEVER_BASE_URL` | official postings API | HTTP(S) endpoint; override only for controlled testing/proxying |
+
+Automated reliability tests point these base URLs at an in-process mock HTTP server and never call
+live providers. Keep credentials and query-bearing upstream URLs out of logs and support output.
+Circuit and rate-limit state is scoped to the provider and configured board, so a failing employer
+cannot open or consume another employer's protection. A successful half-open probe closes its
+circuit. Oversized responses fail permanently for that run. Malformed individual items are skipped
+and counted as rejected while valid siblings may still be stored; such a partial run never advances
+missing detection. A valid empty response remains a complete successful board result.
+
+### Secured health and metrics
+
+Actuator exposes only `/actuator/health`, `/actuator/info`, and `/actuator/metrics`; every Actuator
+path requires an ADMIN JWT. Health component details are disabled even for administrators, and
+environment/configuration endpoints are not exposed. Do not proxy these paths around backend
+authentication.
+
+Aggregation metrics use the `jobportal.aggregation.*` prefix. They cover finalized run outcomes,
+duration, inserted/updated/unchanged/rejected counts, retries, provider failures, lifecycle work,
+lock contention, and lease loss. Every meter has exactly three bounded tags: `provider` (`adzuna`,
+`greenhouse`, `lever`, or `other`), `outcome`, and `trigger`. Employer/board, run ID, URLs, exception
+text, credentials, and arbitrary failure types are never metric labels.
+
+### Employer-registry verification
+
+Run the deterministic classifier test from any working directory:
+
+```bash
+bash backend/backend/scripts/verify-employer-registry-classification.sh
+```
+
+When outbound network access is available, validate the configured registry and save its complete
+output before release:
+
+```bash
+date -u +%FT%TZ
+bash backend/backend/scripts/validate-employer-registry.sh
+```
+
+The validator distinguishes `ACTIVE`, legitimately `EMPTY`, `MALFORMED`, provider-confirmed
+`INVALID` (`404`/`410`), `UNREACHABLE`, and configured `DISABLED` boards. Exit status `0` means all
+enabled boards were active or legitimately empty, `1` means invalid/malformed data, `2` means the
+network/provider was unreachable, and `3` means a local prerequisite or argument was invalid.
+Disable confirmed invalid entries in `application.properties`; do not disable or claim verification
+for an unreachable provider. The latest dated result and exact counts are in
+[`employer-registry-verification.md`](employer-registry-verification.md).
+
+### Release verification
+
+CI runs the clean backend verification against MongoDB 7, deterministic mock-provider reliability
+tests, registry classifier fixtures, frontend clean install/lint/tests/build/audit, Compose config,
+image builds, the isolated smoke harness, whitespace checks, and secret scanning. Local release
+verification must run the same commands documented in the completion plan. Automated tests never
+contact a live job provider; only the explicit registry-validation step performs live read-only
+requests.

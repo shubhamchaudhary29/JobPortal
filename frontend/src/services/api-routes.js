@@ -28,4 +28,12 @@ export const apiRoutes = Object.freeze({
     byId: (id) => `${API_V1}/conversations/${encodeURIComponent(id)}`,
     messages: (id) => `${API_V1}/conversations/${encodeURIComponent(id)}/messages`,
   }),
+  adminAggregation: Object.freeze({
+    status: `${API_V1}/admin/ingestion/status`,
+    history: `${API_V1}/admin/ingestion/history`,
+    historyById: (id) => `${API_V1}/admin/ingestion/history/${encodeURIComponent(id)}`,
+    conflicts: `${API_V1}/admin/ingestion/conflicts`,
+    conflictResolution: (id) => `${API_V1}/admin/ingestion/conflicts/${encodeURIComponent(id)}/resolution`,
+    sync: (provider) => `${API_V1}/admin/ingestion/${encodeURIComponent(provider)}/sync`,
+  }),
 });

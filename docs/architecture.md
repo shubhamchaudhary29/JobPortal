@@ -10,7 +10,7 @@ user/{api,application,domain,infrastructure}
 job/{api,application,infrastructure}
 application/{api,application,domain,infrastructure}
 messaging/{api,application,infrastructure,security}
-integration/adzuna
+integration/{adzuna,greenhouse,lever,aggregation,reliability}
 shared/{api,configuration,error,pagination,security}
 ```
 
@@ -51,6 +51,10 @@ cookie paths would increase risk. Requests to old paths are unsupported.
 | `GET /chat/rooms/{id}` | `GET /api/v1/conversations/{id}` |
 | `GET /chat/rooms/{id}/messages` | `GET /api/v1/conversations/{id}/messages` |
 | `GET /chat/unread` | `GET /api/v1/conversations/unread-count` |
+
+Aggregation administration is exposed only below `/api/v1/admin/ingestion`: summaries and manual provider runs are joined by bounded sync history/detail/latest-status queries, provider/company counts, paginated conflict listing, and explicit conflict resolution. Reconciliation requests name both the retained canonical job ID and duplicate job ID; the backend preserves and rewrites application/conversation references before any duplicate removal.
+
+Provider-wide and optional Greenhouse/Lever employer-specific manual runs enter the exact coordinator used by scheduling. Employer scope affects fetching and history, but not the provider lease key; this prevents a narrow run from overlapping a full-provider run on another instance. Adzuna uses its own equivalent Mongo-backed coordinator and accepts provider-wide scope only.
 
 The STOMP/SockJS handshake remains at `/ws`, with messages published to `/app/chat.send`. Its request property
 is `conversationId`.
@@ -119,7 +123,7 @@ tokens or backend secrets in Swagger examples or `VITE_*` variables.
 
 ```bash
 cd backend/backend && ./mvnw clean verify
-cd frontend && npm ci && npm run lint && npm test && npm run build
+cd frontend && npm ci && npm run lint && npm test -- --run && npm run build && npm audit --omit=dev
 docker compose config
 docker compose build backend frontend
 docker compose up -d --wait
@@ -129,5 +133,6 @@ The frontend container selects HTTPS when the configured Let’s Encrypt certifi
 uses its local HTTP configuration. Production must mount the certificate or terminate TLS at a trusted reverse
 proxy; the HTTP fallback is for local Compose use.
 
-Adzuna scheduling can be disabled for isolated environments with `app.scheduling.enabled=false`. Phase 3 owns
-retry/backoff, ingestion observability, and broader query-index optimization.
+All provider and retention scheduling can be disabled for isolated environments with
+`JOB_AGGREGATION_SCHEDULING_ENABLED=false`. Adzuna, Greenhouse, and Lever otherwise use their configured
+fixed delays and shared Mongo-backed coordinator/lease paths.

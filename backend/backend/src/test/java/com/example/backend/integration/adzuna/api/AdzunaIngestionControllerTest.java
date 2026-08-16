@@ -2,11 +2,13 @@ package com.example.backend.integration.adzuna.api;
 
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
+import static org.mockito.ArgumentMatchers.any;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 import com.example.backend.integration.adzuna.AdzunaService;
+import java.util.function.BooleanSupplier;
 import com.example.backend.shared.security.JwtUtil;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -36,7 +38,7 @@ class AdzunaIngestionControllerTest {
 
     @Test
     void recruiterJwtTriggersManualSyncAndReturnsItsHttpResponse() throws Exception {
-        when(ingestion.sync()).thenReturn(new AdzunaService.SyncResult(2, 1, 3, 4, 0, 0,
+        when(ingestion.sync(any(BooleanSupplier.class))).thenReturn(new AdzunaService.SyncResult(2, 1, 3, 4, 0, 0,
                 AdzunaService.Outcome.FULL_SUCCESS));
 
         mvc.perform(post("/api/v1/jobs/ingestion/adzuna").header(HttpHeaders.AUTHORIZATION, bearer("RECRUITER")))
@@ -44,7 +46,7 @@ class AdzunaIngestionControllerTest {
                 .andExpect(jsonPath("$.updated").value(1)).andExpect(jsonPath("$.unchanged").value(3))
                 .andExpect(jsonPath("$.outcome").value("FULL_SUCCESS"));
 
-        verify(ingestion).sync();
+        verify(ingestion).sync(any(BooleanSupplier.class));
     }
 
     private String bearer(String role) { return "Bearer " + jwt.generateToken("actor@example.com", role); }

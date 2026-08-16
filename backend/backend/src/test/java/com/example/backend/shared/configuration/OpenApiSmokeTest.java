@@ -26,6 +26,10 @@ class OpenApiSmokeTest {
                 .andExpect(jsonPath("$.components.securitySchemes.bearerAuth").exists())
                 .andExpect(jsonPath("$.components.securitySchemes.refreshCookie").exists())
                 .andExpect(jsonPath("$.paths['/api/v1/jobs']").exists())
+                .andExpect(jsonPath("$.paths['/api/v1/admin/ingestion/status']").exists())
+                .andExpect(jsonPath("$.paths['/api/v1/admin/ingestion/history']").exists())
+                .andExpect(jsonPath("$.paths['/api/v1/admin/ingestion/{provider}/sync']").exists())
+                .andExpect(content().string(containsString("Aggregation administration")))
                 .andExpect(content().string(containsString("JobResponse")))
                 .andExpect(content().string(not(containsString("RefreshTokenDocument"))))
                 .andExpect(content().string(not(containsString("resumeUrl"))));

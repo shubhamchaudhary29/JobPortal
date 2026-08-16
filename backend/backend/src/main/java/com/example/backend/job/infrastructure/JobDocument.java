@@ -5,6 +5,8 @@ import org.springframework.data.annotation.Id;
 import org.springframework.data.mongodb.core.mapping.Document;
 
 import java.time.LocalDateTime;
+import java.util.LinkedHashSet;
+import java.util.Set;
 
 @Data
 @Document(collection = "jobs")
@@ -39,5 +41,20 @@ public class JobDocument {
     /** Null is deliberately treated as active for pre-Phase-1 documents. */
     private Boolean active = true;
     private String fingerprint;
+    private Set<String> sourceIdentities = new LinkedHashSet<>();
+    /** Every original provider deep link associated with the canonical job. */
+    private Set<String> applicationUrls = new LinkedHashSet<>();
+    private java.util.List<ImportedSourceListing> sourceListings = new java.util.ArrayList<>();
+    private LocalDateTime lastSuccessfulSyncAt;
+    private int consecutiveMissingRuns;
+    private String inactiveReason;
+    private LocalDateTime inactiveAt;
+    private String reconciliationTargetId;
+    private String reconciliationConflictId;
+    private String reconciliationOriginalFingerprint;
+    /** Conservatively retained application claims; cleanup also checks legacy application documents. */
+    private long applicationReferenceCount;
+    private String cleanupClaimId;
+    private LocalDateTime cleanupClaimedAt;
 
 }

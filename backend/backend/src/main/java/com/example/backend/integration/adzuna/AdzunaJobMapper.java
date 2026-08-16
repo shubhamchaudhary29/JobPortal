@@ -36,7 +36,7 @@ public final class AdzunaJobMapper {
         job.setFetchedAt(now);
         job.setLastSeenAt(now);
         job.setFirstSeenAt(now); job.setActive(true);
-        job.setFingerprint(fingerprint(job.getCompany(), job.getTitle(), job.getLocation(), sourceUrl.get()));
+        job.setFingerprint(fingerprint(job.getCompany(), job.getTitle(), job.getLocation()));
         return Optional.of(job);
     }
 
@@ -55,8 +55,8 @@ public final class AdzunaJobMapper {
         try { return OffsetDateTime.parse(value.trim()).toLocalDateTime(); }
         catch (DateTimeParseException ignored) { return null; }
     }
-    private static String fingerprint(String company, String title, String location, String url) {
-        String input = String.join("|", company, title, location, url).toLowerCase(Locale.ROOT);
+    private static String fingerprint(String company, String title, String location) {
+        String input = String.join("|", company, title, location).toLowerCase(Locale.ROOT);
         try { return java.util.HexFormat.of().formatHex(MessageDigest.getInstance("SHA-256").digest(input.getBytes(StandardCharsets.UTF_8))); }
         catch (Exception ex) { throw new IllegalStateException("SHA-256 unavailable", ex); }
     }

@@ -5,6 +5,7 @@ import com.example.backend.application.infrastructure.ApplicationDocument;
 import com.example.backend.application.infrastructure.ApplicationRepository;
 import com.example.backend.job.application.JobService;
 import com.example.backend.job.infrastructure.JobDocument;
+import com.example.backend.job.infrastructure.JobApplicationReferenceCoordinator;
 import com.example.backend.messaging.application.MessagingService;
 import com.example.backend.shared.error.ConflictException;
 import com.example.backend.shared.error.ResourceNotFoundException;
@@ -31,6 +32,7 @@ class ApplicationServiceTest {
     private ResumeStorageService storage;
     private CurrentUserProvider current;
     private ApplicationService service;
+    private JobApplicationReferenceCoordinator jobReferences;
 
     @BeforeEach
     void setUp() {
@@ -39,8 +41,11 @@ class ApplicationServiceTest {
         users = mock(UserRepository.class);
         storage = mock(ResumeStorageService.class);
         current = mock(CurrentUserProvider.class);
-        service = new ApplicationService(applications, jobs, users, mock(MessagingService.class), storage, current);
+        jobReferences = mock(JobApplicationReferenceCoordinator.class);
+        service = new ApplicationService(applications, jobs, users, mock(MessagingService.class), storage, current,
+                jobReferences);
         when(current.email()).thenReturn("candidate@example.test");
+        when(jobReferences.acquireApplicationReference(anyString())).thenReturn(true);
     }
 
     @Test
@@ -100,5 +105,25 @@ class ApplicationServiceTest {
         var file = new MockMultipartFile("file", "resume.pdf", "application/pdf", new byte[]{1});
         assertThrows(RuntimeException.class, () -> service.apply("job1", file));
         verify(storage).deleteQuietly("11111111-1111-1111-1111-111111111111.pdf");
+        verify(jobReferences).releaseApplicationReference("job1");
+    }
+
+    @Test
+    void inactiveOrReconciliationPendingImportRejectsApplicationBeforeResumeStorage() {
+        UserDocument candidate = new UserDocument();
+        candidate.setEmail("candidate@example.test");
+        candidate.setRole(UserRole.USER);
+        when(users.findByEmail(candidate.getEmail())).thenReturn(Optional.of(candidate));
+        when(jobs.requireJob("inactive")).thenReturn(new JobDocument());
+        when(jobReferences.acquireApplicationReference("inactive")).thenReturn(false);
+
+        assertThrows(ConflictException.class,
+                () -> service.apply("inactive", new MockMultipartFile("file", new byte[]{1})));
+        verifyNoInteractions(storage);
+
+        when(jobs.requireJob("pending")).thenThrow(new ResourceNotFoundException("Job not found"));
+        assertThrows(ResourceNotFoundException.class,
+                () -> service.apply("pending", new MockMultipartFile("file", new byte[]{1})));
+        verify(jobReferences, never()).acquireApplicationReference("pending");
     }
 }

@@ -6,7 +6,9 @@ export default function ProtectedRoute({ children, requiredRole }) {
   if (!initialized) return null;
   if (!accessToken) return <Navigate to="/login" replace />;
   if (requiredRole && role !== requiredRole) {
-    return <Navigate to={role === "RECRUITER" ? "/profile" : "/my-profile"} replace />;
+    const destination = role === "ADMIN" ? "/admin/aggregation"
+      : role === "RECRUITER" ? "/profile" : "/my-profile";
+    return <Navigate to={destination} replace />;
   }
   return children;
 }

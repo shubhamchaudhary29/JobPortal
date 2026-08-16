@@ -25,6 +25,8 @@ const handleLogin = async (e) => {
       const { role } = await loginUser(email, password);
       if (role === "RECRUITER") {
         navigate("/profile");
+      } else if (role === "ADMIN") {
+        navigate("/admin/aggregation");
       } else if (role === "USER") {
         navigate("/my-profile");
       } else {

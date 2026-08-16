@@ -11,6 +11,8 @@ public interface ApplicationRepository extends MongoRepository<ApplicationDocume
 
     boolean existsByUserIdAndJobId(String userId, String jobId);
 
+    boolean existsByJobId(String jobId);
+
     Page<ApplicationDocument> findByUserId(String userId, Pageable pageable);
 
     int countByUserId(String userId);
