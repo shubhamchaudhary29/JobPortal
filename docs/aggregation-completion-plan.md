@@ -160,7 +160,7 @@ The remaining scope is per-source lifecycle and safe migration; deterministic ca
   - Done when: ADMIN can complete all supported operations, non-admin users cannot see/access the page, and frontend checks pass.
   - Evidence (2026-08-16): `/admin/aggregation` is protected by the ADMIN route guard and appears only in ADMIN navigation/login flow. The accessible operations page shows imported/provider/company counts, latest health, paginated history and detail, bounded failure counts, provider-wide/employer sync controls, and explicit loading/empty/error/PARTIAL/FAILED/LOCKED/LEASE_LOST states. Open conflicts require an explicit distinct canonical/duplicate choice; sync and resolution buttons prevent duplicate submission. API tests cover every ADMIN route and safe `401/403/409/503` messaging; component tests cover page states/actions, pagination/detail, conflict resolution, employer scope, duplicate suppression, route redirects, and hidden navigation. `cd frontend && npm ci && npm run lint && npm test -- --run && npm run build` passed: clean install audited 351 packages with 0 vulnerabilities, ESLint passed, Vitest passed 24 tests across 8 files, and Vite built 210 modules successfully. `git diff --check` passed.
 
-- [ ] **M5 — Registry evidence, CI, Docker, documentation, and final audit**
+- [x] **M5 — Registry evidence, CI, Docker, documentation, and final audit**
 
   - Required behavior: run and record dated registry evidence (ACTIVE/EMPTY/INVALID/UNREACHABLE), disable/document invalid entries, expand CI and document migration/operations/configuration; verify Compose images and smoke behavior.
   - Expected files/components: registry evidence under `docs/`, validation script, `.github/workflows/verify.yml`, README, architecture/operations docs, `.env.example`, Docker Compose.
@@ -168,14 +168,15 @@ The remaining scope is per-source lifecycle and safe migration; deterministic ca
   - Verification commands: `cd backend/backend && ./mvnw clean verify`; `cd frontend && npm ci && npm run lint && npm test -- --run && npm run build && npm audit --omit=dev`; `cd .. && docker compose config && docker compose build && git diff --check`; run registry validation when network access permits.
   - Dependencies: M1A–M1F, M2A–M2D, M3A–M3C, and M4 complete.
   - Done when: evidence is dated and truthful, all repository checks and practical smoke tests pass, GitHub Actions are green, PR description is accurate, and the final acceptance audit has no unchecked requirements.
+  - Evidence (2026-08-16): `cd backend/backend && ./mvnw clean verify` passed 136 tests (0 failures/errors/skips), including the real-Mongo integration suite; `./mvnw -Dtest='*Reliability*,*Payload*,*SanitizedLog*' test` passed 11 deterministic mock-provider tests. `cd frontend && npm ci && npm run lint && npm test -- --run && npm run build && npm audit --omit=dev` passed with 24 tests across 8 files, 210 built modules, and 0 production vulnerabilities. `MONGODB_URI=mongodb://localhost:27017 bash backend/backend/scripts/verify-backfill-source-listings.sh` and `MONGODB_URI=mongodb://localhost:27017 bash backend/backend/scripts/verify-aggregation-migration.sh` passed against disposable seeded databases, covering dry-run/apply/idempotence and clean/anomalous audit results. `bash backend/backend/scripts/verify-employer-registry-classification.sh` passed from the repository and by absolute path from `/tmp`, covering ACTIVE, EMPTY, MALFORMED, INVALID, UNREACHABLE, and DISABLED. Live read-only registry verification at `2026-08-16T17:04:46Z` exited 0 with 18 ACTIVE Greenhouse and 2 ACTIVE Lever boards and zero other classifications; exact board counts are recorded in `docs/employer-registry-verification.md`. With test-only environment values, `docker compose config` produced a valid 153-line model and `docker compose build` built backend/frontend images. The first smoke attempt exposed an IPv6 `localhost` frontend-health probe; after targeting `127.0.0.1`, `bash backend/backend/scripts/compose-smoke-test.sh` passed MongoDB/backend/frontend health, direct/proxied API health, ADMIN SPA routing, and disposable cleanup. `git diff --check` and Markdown/shell syntax checks passed. GitHub CI initially exposed the unavailable runner-only `rg` prerequisite; after replacing it with direct `awk` parsing, both [push Verify](https://github.com/shubhamchaudhary29/JobPortal/actions/runs/31961133878) and [PR Verify](https://github.com/shubhamchaudhary29/JobPortal/actions/runs/31961135544) passed backend, frontend, registry, Compose build, smoke, and whitespace jobs, while both [push Secret scan](https://github.com/shubhamchaudhary29/JobPortal/actions/runs/31961133873) and [PR Secret scan](https://github.com/shubhamchaudhary29/JobPortal/actions/runs/31961135575) passed. PR #8's description was replaced with the completed scope, migrations, configuration, rollback precautions, exact results, and CI links.
 
 ## Release checklist
 
-- [ ] `./mvnw clean verify` passes, including real Mongo integration tests.
-- [ ] Frontend clean install, lint, tests, audit, and production build pass.
-- [ ] Mongo duplicate/index audit passes against seeded validation data.
-- [ ] Docker Compose config, builds, and practical backend/frontend/Mongo smoke tests pass.
-- [ ] Registry validation evidence is recorded or its external blocker is documented.
-- [ ] `git diff --check` and secret scanning pass.
-- [ ] GitHub Actions succeeds on the pushed branch.
-- [ ] PR description documents migrations/configuration/results and contains no premature completion claim.
+- [x] `./mvnw clean verify` passes, including real Mongo integration tests.
+- [x] Frontend clean install, lint, tests, audit, and production build pass.
+- [x] Mongo duplicate/index audit passes against seeded validation data.
+- [x] Docker Compose config, builds, and practical backend/frontend/Mongo smoke tests pass.
+- [x] Registry validation evidence is recorded or its external blocker is documented.
+- [x] `git diff --check` and secret scanning pass.
+- [x] GitHub Actions succeeds on the pushed branch.
+- [x] PR description documents migrations/configuration/results and contains no premature completion claim.
