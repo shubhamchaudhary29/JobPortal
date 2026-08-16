@@ -75,4 +75,6 @@ mongosh "$MONGODB_URI" backend/backend/scripts/audit-mongo-indexes.js
 
 Do not automatically delete ambiguous duplicate records; resolve them before enabling the unique index in a production rollout. Mongo lease locks in `ingestion_locks` prevent scheduled instances from overlapping and expire after five minutes, allowing crash recovery.
 
+Canonical imported-job fields follow one stable policy: active source listings are ordered by provider name, then full source identity, then application URL, all ascending. The first listing owns the top-level `source`, `externalId`, `applicationUrl`, and `sourceUrl`; every identity and deep link remains in the additive listing and compatibility collections. Mongo applies listing replacement, de-duplication, ordering, and primary-field selection in one update pipeline, so provider arrival order and concurrent ingestion cannot change the selected application link.
+
 `/api/v1/admin/ingestion/**` is ADMIN-only. Public registration can create only USER or RECRUITER accounts. Provision an administrator through a controlled database migration by changing an existing trusted user's `role` to `ADMIN`, then have that user sign in again to receive a role-bearing token.

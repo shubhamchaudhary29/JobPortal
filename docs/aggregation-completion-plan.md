@@ -30,7 +30,7 @@ The remaining scope is per-source lifecycle and safe migration; deterministic ca
   - Done when: additive fields persist/read safely, no document is deleted or ambiguously rewritten, backfill is repeatable, and focused Mongo tests pass.
   - Evidence (2026-08-16): `cd backend/backend && ./mvnw -Dtest='AdzunaJobStoreTest,AdzunaJobStoreMongoIntegrationTest' test` passed 7 tests (0 failures/errors/skips), including a deterministic forced duplicate-key retry that targets the persisted winner by `_id`, preserves the earliest listing `firstSeenAt`, refreshes listing state, and retains unrelated listings. `MONGODB_URI=mongodb://localhost:27017 bash backend/backend/scripts/verify-backfill-source-listings.sh` passed from the repository root and the same harness passed via its absolute path from `/tmp`; both runs asserted dry-run `changed: 0`, apply `changed: 1`, second apply `changed: 0`, recruiter isolation, and unchanged ambiguous records. `env MONGODB_URI=mongodb://localhost:27017/jobportal_m1a_audit bash -c 'mongosh "$MONGODB_URI" backend/backend/scripts/audit-mongo-indexes.js'` passed against seeded disposable data with zero duplicate source identities/fingerprints. `cd backend/backend && ./mvnw test` passed 72 tests (0 failures/errors/skips). `git diff --check` passed.
 
-- [ ] **M1B — Deterministic canonical selection and atomic multi-source upsert**
+- [x] **M1B — Deterministic canonical selection and atomic multi-source upsert**
 
   - Required behavior: choose primary source/external ID/application URL by a documented stable ordering and preserve all listing identities/URLs during atomic upsert.
   - Expected files/components: imported-job store, `JobDocument`, normalizer, index/audit support, operations documentation.
@@ -38,6 +38,7 @@ The remaining scope is per-source lifecycle and safe migration; deterministic ca
   - Verification commands: `cd backend/backend && ./mvnw -Dtest='*Canonical*,*JobStoreMongoIntegrationTest' test`.
   - Dependencies: M1A.
   - Done when: order-independent primary fields and idempotent multi-source persistence are demonstrated by focused Mongo tests.
+  - Evidence (2026-08-16): `cd backend/backend && ./mvnw -Dtest='*Canonical*,*JobStoreMongoIntegrationTest' test` passed 10 real-Mongo tests (0 failures/errors/skips), covering opposite provider order, lexical same-provider tie-breaking, non-primary replay, changed fingerprints, 20-way concurrent cross-provider ingestion, same-source concurrency, and a forced duplicate-key winner. The Mongo aggregation update atomically de-duplicates and sorts source listings, preserves earliest listing timestamps and every deep link, and derives canonical content/source/link only from the stable primary listing. `cd backend/backend && ./mvnw test` passed 77 tests (0 failures/errors/skips). `git diff --check` passed.
 
 - [ ] **M1C — Successful-run seen-set tracking, missing detection, deactivation and reactivation**
 

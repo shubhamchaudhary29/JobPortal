@@ -22,7 +22,7 @@ class EmployerIngestionServiceTest {
         when(lever.sourceName()).thenReturn("lever");
         when(lever.fetch(any())).thenReturn(List.of(new ExternalJob("id", "Engineer", null, "Acme", null,
                 "Full Time", null, null, "https://example.test/job", null, null, "fingerprint")));
-        when(store.upsert(any(), any())).thenReturn(UpsertOutcome.INSERTED);
+        when(store.upsert(any(), any(), any())).thenReturn(UpsertOutcome.INSERTED);
         EmployerRegistryProperties registry = new EmployerRegistryProperties(List.of(
                 new EmployerRegistryProperties.Employer("Broken", EmployerRegistryProperties.Source.GREENHOUSE, "broken", true),
                 new EmployerRegistryProperties.Employer("Healthy", EmployerRegistryProperties.Source.LEVER, "healthy", true),
@@ -32,6 +32,7 @@ class EmployerIngestionServiceTest {
 
         assertEquals(1, result.failedEmployers());
         assertEquals(1, result.inserted());
+        verify(store).upsert(any(), any(), eq("healthy"));
         verify(lever, never()).fetch(argThat(request -> "disabled".equals(request.boardId())));
     }
 
