@@ -6,7 +6,7 @@
 
 ## Employer aggregation configuration
 
-Public Greenhouse and Lever boards are configured with `job-aggregation.employers[n]` in `backend/backend/src/main/resources/application.properties`. Each entry has a company name, `GREENHOUSE` or `LEVER` source, public board/site ID, and enabled flag. `job-aggregation.fixed-delay-ms` controls scheduled refreshes. Provider failures and empty boards are isolated and logged; user-facing search remains MongoDB-only.
+Public Greenhouse and Lever boards are configured with `job-aggregation.employers[n]` in `backend/backend/src/main/resources/application.properties`. Each entry has a company name, `GREENHOUSE` or `LEVER` source, public board/site ID, and enabled flag. Set `JOB_AGGREGATION_SCHEDULING_ENABLED=false` to disable all ingestion schedules; Greenhouse and Lever delays are independently configured with `GREENHOUSE_SYNC_DELAY_MS` and `LEVER_SYNC_DELAY_MS`. Provider failures and empty boards are isolated and logged; user-facing search remains MongoDB-only.
 
 <p align="center">
 Connecting <b>Recruiters</b> and <b>Candidates</b> through a secure, scalable, and modern recruitment platform powered by <b>Spring Boot</b>, <b>React</b>, <b>MongoDB</b>, <b>Docker</b>, and <b>WebSockets</b>.
