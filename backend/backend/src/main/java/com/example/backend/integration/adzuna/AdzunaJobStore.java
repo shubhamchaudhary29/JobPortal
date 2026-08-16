@@ -17,12 +17,22 @@ public class AdzunaJobStore {
     public UpsertOutcome upsert(JobDocument job, LocalDateTime now) {
         if (job.getFingerprint() == null || job.getFingerprint().isBlank()) job.setFingerprint(legacyFingerprint(job));
         String identity = job.getSource() + ":" + job.getExternalId();
-        // The fingerprint unique index makes this an atomic identity resolution.  There is
-        // intentionally no exists/update window: all providers converge on one canonical row.
-        Criteria canonicalOrSourceIdentity = new Criteria().orOperator(
-                Criteria.where("fingerprint").is(job.getFingerprint()),
-                Criteria.where("source").is(job.getSource()).and("externalId").is(job.getExternalId()));
-        Query query = Query.query(new Criteria().andOperator(canonicalOrSourceIdentity, Criteria.where("recruiterId").is(null)));
+        // A provider listing identity is permanent even when its title/location changes.
+        // Legacy source/externalId is included until the documented backfill has completed.
+        Query identityQuery = Query.query(new Criteria().andOperator(Criteria.where("recruiterId").is(null),
+                new Criteria().orOperator(Criteria.where("sourceIdentities").is(identity),
+                        Criteria.where("source").is(job.getSource()).and("externalId").is(job.getExternalId()))));
+        JobDocument identityMatch = mongo.findOne(identityQuery, JobDocument.class);
+        JobDocument fingerprintMatch = mongo.findOne(Query.query(Criteria.where("fingerprint").is(job.getFingerprint()).and("recruiterId").is(null)), JobDocument.class);
+        if (identityMatch != null && fingerprintMatch != null && !identityMatch.getId().equals(fingerprintMatch.getId())) {
+            mergeCanonicalRecords(identityMatch, fingerprintMatch, now);
+            fingerprintMatch = identityMatch;
+        }
+        Query query = identityMatch != null ? Query.query(Criteria.where("_id").is(identityMatch.getId()))
+                : fingerprintMatch != null ? Query.query(Criteria.where("_id").is(fingerprintMatch.getId()))
+                : Query.query(new Criteria().andOperator(Criteria.where("recruiterId").is(null), new Criteria().orOperator(
+                        Criteria.where("fingerprint").is(job.getFingerprint()),
+                        Criteria.where("source").is(job.getSource()).and("externalId").is(job.getExternalId()))));
         Update update = new Update().set("title", job.getTitle()).set("description", job.getDescription())
                 .set("sourceUrl", job.getSourceUrl()).set("company", job.getCompany()).set("location", job.getLocation())
                 .set("salary", job.getSalary()).set("experience", job.getExperience()).set("fetchedAt", now)
@@ -59,4 +69,12 @@ public class AdzunaJobStore {
         catch (java.security.NoSuchAlgorithmException impossible) { throw new IllegalStateException(impossible); }
     }
     private String safe(String value) { return value == null ? "" : value.trim().replaceAll("\\s+", " "); }
+    private void mergeCanonicalRecords(JobDocument target, JobDocument duplicate, LocalDateTime now) {
+        java.util.Set<String> identities = new java.util.LinkedHashSet<>(target.getSourceIdentities() == null ? java.util.Set.of() : target.getSourceIdentities());
+        if (duplicate.getSourceIdentities() != null) identities.addAll(duplicate.getSourceIdentities());
+        java.util.Set<String> urls = new java.util.LinkedHashSet<>(target.getApplicationUrls() == null ? java.util.Set.of() : target.getApplicationUrls());
+        if (duplicate.getApplicationUrls() != null) urls.addAll(duplicate.getApplicationUrls());
+        mongo.updateFirst(Query.query(Criteria.where("_id").is(target.getId())), new Update().set("sourceIdentities", identities).set("applicationUrls", urls).set("lastSeenAt", now), JobDocument.class);
+        mongo.remove(Query.query(Criteria.where("_id").is(duplicate.getId()).and("recruiterId").is(null)), JobDocument.class);
+    }
 }

@@ -3,7 +3,6 @@ package com.example.backend.job.infrastructure;
 import lombok.Data;
 import org.springframework.data.annotation.Id;
 import org.springframework.data.mongodb.core.mapping.Document;
-import org.springframework.data.mongodb.core.index.CompoundIndex;
 
 import java.time.LocalDateTime;
 import java.util.LinkedHashSet;
@@ -11,8 +10,6 @@ import java.util.Set;
 
 @Data
 @Document(collection = "jobs")
-@CompoundIndex(name = "imported_fingerprint_unique", def = "{'fingerprint': 1}", unique = true,
-        partialFilter = "{'fingerprint': {$type: 'string'}, 'recruiterId': null}")
 public class JobDocument {
 
     @Id

@@ -14,6 +14,7 @@ import java.time.LocalDateTime;
 import java.util.concurrent.ThreadLocalRandom;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.function.LongUnaryOperator;
+import org.springframework.scheduling.annotation.Scheduled;
 
 @Service
 public class AdzunaService {
@@ -76,6 +77,8 @@ public class AdzunaService {
         log.info("event=adzuna_sync_completed outcome={} attempted_batches={} inserted={} updated={} unchanged={} rejected={} failed_items={} failed_batches={} latency_ms={}", outcome, attemptedBatches, inserted, updated, unchanged, rejected, failedItems, failedBatches, elapsed);
         return new SyncResult(inserted, updated, unchanged, rejected, failedBatches, failedItems, outcome);
     }
+    @Scheduled(fixedDelayString = "${adzuna.schedule-delay-ms:43200000}")
+    void scheduledSync() { sync(); }
     private BatchResult fetchKeyword(String keyword, int page) {
         if (!circuit.allowRequest()) throw new AdzunaCircuitOpenException();
         java.util.List<ExternalJob> response = fetchWithRetry(keyword, page);
