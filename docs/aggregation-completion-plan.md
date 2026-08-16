@@ -50,7 +50,7 @@ The remaining scope is per-source lifecycle and safe migration; deterministic ca
   - Done when: all lifecycle transitions are source-specific and every listed lifecycle test passes.
   - Evidence (2026-08-16): `cd backend/backend && ./mvnw -Dtest='*Lifecycle*,*EmployerIngestion*,AdzunaServiceTest' test` passed 14 tests (0 failures/errors/skips), including real-Mongo successful misses, threshold deactivation, rediscovery reactivation, multi-source survival/canonical switching, seen-set reset, recruiter isolation, legitimate empty boards, provider failure, rejected/partial items, lock contention, and employer/Adzuna lease-loss protection. Missing state advances through one source/employer-scoped Mongo update pipeline only after a complete lease-valid run; `JOB_AGGREGATION_MISSING_THRESHOLD` is validated and defaults to 3. `cd backend/backend && ./mvnw test` passed 85 tests (0 failures/errors/skips). `git diff --check` passed.
 
-- [ ] **M1D — Retention cleanup with recruiter-job and application-reference protection**
+- [x] **M1D — Retention cleanup with recruiter-job and application-reference protection**
 
   - Required behavior: run lock-coordinated cleanup of eligible inactive imported data only; never delete recruiter jobs or application-referenced jobs.
   - Expected files/components: cleanup service/scheduler, application repository query support, configuration, operations documentation.
@@ -58,6 +58,7 @@ The remaining scope is per-source lifecycle and safe migration; deterministic ca
   - Verification commands: `cd backend/backend && ./mvnw -Dtest='*Cleanup*,*Lifecycle*' test`.
   - Dependencies: M1C.
   - Done when: cleanup is bounded, reference-safe, and all cleanup tests pass.
+  - Evidence (2026-08-16): `cd backend/backend && ./mvnw -Dtest='*Cleanup*,*Lifecycle*' test` passed 8 tests (0 failures/errors/skips), including real-Mongo retention age, deterministic batch bounds, recruiter/active/recent/undated protection, retained application references, and distributed lock contention/owner release. Cleanup uses the indexed imported/inactive/`inactiveAt` eligibility query, checks `applications.jobId`, and conditionally rechecks eligibility at deletion. `cd backend/backend && ./mvnw test` passed 89 tests (0 failures/errors/skips). `git diff --check` passed.
 
 - [ ] **M1E — Conflict persistence, ADMIN reconciliation API and reference-safe idempotent resolution**
 
