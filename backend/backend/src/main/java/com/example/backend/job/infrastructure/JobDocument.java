@@ -52,5 +52,9 @@ public class JobDocument {
     private String reconciliationTargetId;
     private String reconciliationConflictId;
     private String reconciliationOriginalFingerprint;
+    /** Conservatively retained application claims; cleanup also checks legacy application documents. */
+    private long applicationReferenceCount;
+    private String cleanupClaimId;
+    private LocalDateTime cleanupClaimedAt;
 
 }

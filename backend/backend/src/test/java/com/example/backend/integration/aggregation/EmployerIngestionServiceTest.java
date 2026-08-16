@@ -8,6 +8,7 @@ import com.example.backend.integration.adzuna.AdzunaJobStore;
 import com.example.backend.integration.adzuna.UpsertOutcome;
 import com.example.backend.integration.jobs.ExternalJob;
 import com.example.backend.integration.jobs.JobSource;
+import com.example.backend.integration.reliability.ProviderFailureException;
 import java.util.List;
 import org.junit.jupiter.api.Test;
 
@@ -157,6 +158,29 @@ class EmployerIngestionServiceTest {
         assertEquals(1, result.inserted());
         assertEquals(1, result.rejected());
         verifyNoInteractions(lifecycle);
+    }
+
+    @Test
+    void malformedProviderResponseFailsEmployerWithoutLifecycleProgressOrRetryFallback() {
+        JobSource greenhouse = mock(JobSource.class);
+        JobSource lever = mock(JobSource.class);
+        AdzunaJobStore store = mock(AdzunaJobStore.class);
+        ImportedJobLifecycleService lifecycle = mock(ImportedJobLifecycleService.class);
+        when(greenhouse.sourceName()).thenReturn("greenhouse");
+        when(greenhouse.fetchWithMetadata(any(), any())).thenThrow(new ProviderFailureException(
+                "greenhouse", ProviderFailureException.Kind.MALFORMED_RESPONSE, false, null, null));
+        EmployerIngestionService service = new EmployerIngestionService(greenhouse, lever, store,
+                new EmployerRegistryProperties(List.of(new EmployerRegistryProperties.Employer(
+                        "Board", EmployerRegistryProperties.Source.GREENHOUSE, "board", true))), lifecycle);
+
+        EmployerIngestionService.Result result = service.sync(
+                EmployerRegistryProperties.Source.GREENHOUSE, () -> true);
+
+        assertAll(
+                () -> assertEquals(1, result.failedEmployers()),
+                () -> assertEquals(0, result.retries()));
+        verify(greenhouse, times(1)).fetchWithMetadata(any(), any());
+        verifyNoInteractions(store, lifecycle);
     }
 
     @Test

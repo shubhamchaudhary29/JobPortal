@@ -13,6 +13,7 @@ import com.example.backend.integration.reliability.ProviderRetryExecutor;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.function.BooleanSupplier;
 import org.springframework.core.ParameterizedTypeReference;
 import org.springframework.stereotype.Component;
 import org.springframework.web.util.UriComponentsBuilder;
@@ -37,14 +38,19 @@ public class LeverJobSource implements JobSource {
     public String sourceName() { return "lever"; }
     public List<ExternalJob> fetch(JobFetchRequest request) { return fetchWithMetadata(request).jobs(); }
     public FetchResult fetchWithMetadata(JobFetchRequest request) {
+        return fetchWithMetadata(request, () -> true);
+    }
+    @Override
+    public FetchResult fetchWithMetadata(JobFetchRequest request, BooleanSupplier requestValid) {
         String url = UriComponentsBuilder.fromUriString(properties.leverBaseUrl())
                 .pathSegment(request.boardId()).queryParam("mode", "json").build().toUriString();
-        ProviderRetryExecutor.Result<List<LeverJobDto>> result = retries.execute(() -> circuit.execute(
+        ProviderRetryExecutor.Result<List<LeverJobDto>> result = retries.execute(requestValid, () -> circuit.execute(
                 sourceName(), request.boardId(), () -> {
-                    limiter.acquire(sourceName(), request.boardId());
+                    limiter.acquire(sourceName(), request.boardId(), requestValid);
+                    ensureValid(requestValid);
                     return http.get(sourceName(), url, RESPONSE);
                 }));
-        if (result.value() == null) return new FetchResult(List.of(), result.retries(), 0);
+        if (result.value() == null) throw malformedResponse();
         if (result.value().size() > properties.maxItems()) throw payloadLimit();
         List<ExternalJob> output = new ArrayList<>();
         int rejected = 0;
@@ -65,5 +71,15 @@ public class LeverJobSource implements JobSource {
     private ProviderFailureException payloadLimit() {
         return new ProviderFailureException(sourceName(), ProviderFailureException.Kind.PAYLOAD_LIMIT,
                 false, null, null);
+    }
+    private ProviderFailureException malformedResponse() {
+        return new ProviderFailureException(sourceName(), ProviderFailureException.Kind.MALFORMED_RESPONSE,
+                false, null, null);
+    }
+    private void ensureValid(BooleanSupplier requestValid) {
+        if (!requestValid.getAsBoolean()) {
+            throw new ProviderFailureException(sourceName(), ProviderFailureException.Kind.CANCELLED,
+                    false, null, null);
+        }
     }
 }

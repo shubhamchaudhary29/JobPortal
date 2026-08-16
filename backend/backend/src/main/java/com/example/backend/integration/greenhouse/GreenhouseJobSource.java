@@ -13,6 +13,7 @@ import com.example.backend.integration.reliability.ProviderRetryExecutor;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
+import java.util.function.BooleanSupplier;
 import org.springframework.stereotype.Component;
 import org.springframework.web.util.UriComponentsBuilder;
 
@@ -35,15 +36,20 @@ public class GreenhouseJobSource implements JobSource {
     public String sourceName() { return "greenhouse"; }
     public List<ExternalJob> fetch(JobFetchRequest request) { return fetchWithMetadata(request).jobs(); }
     public FetchResult fetchWithMetadata(JobFetchRequest request) {
+        return fetchWithMetadata(request, () -> true);
+    }
+    @Override
+    public FetchResult fetchWithMetadata(JobFetchRequest request, BooleanSupplier requestValid) {
         String url = UriComponentsBuilder.fromUriString(properties.greenhouseBaseUrl())
                 .pathSegment(request.boardId(), "jobs").queryParam("content", true).build().toUriString();
-        ProviderRetryExecutor.Result<GreenhouseJobsResponse> result = retries.execute(() -> circuit.execute(
+        ProviderRetryExecutor.Result<GreenhouseJobsResponse> result = retries.execute(requestValid, () -> circuit.execute(
                 sourceName(), request.boardId(), () -> {
-                    limiter.acquire(sourceName(), request.boardId());
+                    limiter.acquire(sourceName(), request.boardId(), requestValid);
+                    ensureValid(requestValid);
                     return http.get(sourceName(), url, GreenhouseJobsResponse.class);
                 }));
         GreenhouseJobsResponse response = result.value();
-        if (response == null || response.jobs() == null) return new FetchResult(List.of(), result.retries(), 0);
+        if (response == null || response.jobs() == null) throw malformedResponse();
         if (response.jobs().size() > properties.maxItems()) throw payloadLimit();
         List<ExternalJob> output = new ArrayList<>();
         int rejected = 0;
@@ -71,5 +77,15 @@ public class GreenhouseJobSource implements JobSource {
     private ProviderFailureException payloadLimit() {
         return new ProviderFailureException(sourceName(), ProviderFailureException.Kind.PAYLOAD_LIMIT,
                 false, null, null);
+    }
+    private ProviderFailureException malformedResponse() {
+        return new ProviderFailureException(sourceName(), ProviderFailureException.Kind.MALFORMED_RESPONSE,
+                false, null, null);
+    }
+    private void ensureValid(BooleanSupplier requestValid) {
+        if (!requestValid.getAsBoolean()) {
+            throw new ProviderFailureException(sourceName(), ProviderFailureException.Kind.CANCELLED,
+                    false, null, null);
+        }
     }
 }

@@ -84,7 +84,7 @@ Canonical imported-job fields follow one stable policy: active source listings a
 
 Per-listing missing state advances only after a complete, lease-valid source/employer fetch. Provider errors, rejected or failed items, lock contention, and lease loss skip missing detection; a genuinely empty successful board is a valid seen set and does advance it. `JOB_AGGREGATION_MISSING_THRESHOLD` defaults to `3` consecutive successful misses. A canonical job is hidden only after every source listing is inactive, and any later successful upsert reactivates that listing and the canonical job while preserving its original first-seen timestamp.
 
-The daily retention task uses the distributed `maintenance:imported-job-retention` lease and defaults to `02:30`, 90 days after deactivation, and batches of 100 (`JOB_AGGREGATION_CLEANUP_CRON`, `JOB_AGGREGATION_RETENTION_DAYS`, and `JOB_AGGREGATION_CLEANUP_BATCH_SIZE`). It selects only inactive imported jobs with an old `inactiveAt`, rechecks eligibility at removal, and preserves every job referenced by an application. Recruiter-created, active, recent, undated, and application-referenced jobs are never cleanup candidates. Operators should take a database backup before lowering retention and can disable all maintenance scheduling with `JOB_AGGREGATION_SCHEDULING_ENABLED=false`.
+The daily retention task uses the distributed `maintenance:imported-job-retention` lease and defaults to `02:30`, 90 days after deactivation, and batches of 100 (`JOB_AGGREGATION_CLEANUP_CRON`, `JOB_AGGREGATION_RETENTION_DAYS`, and `JOB_AGGREGATION_CLEANUP_BATCH_SIZE`). It selects only inactive imported jobs with an old `inactiveAt`, then takes an atomic per-job cleanup claim before the final application-reference check and token-guarded deletion. Application creation atomically takes the opposing reference claim, rejects inactive or reconciliation-pending imported jobs, and cannot cross a live cleanup claim. Thus a concurrent application either reserves the job before cleanup or is rejected before its resume/application is stored. Existing applications remain readable, legacy application references receive the same final protection, stale cleanup claims are recoverable, and recruiter-created jobs remain unaffected. Operators should take a database backup before lowering retention and can disable all maintenance scheduling with `JOB_AGGREGATION_SCHEDULING_ENABLED=false`.
 
 `/api/v1/admin/ingestion/**` is ADMIN-only. Public registration can create only USER or RECRUITER accounts. Provision an administrator through a controlled database migration by changing an existing trusted user's `role` to `ADMIN`, then have that user sign in again to receive a role-bearing token.
 
@@ -93,8 +93,10 @@ Identity/fingerprint collisions are retained in `aggregation_conflicts`; ingesti
 ### Final Phase 1 migration audit (M1F)
 
 The read-only index audit also validates the additive source-listing shape, duplicate listing
-identities, deterministic canonical fields, lifecycle state, conflict records, and interrupted
-reconciliation markers. It exits with status `2` when any rollout anomaly is found. Validate the
+identities within a job, source identities duplicated across imported jobs, compatibility between
+`sourceIdentities`/`applicationUrls` and `sourceListings`, deterministic canonical fields, lifecycle
+state, conflict records, and interrupted reconciliation markers. Diagnostic categories and IDs are
+bounded, and the audit exits with status `2` when any rollout anomaly is found. Validate the
 audit itself only against a disposable local server because its harness drops
 `jobportal_m1f_verify`:
 

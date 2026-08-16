@@ -58,7 +58,8 @@ public class EmployerIngestionService {
             LocalDateTime observedAt = LocalDateTime.now();
             try {
                 JobFetchRequest request = new JobFetchRequest(null, 1, employer.boardId(), employer.company());
-                JobSource.FetchResult fetch = source.fetchWithMetadata(request);
+                JobSource.FetchResult fetch = source.fetchWithMetadata(request, leaseValid);
+                if (fetch == null) fetch = source.fetchWithMetadata(request);
                 if (fetch == null) fetch = new JobSource.FetchResult(source.fetch(request), 0);
                 retries += fetch.retries();
                 rejected += fetch.rejectedItems();

@@ -21,6 +21,6 @@ public class ProviderFailureException extends RuntimeException {
 
     public enum Kind {
         TIMEOUT, RATE_LIMITED, SERVER_ERROR, CLIENT_ERROR, MALFORMED_RESPONSE, PAYLOAD_LIMIT,
-        CIRCUIT_OPEN, INTERRUPTED
+        CIRCUIT_OPEN, INTERRUPTED, CANCELLED
     }
 }

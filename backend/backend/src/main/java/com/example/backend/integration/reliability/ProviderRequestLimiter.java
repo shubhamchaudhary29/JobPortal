@@ -2,6 +2,7 @@ package com.example.backend.integration.reliability;
 
 import java.time.Clock;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.function.BooleanSupplier;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Component;
 
@@ -25,6 +26,11 @@ public class ProviderRequestLimiter {
     }
 
     public void acquire(String provider, String employer) {
+        acquire(provider, employer, () -> true);
+    }
+
+    public void acquire(String provider, String employer, BooleanSupplier requestValid) {
+        ensureValid(provider, requestValid);
         String key = provider + ":" + employer;
         Slot slot = slots.get(key);
         if (slot == null) {
@@ -40,13 +46,24 @@ public class ProviderRequestLimiter {
             delay = Math.max(0, slot.nextAllowed - now);
             slot.nextAllowed = Math.max(now, slot.nextAllowed) + intervalMs;
         }
-        if (delay == 0) return;
+        if (delay == 0) {
+            ensureValid(provider, requestValid);
+            return;
+        }
         try {
             sleeper.sleep(delay);
         } catch (InterruptedException interrupted) {
             Thread.currentThread().interrupt();
             throw new ProviderFailureException(provider, ProviderFailureException.Kind.INTERRUPTED,
                     false, null, interrupted);
+        }
+        ensureValid(provider, requestValid);
+    }
+
+    private void ensureValid(String provider, BooleanSupplier requestValid) {
+        if (!requestValid.getAsBoolean()) {
+            throw new ProviderFailureException(provider, ProviderFailureException.Kind.CANCELLED,
+                    false, null, null);
         }
     }
 

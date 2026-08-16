@@ -21,6 +21,7 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.Executors;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.atomic.AtomicBoolean;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -143,6 +144,124 @@ class ProviderReliabilityMockServerTest {
     }
 
     @Test
+    void onlyStructurallyValidEmptyBoardsAreSuccessful() {
+        AtomicInteger greenhouseAttempts = new AtomicInteger();
+        AtomicInteger leverAttempts = new AtomicInteger();
+        server.createContext("/green", exchange -> {
+            greenhouseAttempts.incrementAndGet();
+            String board = exchange.getRequestURI().getPath().split("/")[2];
+            switch (board) {
+                case "object" -> respond(exchange, 200, "{}");
+                case "null" -> respond(exchange, 200, "null");
+                case "missing" -> respond(exchange, 200, "{\"meta\":{}}");
+                case "empty-body" -> respond(exchange, 200, "");
+                case "no-content" -> noContent(exchange);
+                default -> respond(exchange, 200, "{\"jobs\":[]}");
+            }
+        });
+        server.createContext("/lever", exchange -> {
+            leverAttempts.incrementAndGet();
+            String board = exchange.getRequestURI().getPath().split("/")[2];
+            switch (board) {
+                case "null" -> respond(exchange, 200, "null");
+                case "empty-body" -> respond(exchange, 200, "");
+                case "no-content" -> noContent(exchange);
+                default -> respond(exchange, 200, "[]");
+            }
+        });
+        Fixture fixture = fixture(3, 1_000, 200, new ArrayList<>());
+
+        for (String board : List.of("object", "null", "missing", "empty-body", "no-content")) {
+            ProviderFailureException failure = assertThrows(ProviderFailureException.class,
+                    () -> fixture.greenhouse().fetchWithMetadata(request(board)));
+            assertAll(
+                    () -> assertEquals(ProviderFailureException.Kind.MALFORMED_RESPONSE, failure.kind()),
+                    () -> assertFalse(failure.retryable()),
+                    () -> assertFalse(failure.getMessage().contains(base)));
+        }
+        for (String board : List.of("null", "empty-body", "no-content")) {
+            ProviderFailureException failure = assertThrows(ProviderFailureException.class,
+                    () -> fixture.lever().fetchWithMetadata(request(board)));
+            assertAll(
+                    () -> assertEquals(ProviderFailureException.Kind.MALFORMED_RESPONSE, failure.kind()),
+                    () -> assertFalse(failure.retryable()),
+                    () -> assertFalse(failure.getMessage().contains(base)));
+        }
+
+        assertAll(
+                () -> assertTrue(fixture.greenhouse().fetchWithMetadata(request("valid")).jobs().isEmpty()),
+                () -> assertTrue(fixture.lever().fetchWithMetadata(request("valid")).jobs().isEmpty()),
+                () -> assertEquals(6, greenhouseAttempts.get()),
+                () -> assertEquals(4, leverAttempts.get()));
+    }
+
+    @Test
+    void leaseLossDuringRetryBackoffPreventsAnotherProviderRequest() {
+        AtomicInteger attempts = new AtomicInteger();
+        AtomicBoolean valid = new AtomicBoolean(true);
+        server.createContext("/green/cancel/jobs", exchange -> {
+            attempts.incrementAndGet();
+            respond(exchange, 503, "unavailable");
+        });
+        ProviderReliabilityProperties properties = properties(3, 1_000, 200);
+        Fixture fixture = fixture(properties, delay -> valid.set(false));
+
+        ProviderFailureException failure = assertThrows(ProviderFailureException.class,
+                () -> fixture.greenhouse().fetchWithMetadata(request("cancel"), valid::get));
+
+        assertAll(
+                () -> assertEquals(ProviderFailureException.Kind.CANCELLED, failure.kind()),
+                () -> assertEquals(1, attempts.get()));
+    }
+
+    @Test
+    void leverLeaseLossDuringRetryBackoffPreventsAnotherProviderRequest() {
+        AtomicInteger attempts = new AtomicInteger();
+        AtomicBoolean valid = new AtomicBoolean(true);
+        server.createContext("/lever/cancel", exchange -> {
+            attempts.incrementAndGet();
+            respond(exchange, 503, "unavailable");
+        });
+        ProviderReliabilityProperties properties = properties(3, 1_000, 200);
+        Fixture fixture = fixture(properties, delay -> valid.set(false));
+
+        ProviderFailureException failure = assertThrows(ProviderFailureException.class,
+                () -> fixture.lever().fetchWithMetadata(request("cancel"), valid::get));
+
+        assertAll(
+                () -> assertEquals(ProviderFailureException.Kind.CANCELLED, failure.kind()),
+                () -> assertEquals(1, attempts.get()));
+    }
+
+    @Test
+    void leaseLossDuringRateLimitWaitPreventsHttpRequest() {
+        AtomicInteger attempts = new AtomicInteger();
+        AtomicBoolean valid = new AtomicBoolean(true);
+        server.createContext("/lever/rate", exchange -> {
+            attempts.incrementAndGet();
+            respond(exchange, 200, "[]");
+        });
+        ProviderReliabilityProperties properties = properties(1, 1_000, 200);
+        HttpClient transport = HttpClient.newBuilder().connectTimeout(Duration.ofMillis(200)).build();
+        JdkClientHttpRequestFactory factory = new JdkClientHttpRequestFactory(transport);
+        factory.setReadTimeout(200);
+        ProviderHttpClient client = new ProviderHttpClient(new RestTemplate(factory), clock);
+        ProviderRequestLimiter limiter = new ProviderRequestLimiter(properties, clock,
+                delay -> valid.set(false));
+        LeverJobSource source = new LeverJobSource(client,
+                new ProviderRetryExecutor(properties, ignored -> { }, ignored -> 0), properties,
+                new ProviderCircuitBreaker(properties, clock), limiter);
+
+        assertTrue(source.fetchWithMetadata(request("rate"), valid::get).jobs().isEmpty());
+        ProviderFailureException failure = assertThrows(ProviderFailureException.class,
+                () -> source.fetchWithMetadata(request("rate"), valid::get));
+
+        assertAll(
+                () -> assertEquals(ProviderFailureException.Kind.CANCELLED, failure.kind()),
+                () -> assertEquals(1, attempts.get()));
+    }
+
+    @Test
     void readTimeoutIsTransientAndBounded() {
         AtomicInteger attempts = new AtomicInteger();
         server.createContext("/green/slow/jobs", exchange -> {
@@ -180,6 +299,35 @@ class ProviderReliabilityMockServerTest {
     }
 
     @Test
+    void interruptedRateLimitWaitRestoresInterruptAndPreventsRequest() {
+        AtomicInteger attempts = new AtomicInteger();
+        server.createContext("/lever/interrupted", exchange -> {
+            attempts.incrementAndGet();
+            respond(exchange, 200, "[]");
+        });
+        ProviderReliabilityProperties properties = properties(1, 1_000, 200);
+        HttpClient transport = HttpClient.newBuilder().connectTimeout(Duration.ofMillis(200)).build();
+        JdkClientHttpRequestFactory factory = new JdkClientHttpRequestFactory(transport);
+        factory.setReadTimeout(200);
+        ProviderRequestLimiter limiter = new ProviderRequestLimiter(properties, clock,
+                delay -> { throw new InterruptedException("stop"); });
+        limiter.acquire("lever", "interrupted");
+        LeverJobSource source = new LeverJobSource(
+                new ProviderHttpClient(new RestTemplate(factory), clock),
+                new ProviderRetryExecutor(properties, ignored -> { }, ignored -> 0), properties,
+                new ProviderCircuitBreaker(properties, clock),
+                limiter);
+
+        ProviderFailureException failure = assertThrows(ProviderFailureException.class,
+                () -> source.fetchWithMetadata(request("interrupted")));
+
+        assertAll(
+                () -> assertEquals(ProviderFailureException.Kind.INTERRUPTED, failure.kind()),
+                () -> assertEquals(0, attempts.get()),
+                () -> assertTrue(Thread.currentThread().isInterrupted()));
+    }
+
+    @Test
     void configurationRejectsUnsafeBoundsAndBaseUrls() {
         assertThrows(IllegalArgumentException.class, () -> new ProviderReliabilityProperties(
                 0, 100, 3, 10, 100, base, base));
@@ -190,7 +338,10 @@ class ProviderReliabilityMockServerTest {
     }
 
     private Fixture fixture(int attempts, long maxBackoff, int readTimeout, List<Long> delays) {
-        ProviderReliabilityProperties properties = properties(attempts, maxBackoff, readTimeout);
+        return fixture(properties(attempts, maxBackoff, readTimeout), delays::add);
+    }
+
+    private Fixture fixture(ProviderReliabilityProperties properties, ProviderRetryExecutor.Sleeper sleeper) {
         HttpClient transport = HttpClient.newBuilder()
                 .connectTimeout(Duration.ofMillis(properties.connectTimeoutMs()))
                 .followRedirects(HttpClient.Redirect.NEVER)
@@ -198,7 +349,7 @@ class ProviderReliabilityMockServerTest {
         JdkClientHttpRequestFactory factory = new JdkClientHttpRequestFactory(transport);
         factory.setReadTimeout(properties.readTimeoutMs());
         ProviderHttpClient client = new ProviderHttpClient(new RestTemplate(factory), clock);
-        ProviderRetryExecutor retry = new ProviderRetryExecutor(properties, delays::add, bound -> 0);
+        ProviderRetryExecutor retry = new ProviderRetryExecutor(properties, sleeper, bound -> 0);
         ProviderCircuitBreaker circuit = new ProviderCircuitBreaker(properties, clock);
         ProviderRequestLimiter limiter = new ProviderRequestLimiter(properties, clock, ignored -> { });
         return new Fixture(properties, client, retry, circuit, limiter);
@@ -209,12 +360,22 @@ class ProviderReliabilityMockServerTest {
                 base + "/green", base + "/lever");
     }
 
+    private JobFetchRequest request(String board) {
+        return new JobFetchRequest(null, 1, board, "Acme");
+    }
+
     private void respond(HttpExchange exchange, int status, String body) throws IOException {
         byte[] bytes = body.getBytes(StandardCharsets.UTF_8);
         exchange.getResponseHeaders().set("Content-Type", "application/json");
         exchange.getResponseHeaders().set("Connection", "close");
         exchange.sendResponseHeaders(status, bytes.length);
         try (var output = exchange.getResponseBody()) { output.write(bytes); }
+    }
+
+    private void noContent(HttpExchange exchange) throws IOException {
+        exchange.getResponseHeaders().set("Connection", "close");
+        exchange.sendResponseHeaders(204, -1);
+        exchange.close();
     }
 
     private record Fixture(ProviderReliabilityProperties properties, ProviderHttpClient client,
