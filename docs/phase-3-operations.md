@@ -102,3 +102,11 @@ output, and resolve identity/fingerprint ambiguity through the ADMIN conflict en
 additive: restore a database snapshot if needed, leave legacy fields intact, and rerun the
 idempotent source-listing backfill before repeating the audit. Never automatically delete an
 ambiguous or reference-bearing job.
+
+Every scheduled and manual provider coordinator creates a `sync_runs` record before attempting its
+distributed lease. Records use a low-cardinality outcome (`COMPLETED`, `PARTIAL`, `FAILED`, `LOCKED`,
+or `LEASE_LOST`), retain ingestion/retry/lifecycle counts, and contain only a bounded sanitized
+failure type/detail. The `runId` is included in structured start/completion logs. MongoDB removes
+history through the `expiresAt` TTL index after `JOB_AGGREGATION_SYNC_HISTORY_RETENTION_DAYS` (30 by
+default); changing retention affects new records, so apply an explicit reviewed migration if old
+expiry dates must also change.

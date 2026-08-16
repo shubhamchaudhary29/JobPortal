@@ -38,10 +38,12 @@ public class EmployerIngestionService {
     public Result sync(EmployerRegistryProperties.Source selected) { return sync(selected, () -> true); }
 
     public Result sync(EmployerRegistryProperties.Source selected, BooleanSupplier leaseValid) {
-        int inserted = 0, updated = 0, unchanged = 0, failed = 0, rejected = 0;
+        int inserted = 0, updated = 0, unchanged = 0, failed = 0, rejected = 0, attemptedEmployers = 0;
+        long lifecycleMatched = 0, lifecycleModified = 0;
         for (var employer : registry.employers()) {
             if (!leaseValid.getAsBoolean()) break;
             if (!employer.enabled() || (selected != null && employer.source() != selected)) continue;
+            attemptedEmployers++;
             JobSource source = sources.get(employer.source());
             Set<String> seenIdentities = new HashSet<>();
             boolean complete = true;
@@ -75,15 +77,20 @@ public class EmployerIngestionService {
                     }
                 }
                 if (complete && leaseValid.getAsBoolean()) {
-                    lifecycle.completeSuccessfulRun(source.sourceName(), employer.boardId(),
-                            seenIdentities, observedAt);
+                    ImportedJobLifecycleService.Result lifecycleResult = lifecycle.completeSuccessfulRun(
+                            source.sourceName(), employer.boardId(), seenIdentities, observedAt);
+                    if (lifecycleResult != null) {
+                        lifecycleMatched += lifecycleResult.matchedJobs();
+                        lifecycleModified += lifecycleResult.modifiedJobs();
+                    }
                 }
             } catch (RuntimeException employerFailure) {
                 failed++;
                 log.warn("event=employer_board_failed employer={}", employer.company());
             }
         }
-        return new Result(inserted, updated, unchanged, rejected, failed);
+        return new Result(inserted, updated, unchanged, rejected, failed,
+                lifecycleMatched, lifecycleModified, attemptedEmployers);
     }
 
     private boolean valid(ExternalJob job) {
@@ -107,5 +114,10 @@ public class EmployerIngestionService {
         return job;
     }
 
-    public record Result(int inserted, int updated, int unchanged, int rejected, int failedEmployers) { }
+    public record Result(int inserted, int updated, int unchanged, int rejected, int failedEmployers,
+                         long lifecycleMatched, long lifecycleModified, int attemptedEmployers) {
+        public Result(int inserted, int updated, int unchanged, int rejected, int failedEmployers) {
+            this(inserted, updated, unchanged, rejected, failedEmployers, 0, 0, 0);
+        }
+    }
 }

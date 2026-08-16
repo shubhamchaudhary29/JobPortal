@@ -19,7 +19,7 @@ class AdzunaServiceTest {
         AtomicInteger sleeps = new AtomicInteger();
         AdzunaService service = service(client, store, 3, "java", sleeps);
         AdzunaService.SyncResult result = service.sync();
-        assertEquals(1, result.inserted()); assertEquals(2, sleeps.get()); verify(client, times(3)).fetchPage("java", 1); verify(store).upsert(any(), any());
+        assertEquals(1, result.inserted()); assertEquals(2, result.retries()); assertEquals(2, sleeps.get()); verify(client, times(3)).fetchPage("java", 1); verify(store).upsert(any(), any());
     }
     @Test
     void doesNotRetryAuthenticationOrInvalidProviderRequest() {

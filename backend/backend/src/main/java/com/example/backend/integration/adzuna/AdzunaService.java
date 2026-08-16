@@ -14,6 +14,7 @@ import java.time.Clock;
 import java.time.LocalDateTime;
 import java.util.concurrent.ThreadLocalRandom;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.function.LongUnaryOperator;
 import java.util.function.BooleanSupplier;
 import java.util.HashSet;
@@ -62,6 +63,8 @@ public class AdzunaService {
     private SyncResult executeSync(BooleanSupplier leaseValid) {
         long startedAt = System.nanoTime();
         int failedBatches = 0, failedItems = 0, inserted = 0, updated = 0, unchanged = 0, rejected = 0, attemptedBatches = 0;
+        long lifecycleMatched = 0, lifecycleModified = 0;
+        java.util.concurrent.atomic.AtomicInteger retries = new java.util.concurrent.atomic.AtomicInteger();
         Set<String> seenIdentities = new HashSet<>();
         for (String rawKeyword : properties.keywords()) {
             if (!leaseValid.getAsBoolean()) break;
@@ -71,7 +74,7 @@ public class AdzunaService {
                 if (!leaseValid.getAsBoolean()) break;
                 attemptedBatches++;
                 try {
-                    BatchResult batch = fetchKeyword(keyword, page, leaseValid, seenIdentities);
+                    BatchResult batch = fetchKeyword(keyword, page, leaseValid, seenIdentities, retries);
                     inserted += batch.inserted(); updated += batch.updated(); unchanged += batch.unchanged(); rejected += batch.rejected(); failedItems += batch.failed();
                 } catch (AdzunaCircuitOpenException ex) {
                     failedBatches++;
@@ -87,7 +90,12 @@ public class AdzunaService {
         boolean leaseStillValid = leaseValid.getAsBoolean();
         if (leaseStillValid && attemptedBatches > 0 && failedBatches == 0 && failedItems == 0 && rejected == 0) {
             try {
-                lifecycle.completeSuccessfulRun(source.sourceName(), null, seenIdentities, LocalDateTime.now(clock));
+                ImportedJobLifecycleService.Result lifecycleResult = lifecycle.completeSuccessfulRun(
+                        source.sourceName(), null, seenIdentities, LocalDateTime.now(clock));
+                if (lifecycleResult != null) {
+                    lifecycleMatched += lifecycleResult.matchedJobs();
+                    lifecycleModified += lifecycleResult.modifiedJobs();
+                }
             } catch (RuntimeException lifecycleFailure) {
                 failedBatches++;
                 log.warn("event=adzuna_lifecycle_failed provider=adzuna");
@@ -99,12 +107,13 @@ public class AdzunaService {
         metrics.record(outcome == Outcome.FULL_SUCCESS ? AdzunaSyncMetrics.Outcome.FULL_SUCCESS : outcome == Outcome.PARTIAL_FAILURE ? AdzunaSyncMetrics.Outcome.PARTIAL_FAILURE : AdzunaSyncMetrics.Outcome.COMPLETE_FAILURE, elapsed);
         AdzunaSyncMetrics.Snapshot snapshot = metrics.snapshot();
         log.info("event=adzuna_sync_completed outcome={} attempted_batches={} inserted={} updated={} unchanged={} rejected={} failed_items={} failed_batches={} latency_ms={}", outcome, attemptedBatches, inserted, updated, unchanged, rejected, failedItems, failedBatches, elapsed);
-        return new SyncResult(inserted, updated, unchanged, rejected, failedBatches, failedItems, outcome);
+        return new SyncResult(inserted, updated, unchanged, rejected, failedBatches, failedItems,
+                retries.get(), lifecycleMatched, lifecycleModified, attemptedBatches, outcome);
     }
     private BatchResult fetchKeyword(String keyword, int page, BooleanSupplier leaseValid,
-                                     Set<String> seenIdentities) {
+                                     Set<String> seenIdentities, AtomicInteger retries) {
         if (!circuit.allowRequest()) throw new AdzunaCircuitOpenException();
-        java.util.List<ExternalJob> response = fetchWithRetry(keyword, page);
+        java.util.List<ExternalJob> response = fetchWithRetry(keyword, page, retries);
         int inserted = 0, updated = 0, unchanged = 0, rejected = 0, failed = 0;
         LocalDateTime now = LocalDateTime.now(clock);
         for (ExternalJob source : response) {
@@ -120,13 +129,14 @@ public class AdzunaService {
         circuit.recordSuccess();
         return new BatchResult(inserted, updated, unchanged, rejected, failed);
     }
-    private java.util.List<ExternalJob> fetchWithRetry(String keyword, int page) {
+    private java.util.List<ExternalJob> fetchWithRetry(String keyword, int page, AtomicInteger retries) {
         AdzunaProviderException last = null;
         for (int attempt = 1; attempt <= properties.maxAttempts(); attempt++) {
             try { return source.fetch(new JobFetchRequest(keyword, page)); }
             catch (AdzunaProviderException ex) {
                 last = ex;
                 if (!ex.retryable() || attempt == properties.maxAttempts()) throw ex;
+                retries.incrementAndGet();
                 try { sleeper.sleep(backoff(attempt)); }
                 catch (InterruptedException interrupted) { Thread.currentThread().interrupt(); throw new AdzunaProviderException("Adzuna retry interrupted", false, interrupted); }
             }
@@ -136,7 +146,13 @@ public class AdzunaService {
     private long backoff(int attempt) { long base = properties.initialBackoffMs() * (1L << (attempt - 1)); return base + jitter.applyAsLong(Math.max(1, base / 2)); }
     record BatchResult(int inserted, int updated, int unchanged, int rejected, int failed) { }
     public enum Outcome { FULL_SUCCESS, PARTIAL_FAILURE, COMPLETE_FAILURE, OVERLAP_REJECTED }
-    public record SyncResult(int inserted, int updated, int unchanged, int rejected, int failedBatches, int failedItems, Outcome outcome) {
+    public record SyncResult(int inserted, int updated, int unchanged, int rejected, int failedBatches,
+                             int failedItems, int retries, long lifecycleMatched,
+                             long lifecycleModified, int attemptedBatches, Outcome outcome) {
+        public SyncResult(int inserted, int updated, int unchanged, int rejected, int failedBatches,
+                          int failedItems, Outcome outcome) {
+            this(inserted, updated, unchanged, rejected, failedBatches, failedItems, 0, 0, 0, 0, outcome);
+        }
         public boolean skipped() { return outcome == Outcome.OVERLAP_REJECTED; }
     }
     @FunctionalInterface interface Sleeper { void sleep(long millis) throws InterruptedException; }

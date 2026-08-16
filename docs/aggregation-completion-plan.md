@@ -80,7 +80,7 @@ The remaining scope is per-source lifecycle and safe migration; deterministic ca
   - Done when: migration audit and all end-to-end real-Mongo tests pass with documented evidence.
   - Evidence (2026-08-16): `cd backend/backend && ./mvnw -Dtest='*Lifecycle*,*Conflict*,*JobStoreMongoIntegrationTest,*MigrationEndToEnd*' test` passed 22 tests (0 failures/errors/skips). The combined real-Mongo acceptance flow verified deterministic multi-source canonical state, per-provider misses, all-source deactivation, application-reference cleanup protection, reactivation, durable conflict resolution, reference reassignment, and duplicate removal. `MONGODB_URI=mongodb://localhost:27017 bash backend/backend/scripts/verify-aggregation-migration.sh` passed against its disposable database, accepting a structurally valid rollout and returning status `2` with every expected category for intentionally malformed listing, duplicate-identity, canonical, and lifecycle anomalies. `cd backend/backend && MONGODB_URI=mongodb://localhost:27017 bash scripts/verify-aggregation-migration.sh && ./mvnw test` passed the harness again and all 97 backend tests (0 failures/errors/skips). `git diff --check` passed.
 
-- [ ] **M2A — Persistent sync-run schema, indexes, and recording for every outcome**
+- [x] **M2A — Persistent sync-run schema, indexes, and recording for every outcome**
 
   - Required behavior: persist one bounded, sanitized sync-run record for scheduled and manual executions, including source/employer, trigger, run ID, timestamps, structured outcome, all ingestion/lifecycle counts, retry count, and safe failure details; record completed, partial, failed, locked, and lease-lost outcomes and retain records by configured TTL.
   - Expected files/components: `integration/aggregation` sync-run document/service/DTOs, ingestion coordinators, Mongo index initializer, configuration and operations documentation.
@@ -88,6 +88,7 @@ The remaining scope is per-source lifecycle and safe migration; deterministic ca
   - Verification commands: `cd backend/backend && ./mvnw -Dtest='*SyncRun*,*IngestionCoordinator*,AdzunaServiceTest' test`; `cd backend/backend && ./mvnw test`; `git diff --check`.
   - Dependencies: M1A–M1F.
   - Done when: every existing coordinator exit path creates exactly one durable, indexed, retention-controlled run record and focused/full backend tests pass.
+  - Evidence (2026-08-16): `cd backend/backend && ./mvnw -Dtest='*SyncRun*,*IngestionCoordinator*,AdzunaServiceTest' test` passed 10 tests (0 failures/errors/skips), including real-Mongo records for completed, partial, failed, locked, and lease-lost exits from employer and Adzuna coordinators; scheduled/manual triggers; run IDs; ingestion, retry, and lifecycle counts; bounded URL/credential sanitization; duplicate completion protection; and scope/outcome/TTL indexes. A deterministic thrown-ingestion case remained durably `FAILED`. `cd backend/backend && ./mvnw test` passed 100 tests (0 failures/errors/skips). `git diff --check` passed.
 
 - [ ] **M2B — Paginated/filterable ADMIN history, detail, and last-status APIs**
 

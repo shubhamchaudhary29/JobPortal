@@ -12,6 +12,7 @@ import org.springframework.data.mongodb.core.index.PartialIndexFilter;
 import org.springframework.data.mongodb.core.index.TextIndexDefinition;
 import org.springframework.stereotype.Component;
 import java.util.List;
+import java.time.Duration;
 
 /** Fails deployment before imported identity indexes are attempted against legacy duplicates. */
 @Component
@@ -53,5 +54,14 @@ public class MongoIndexInitializer implements ApplicationRunner {
         mongo.indexOps("aggregation_conflicts").ensureIndex(new Index()
                 .on("status", Sort.Direction.ASC).on("lastObservedAt", Sort.Direction.DESC)
                 .on("_id", Sort.Direction.ASC).named("aggregation_conflict_status_idx"));
+        IndexOperations syncRuns = mongo.indexOps("sync_runs");
+        syncRuns.ensureIndex(new Index().on("provider", Sort.Direction.ASC)
+                .on("employer", Sort.Direction.ASC).on("startedAt", Sort.Direction.DESC)
+                .on("_id", Sort.Direction.ASC).named("sync_run_scope_started_idx"));
+        syncRuns.ensureIndex(new Index().on("outcome", Sort.Direction.ASC)
+                .on("startedAt", Sort.Direction.DESC).on("_id", Sort.Direction.ASC)
+                .named("sync_run_outcome_started_idx"));
+        syncRuns.ensureIndex(new Index().on("expiresAt", Sort.Direction.ASC)
+                .expire(Duration.ZERO).named("sync_run_retention_ttl"));
     }
 }
