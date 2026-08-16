@@ -70,7 +70,7 @@ The remaining scope is per-source lifecycle and safe migration; deterministic ca
   - Done when: conflicts are durable and administratively resolvable without unsafe automatic deletion.
   - Evidence (2026-08-16): `cd backend/backend && ./mvnw -Dtest='*Conflict*,*Admin*' test` passed 7 tests (0 failures/errors/skips), including real-Mongo conflict coalescing, bounded/filterable pagination, ADMIN `401/403/200`, explicit resolution, same-candidate ambiguity refusal without mutation, application/conversation reference rewrites, duplicate removal only after rewrites, completed replay idempotence, and recovery from a persisted mid-flight reconciliation marker. `cd backend/backend && ./mvnw test` initially found and then verified the fix for a shared/integration architecture cycle; the clean rerun passed 96 tests (0 failures/errors/skips). `git diff --check` passed.
 
-- [ ] **M1F — Complete lifecycle/conflict migration audit and real-Mongo end-to-end verification**
+- [x] **M1F — Complete lifecycle/conflict migration audit and real-Mongo end-to-end verification**
 
   - Required behavior: provide rollout evidence covering schema backfill, canonical rules, lifecycle, cleanup, and conflict reconciliation.
   - Expected files/components: migration/audit scripts, integration fixtures/tests, operations documentation.
@@ -78,6 +78,7 @@ The remaining scope is per-source lifecycle and safe migration; deterministic ca
   - Verification commands: `cd backend/backend && ./mvnw -Dtest='*Lifecycle*,*Conflict*,*JobStoreMongoIntegrationTest' test`; `mongosh "$MONGODB_URI" backend/backend/scripts/audit-mongo-indexes.js`.
   - Dependencies: M1A–M1E.
   - Done when: migration audit and all end-to-end real-Mongo tests pass with documented evidence.
+  - Evidence (2026-08-16): `cd backend/backend && ./mvnw -Dtest='*Lifecycle*,*Conflict*,*JobStoreMongoIntegrationTest,*MigrationEndToEnd*' test` passed 22 tests (0 failures/errors/skips). The combined real-Mongo acceptance flow verified deterministic multi-source canonical state, per-provider misses, all-source deactivation, application-reference cleanup protection, reactivation, durable conflict resolution, reference reassignment, and duplicate removal. `MONGODB_URI=mongodb://localhost:27017 bash backend/backend/scripts/verify-aggregation-migration.sh` passed against its disposable database, accepting a structurally valid rollout and returning status `2` with every expected category for intentionally malformed listing, duplicate-identity, canonical, and lifecycle anomalies. `cd backend/backend && MONGODB_URI=mongodb://localhost:27017 bash scripts/verify-aggregation-migration.sh && ./mvnw test` passed the harness again and all 97 backend tests (0 failures/errors/skips). `git diff --check` passed.
 
 - [ ] **M2 — Sync history, manual operations, outcomes, and concurrency tests**
 

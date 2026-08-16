@@ -84,3 +84,21 @@ The daily retention task uses the distributed `maintenance:imported-job-retentio
 `/api/v1/admin/ingestion/**` is ADMIN-only. Public registration can create only USER or RECRUITER accounts. Provision an administrator through a controlled database migration by changing an existing trusted user's `role` to `ADMIN`, then have that user sign in again to receive a role-bearing token.
 
 Identity/fingerprint collisions are retained in `aggregation_conflicts`; ingestion records a bounded conflict reference and leaves both jobs untouched. Administrators can page/filter them with `GET /api/v1/admin/ingestion/conflicts` and submit an explicit canonical/duplicate choice to `POST /api/v1/admin/ingestion/conflicts/{id}/resolution`. Resolution is distributed-lock protected and resumable: it refuses same-candidate application collisions, merges every source listing, rewrites application and conversation job references, and removes the duplicate only after those rewrites. Repeating the same completed resolution is safe; a different choice returns a conflict. Back up `jobs`, `applications`, `chat_rooms`, and `aggregation_conflicts` before production reconciliation.
+
+### Final Phase 1 migration audit (M1F)
+
+The read-only index audit also validates the additive source-listing shape, duplicate listing
+identities, deterministic canonical fields, lifecycle state, conflict records, and interrupted
+reconciliation markers. It exits with status `2` when any rollout anomaly is found. Validate the
+audit itself only against a disposable local server because its harness drops
+`jobportal_m1f_verify`:
+
+```bash
+MONGODB_URI=mongodb://localhost:27017 bash backend/backend/scripts/verify-aggregation-migration.sh
+```
+
+Do not continue a rollout when the audit reports an anomaly. Retain affected documents, capture the
+output, and resolve identity/fingerprint ambiguity through the ADMIN conflict endpoint. Recovery is
+additive: restore a database snapshot if needed, leave legacy fields intact, and rerun the
+idempotent source-listing backfill before repeating the audit. Never automatically delete an
+ambiguous or reference-bearing job.
