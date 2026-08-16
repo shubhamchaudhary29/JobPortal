@@ -117,6 +117,26 @@ class EmployerIngestionServiceTest {
     }
 
     @Test
+    void providerRetryMetadataIsIncludedInTheIngestionOutcome() {
+        JobSource greenhouse = mock(JobSource.class);
+        JobSource lever = mock(JobSource.class);
+        AdzunaJobStore store = mock(AdzunaJobStore.class);
+        ImportedJobLifecycleService lifecycle = mock(ImportedJobLifecycleService.class);
+        when(greenhouse.sourceName()).thenReturn("greenhouse");
+        when(greenhouse.fetchWithMetadata(any())).thenReturn(new JobSource.FetchResult(List.of(), 2));
+        EmployerRegistryProperties registry = new EmployerRegistryProperties(List.of(
+                new EmployerRegistryProperties.Employer("Board", EmployerRegistryProperties.Source.GREENHOUSE,
+                        "board", true)));
+
+        EmployerIngestionService.Result result = new EmployerIngestionService(
+                greenhouse, lever, store, registry, lifecycle).sync(EmployerRegistryProperties.Source.GREENHOUSE);
+
+        assertEquals(2, result.retries());
+        assertEquals(1, result.attemptedEmployers());
+        verify(lifecycle).completeSuccessfulRun(eq("greenhouse"), eq("board"), eq(java.util.Set.of()), any());
+    }
+
+    @Test
     void leaseLossAfterFirstItemPreventsEveryLaterWriteAndLifecycleProgress() {
         JobSource greenhouse = mock(JobSource.class);
         JobSource lever = mock(JobSource.class);

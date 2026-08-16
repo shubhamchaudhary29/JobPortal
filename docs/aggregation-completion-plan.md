@@ -120,7 +120,7 @@ The remaining scope is per-source lifecycle and safe migration; deterministic ca
   - Done when: all execution paths share safe distributed coordination, lease loss stops writes immediately, structured outcomes are consistent, and every concurrency/security test passes.
   - Evidence (2026-08-16): `cd backend/backend && ./mvnw -Dtest='*Coordinator*,*Lease*,*Concurrency*,*Admin*,EmployerIngestionServiceTest,AdzunaServiceTest' test` passed 30 tests (0 failures/errors/skips). Deterministic unit and real-Mongo cases cover two-instance overlap, acquisition/contention, long-run renewal, false renewal, Mongo renewal exception, ownership theft, expiry recovery, former-owner release safety, heartbeat scheduling failure, idempotent cancellation, and ADMIN `401/403/200/409/503`. Explicit provider tests prove lease loss after one stored item prevents later writes/lifecycle progress and lease loss during a transient Adzuna failure prevents retries/provider progress. Coordinator responses and history share the same low-cardinality outcomes. `cd backend/backend && ./mvnw test` passed 118 tests (0 failures/errors/skips). `git diff --check` passed.
 
-- [ ] **M3A — Configurable timeouts, transient retries, backoff/jitter, and `Retry-After`**
+- [x] **M3A — Configurable timeouts, transient retries, backoff/jitter, and `Retry-After`**
 
   - Required behavior: give Greenhouse and Lever a shared provider-neutral failure model, bounded configurable connect/read timeouts and retry attempts, exponential backoff with injectable jitter, HTTP-date/seconds `Retry-After`, and transient-only retry classification for timeout/429/5xx; permanent 4xx and malformed responses must not retry.
   - Expected files/components: shared reliability package, Greenhouse/Lever HTTP sources and configuration, environment/Compose forwarding, operations documentation.
@@ -128,6 +128,7 @@ The remaining scope is per-source lifecycle and safe migration; deterministic ca
   - Verification commands: `cd backend/backend && ./mvnw -Dtest='*Greenhouse*,*Lever*,*Reliability*' test`; `cd backend/backend && ./mvnw test`; `git diff --check`.
   - Dependencies: M2A–M2D.
   - Done when: both providers use the same deterministic transient-only retry policy, all knobs are validated/documented, and focused/full backend tests pass without live calls.
+  - Evidence (2026-08-16): Greenhouse and Lever now share provider-neutral failures, a dedicated JDK HTTP transport, validated connect/read timeout and attempt/backoff bounds, transient-only classification, bounded exponential jitter, both `Retry-After` formats, interrupt restoration, and sync-history retry propagation. All reliability tests use a local mock HTTP server. `cd backend/backend && ./mvnw -Dtest='*Greenhouse*,*Lever*,*Reliability*' test` passed 6 tests (0 failures/errors/skips). The expanded focused run `./mvnw -Dtest='*Greenhouse*,*Lever*,*Reliability*,EmployerIngestionServiceTest' test` passed 13 tests (0 failures/errors/skips), including retry-count propagation. `cd backend/backend && ./mvnw test` passed 125 tests (0 failures/errors/skips). `git diff --check` passed.
 
 - [ ] **M3B — Circuit protection, request/payload limits, employer isolation, and sanitized logging**
 

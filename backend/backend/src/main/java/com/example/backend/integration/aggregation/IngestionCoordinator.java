@@ -82,7 +82,7 @@ public class IngestionCoordinator {
     }
     private SyncRunService.Counts counts(EmployerIngestionService.Result sync) {
         return new SyncRunService.Counts(sync.inserted(), sync.updated(), sync.unchanged(), sync.rejected(),
-                0, 0, sync.failedEmployers(), sync.lifecycleMatched(), sync.lifecycleModified(), 0,
+                0, 0, sync.failedEmployers(), sync.lifecycleMatched(), sync.lifecycleModified(), sync.retries(),
                 0, sync.attemptedEmployers());
     }
     public record Result(EmployerIngestionService.Result sync, boolean locked, boolean leaseLost, String runId,

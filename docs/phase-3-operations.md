@@ -135,3 +135,26 @@ before fetch retries and every item write, then skip lifecycle progress. Closing
 the heartbeat with interruption and removes the lease only through the `(lock name, owner)` query,
 so an expired/reacquired winner cannot be released by the former owner. Heartbeat scheduling and
 lock acquisition failures are recorded as failed runs.
+
+### Greenhouse and Lever transport reliability
+
+Greenhouse and Lever use one provider-neutral HTTP failure and retry policy. Timeouts, HTTP `429`,
+and HTTP `5xx` are transient; other `4xx` responses and malformed JSON are permanent for that run.
+Retries are bounded, use exponential backoff with jitter, and honor both delta-seconds and HTTP-date
+`Retry-After` values without exceeding the configured maximum delay. An interrupted backoff stops
+the run and restores the thread interrupt flag. Retry totals are persisted in the sync-run history.
+
+The supported settings and safe defaults are:
+
+| Environment variable | Default | Bound/purpose |
+| --- | ---: | --- |
+| `JOB_AGGREGATION_PROVIDER_CONNECT_TIMEOUT_MS` | `3000` | `1`–`60000` ms |
+| `JOB_AGGREGATION_PROVIDER_READ_TIMEOUT_MS` | `5000` | `1`–`120000` ms |
+| `JOB_AGGREGATION_PROVIDER_RETRY_MAX_ATTEMPTS` | `3` | `1`–`5`, including the initial request |
+| `JOB_AGGREGATION_PROVIDER_RETRY_INITIAL_BACKOFF_MS` | `200` | initial exponential delay |
+| `JOB_AGGREGATION_PROVIDER_RETRY_MAX_BACKOFF_MS` | `5000` | at most `60000` ms and not below the initial delay |
+| `GREENHOUSE_BASE_URL` | official boards API | HTTP(S) endpoint; override only for controlled testing/proxying |
+| `LEVER_BASE_URL` | official postings API | HTTP(S) endpoint; override only for controlled testing/proxying |
+
+Automated reliability tests point these base URLs at an in-process mock HTTP server and never call
+live providers. Keep credentials and query-bearing upstream URLs out of logs and support output.

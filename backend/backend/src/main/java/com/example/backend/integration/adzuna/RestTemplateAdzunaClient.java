@@ -6,6 +6,7 @@ import org.springframework.web.client.ResourceAccessException;
 import org.springframework.web.client.RestClientResponseException;
 import org.springframework.web.client.RestTemplate;
 import org.springframework.web.util.UriComponentsBuilder;
+import org.springframework.beans.factory.annotation.Qualifier;
 
 import java.net.URI;
 
@@ -13,7 +14,8 @@ import java.net.URI;
 class RestTemplateAdzunaClient implements AdzunaClient {
     private final RestTemplate http;
     private final AdzunaProperties properties;
-    RestTemplateAdzunaClient(RestTemplate adzunaRestTemplate, AdzunaProperties properties) { this.http = adzunaRestTemplate; this.properties = properties; }
+    RestTemplateAdzunaClient(@Qualifier("restTemplate") RestTemplate adzunaRestTemplate,
+                             AdzunaProperties properties) { this.http = adzunaRestTemplate; this.properties = properties; }
     @Override public AdzunaResponse fetchPage(String keyword, int page) {
         try {
             URI uri = UriComponentsBuilder.fromUriString("https://api.adzuna.com/v1/api/jobs/in/search/{page}")

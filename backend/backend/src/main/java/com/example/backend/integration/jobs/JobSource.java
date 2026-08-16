@@ -1,3 +1,8 @@
 package com.example.backend.integration.jobs;
 import java.util.List;
-public interface JobSource { String sourceName(); List<ExternalJob> fetch(JobFetchRequest request); }
+public interface JobSource {
+    String sourceName();
+    List<ExternalJob> fetch(JobFetchRequest request);
+    default FetchResult fetchWithMetadata(JobFetchRequest request) { return new FetchResult(fetch(request), 0); }
+    record FetchResult(List<ExternalJob> jobs, int retries) { }
+}
