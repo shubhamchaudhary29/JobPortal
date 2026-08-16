@@ -8,7 +8,7 @@ timeout_seconds=${REGISTRY_TIMEOUT_SECONDS:-15}
 greenhouse_base=${REGISTRY_GREENHOUSE_BASE_URL:-https://boards-api.greenhouse.io/v1/boards}
 lever_base=${REGISTRY_LEVER_BASE_URL:-https://api.lever.co/v0/postings}
 
-for dependency in rg awk curl jq mktemp; do
+for dependency in awk curl jq mktemp; do
   command -v "$dependency" >/dev/null || { printf 'Missing prerequisite: %s\n' "$dependency" >&2; exit 3; }
 done
 [[ -f "$registry" ]] || { printf 'Registry file not found: %s\n' "$registry" >&2; exit 3; }
@@ -20,14 +20,13 @@ entries=$(mktemp)
 results=$(mktemp)
 trap 'rm -f "$entries" "$results"' EXIT
 
-rg '^job-aggregation\.employers\[[0-9]+\]\.(company|source|board-id|enabled)=' "$registry" |
 awk -F= '
-  /\.company=/{split($1,a,"."); i=a[2]; company[i]=substr($0,index($0,"=")+1)}
-  /\.source=/{split($1,a,"."); i=a[2]; source[i]=$2}
-  /\.board-id=/{split($1,a,"."); i=a[2]; board[i]=$2}
-  /\.enabled=/{split($1,a,"."); i=a[2]; enabled[i]=$2}
-  END {for(i in board) print i "\t" company[i] "\t" source[i] "\t" board[i] "\t" enabled[i]}' |
-sort -t $'\t' -k1,1V > "$entries"
+  /^job-aggregation\.employers\[[0-9]+\]\.company=/{split($1,a,"."); i=a[2]; company[i]=substr($0,index($0,"=")+1)}
+  /^job-aggregation\.employers\[[0-9]+\]\.source=/{split($1,a,"."); i=a[2]; source[i]=$2}
+  /^job-aggregation\.employers\[[0-9]+\]\.board-id=/{split($1,a,"."); i=a[2]; board[i]=$2}
+  /^job-aggregation\.employers\[[0-9]+\]\.enabled=/{split($1,a,"."); i=a[2]; enabled[i]=$2}
+  END {for(i in board) print i "\t" company[i] "\t" source[i] "\t" board[i] "\t" enabled[i]}' \
+  "$registry" | sort -t $'\t' -k1,1V > "$entries"
 
 printf 'provider\tboard\thttp\tclassification\tcount\n'
 while IFS=$'\t' read -r index company source board enabled; do
