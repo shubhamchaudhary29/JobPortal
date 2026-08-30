@@ -38,6 +38,8 @@ Coming Soon
 
 See [Backend architecture and API v1](docs/architecture.md).
 
+See [Candidate Intelligence](docs/candidate-intelligence.md) for structured profiles, secure PDF/DOCX parsing, skill normalization, quality analysis, storage, API contracts, and limitations.
+
 For aggregation reliability, migrations, registry evidence, and local/Docker verification, see [aggregation operations](docs/phase-3-operations.md).
 
 </div>
@@ -121,8 +123,9 @@ This transforms JobPortal into a **centralized recruitment hub** instead of just
 
 - Create Candidate Profile
 - Edit Personal Information
-- Upload Resume (PDF)
-- Resume Management
+- Upload and privately manage PDF or DOCX resumes
+- Review and edit parsed skills, education, experience, projects, certifications, and professional links
+- Use the transparent heuristic Resume Quality Score (not an official ATS score)
 
 ### Job Search
 

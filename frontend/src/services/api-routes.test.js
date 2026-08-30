@@ -9,5 +9,6 @@ describe("versioned API routes", () => {
     expect(apiRoutes.applications.resume("a/1")).toBe("/api/v1/applications/a%2F1/resume");
     expect(apiRoutes.adminAggregation.historyById("run/1")).toBe("/api/v1/admin/ingestion/history/run%2F1");
     expect(apiRoutes.adminAggregation.sync("greenhouse")).toBe("/api/v1/admin/ingestion/greenhouse/sync");
+    expect(apiRoutes.candidateProfile.resumeStatus).toBe("/api/v1/candidate-profile/resume/status");
   });
 });

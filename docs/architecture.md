@@ -7,6 +7,7 @@ The backend is a feature-oriented modular monolith under `com.example.backend`:
 ```text
 auth/{api,application,infrastructure}
 user/{api,application,domain,infrastructure}
+candidate/{api,application,domain,infrastructure}
 job/{api,application,infrastructure}
 application/{api,application,domain,infrastructure}
 messaging/{api,application,infrastructure,security}
@@ -86,7 +87,7 @@ Errors use RFC 9457 media type `application/problem+json`:
 Stable codes are `VALIDATION_ERROR`, `MALFORMED_REQUEST`, `MISSING_PARAMETER`, `METHOD_NOT_ALLOWED`,
 `UNSUPPORTED_MEDIA_TYPE`, `RESUME_TOO_LARGE`, `INVALID_RESUME_TYPE`, `UNAUTHORIZED`, `INVALID_CREDENTIALS`, `FORBIDDEN`,
 `RESOURCE_NOT_FOUND`, `DUPLICATE_EMAIL`, `DUPLICATE_APPLICATION`, `INVALID_STATUS_TRANSITION`, `CONFLICT`,
-`DUPLICATE_RESOURCE`, `RATE_LIMITED`, `BAD_REQUEST`, and `INTERNAL_ERROR`. Unexpected details are logged only as
+`DUPLICATE_RESOURCE`, `RATE_LIMITED`, `BAD_REQUEST`, `RESUME_PARSE_FAILED`, and `INTERNAL_ERROR`. Unexpected details are logged only as
 exception types and the client receives a generic message.
 
 ## Pagination, filters, and sorting
@@ -112,6 +113,28 @@ Access tokens remain in React module memory. The rotating refresh token remains 
 in an `HttpOnly` cookie scoped to `/api/v1/auth`. Refresh remains single-flight in the browser. Login rate
 limiting, restricted CORS, job/application ownership, privacy-preserving protected reads, message participation,
 PDF signature/type/size validation, path containment, and symlink-safe resume access remain enforced in services.
+
+## Candidate intelligence flow
+
+```text
+Authenticated candidate
+        ↓
+Secure PDF/DOCX upload → private persisted resume namespace
+        ↓
+PDFBox / Apache POI text extraction
+        ↓
+Section and contact detection → focused education/experience/project/certification parsers
+        ↓
+Skill alias normalization and de-duplication
+        ↓
+One MongoDB candidate profile per user
+        ↓
+Editable React profile and deterministic Resume Quality Score
+```
+
+Candidate routes never accept a user identifier. `CurrentUserProvider` and the authenticated user record derive ownership,
+and Spring Security restricts `/api/v1/candidate-profile/**` to `USER`. Parser output is explicitly reviewable: status and
+warnings remain visible, account email is never overwritten, and manual edits are normalized again server-side.
 
 ## OpenAPI
 

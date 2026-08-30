@@ -9,6 +9,12 @@ export const apiRoutes = Object.freeze({
     currentSession: `${API_V1}/auth/sessions/current`,
   }),
   users: Object.freeze({ me: `${API_V1}/users/me` }),
+  candidateProfile: Object.freeze({
+    root: `${API_V1}/candidate-profile`,
+    resume: `${API_V1}/candidate-profile/resume`,
+    resumeStatus: `${API_V1}/candidate-profile/resume/status`,
+    reparse: `${API_V1}/candidate-profile/resume/reparse`,
+  }),
   jobs: Object.freeze({
     collection: `${API_V1}/jobs`,
     mine: `${API_V1}/jobs/mine`,

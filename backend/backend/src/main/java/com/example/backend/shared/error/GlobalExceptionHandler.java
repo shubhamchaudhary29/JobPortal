@@ -15,6 +15,8 @@ import org.springframework.web.HttpMediaTypeNotSupportedException;
 import org.springframework.web.HttpRequestMethodNotSupportedException;
 import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.MissingServletRequestParameterException;
+import org.springframework.web.multipart.support.MissingServletRequestPartException;
+import org.springframework.web.servlet.resource.NoResourceFoundException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
 import org.springframework.web.method.annotation.MethodArgumentTypeMismatchException;
@@ -46,10 +48,16 @@ public class GlobalExceptionHandler {
                 "The request body or parameter value is malformed", "MALFORMED_REQUEST", request));
     }
 
-    @ExceptionHandler(MissingServletRequestParameterException.class)
-    ResponseEntity<ProblemDetail> missingParameter(MissingServletRequestParameterException ex, HttpServletRequest request) {
+    @ExceptionHandler({MissingServletRequestParameterException.class, MissingServletRequestPartException.class})
+    ResponseEntity<ProblemDetail> missingParameter(Exception ex, HttpServletRequest request) {
         return response(problem(HttpStatus.BAD_REQUEST, "missing-parameter", "Missing parameter",
                 "A required request parameter is missing", "MISSING_PARAMETER", request));
+    }
+
+    @ExceptionHandler(NoResourceFoundException.class)
+    ResponseEntity<ProblemDetail> missingRoute(NoResourceFoundException ex, HttpServletRequest request) {
+        return response(problem(HttpStatus.NOT_FOUND, "resource-not-found", "Resource not found",
+                "The requested resource was not found", "RESOURCE_NOT_FOUND", request));
     }
 
     @ExceptionHandler(HttpRequestMethodNotSupportedException.class)
@@ -74,6 +82,12 @@ public class GlobalExceptionHandler {
     ResponseEntity<ProblemDetail> unsupportedResume(UnsupportedResumeTypeException ex, HttpServletRequest request) {
         return response(problem(HttpStatus.UNSUPPORTED_MEDIA_TYPE, "invalid-resume-type", "Invalid resume type",
                 ex.getMessage(), "INVALID_RESUME_TYPE", request));
+    }
+
+    @ExceptionHandler(ResumeParsingException.class)
+    ResponseEntity<ProblemDetail> resumeParsing(ResumeParsingException ex, HttpServletRequest request) {
+        return response(problem(HttpStatus.UNPROCESSABLE_ENTITY, "resume-parsing-failed", "Resume parsing failed",
+                ex.getMessage(), "RESUME_PARSE_FAILED", request));
     }
 
     @ExceptionHandler(UnauthorizedException.class)
