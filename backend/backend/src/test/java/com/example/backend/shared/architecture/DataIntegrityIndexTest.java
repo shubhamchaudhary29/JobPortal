@@ -5,6 +5,7 @@ import com.example.backend.auth.infrastructure.RefreshTokenDocument;
 import com.example.backend.messaging.infrastructure.ConversationDocument;
 import com.example.backend.job.infrastructure.JobDocument;
 import com.example.backend.user.infrastructure.UserDocument;
+import com.example.backend.candidate.infrastructure.CandidateProfileDocument;
 import org.junit.jupiter.api.Test;
 import org.springframework.data.mongodb.core.index.CompoundIndex;
 import org.springframework.data.mongodb.core.index.Indexed;
@@ -18,6 +19,7 @@ class DataIntegrityIndexTest {
         assertTrue(indexed(RefreshTokenDocument.class, "tokenHash").unique());
         assertEquals("0s", indexed(RefreshTokenDocument.class, "expiresAt").expireAfter());
         assertTrue(indexed(ConversationDocument.class, "applicationId").unique());
+        assertTrue(compound(CandidateProfileDocument.class, "userId"));
     }
 
     @Test
