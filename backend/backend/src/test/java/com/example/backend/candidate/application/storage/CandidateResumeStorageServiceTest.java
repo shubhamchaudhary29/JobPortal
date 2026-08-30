@@ -9,8 +9,13 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 import org.springframework.mock.web.MockMultipartFile;
 
+import java.io.ByteArrayOutputStream;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.LinkedHashMap;
+import java.util.Map;
+import java.util.zip.ZipEntry;
+import java.util.zip.ZipOutputStream;
 
 import static org.junit.jupiter.api.Assertions.*;
 
@@ -49,6 +54,59 @@ class CandidateResumeStorageServiceTest {
     }
 
     @Test
+    void acceptsValidDocxPackage() throws Exception {
+        CandidateResumeStorageService storage = new CandidateResumeStorageService(directory.toString(), 1_000_000, "docx");
+        var value = storage.validate(new MockMultipartFile("file", "resume.docx", ResumeDocumentType.DOCX.contentType(),
+                CandidateTestDocuments.docx("Candidate")));
+        assertEquals(ResumeDocumentType.DOCX, value.type());
+    }
+
+    @Test
+    void rejectsArbitraryZipRenamedAsDocx() throws Exception {
+        CandidateResumeStorageService storage = new CandidateResumeStorageService(directory.toString(), 1_000_000, "docx");
+        byte[] randomZip = zip(Map.of("notes.txt", "not a Word document"));
+        assertThrows(UnsupportedResumeTypeException.class, () -> storage.validate(
+                new MockMultipartFile("file", "resume.docx", "application/zip", randomZip)));
+    }
+
+    @Test
+    void rejectsMalformedZipRenamedAsDocx() {
+        CandidateResumeStorageService storage = new CandidateResumeStorageService(directory.toString(), 1_000_000, "docx");
+        byte[] malformed = new byte[] {'P', 'K', 3, 4, 1, 2, 3, 4};
+        assertThrows(UnsupportedResumeTypeException.class, () -> storage.validate(
+                new MockMultipartFile("file", "resume.docx", ResumeDocumentType.DOCX.contentType(), malformed)));
+    }
+
+    @Test
+    void rejectsDocxPackageMissingMainWordDocument() throws Exception {
+        CandidateResumeStorageService storage = new CandidateResumeStorageService(directory.toString(), 1_000_000, "docx");
+        Map<String, String> entries = new LinkedHashMap<>();
+        entries.put("[Content_Types].xml", "<Types/>");
+        entries.put("_rels/.rels", "<Relationships/>");
+        assertThrows(UnsupportedResumeTypeException.class, () -> storage.validate(
+                new MockMultipartFile("file", "resume.docx", ResumeDocumentType.DOCX.contentType(), zip(entries))));
+    }
+
+    @Test
+    void rejectsDocxMimeMismatch() throws Exception {
+        CandidateResumeStorageService storage = new CandidateResumeStorageService(directory.toString(), 1_000_000, "docx");
+        assertThrows(UnsupportedResumeTypeException.class, () -> storage.validate(
+                new MockMultipartFile("file", "resume.docx", "application/pdf", CandidateTestDocuments.docx("Candidate"))));
+    }
+
+    @Test
+    void rejectsDocxWithTraversalShapedArchiveEntry() throws Exception {
+        CandidateResumeStorageService storage = new CandidateResumeStorageService(directory.toString(), 1_000_000, "docx");
+        Map<String, String> entries = new LinkedHashMap<>();
+        entries.put("[Content_Types].xml", "<Types/>");
+        entries.put("_rels/.rels", "<Relationships/>");
+        entries.put("word/document.xml", "<document/>");
+        entries.put("word/../escape.xml", "unsafe");
+        assertThrows(UnsupportedResumeTypeException.class, () -> storage.validate(
+                new MockMultipartFile("file", "resume.docx", ResumeDocumentType.DOCX.contentType(), zip(entries))));
+    }
+
+    @Test
     void rejectsTraversalMissingFilesAndSymlinksAndDeletesStoredFiles() throws Exception {
         CandidateResumeStorageService storage = new CandidateResumeStorageService(directory.toString(), 1_000_000, "pdf");
         assertThrows(ResourceNotFoundException.class, () -> storage.resolve("../resume.pdf"));
@@ -62,5 +120,17 @@ class CandidateResumeStorageServiceTest {
                 CandidateTestDocuments.pdf("Candidate")));
         String stored = storage.store(valid); storage.delete(stored);
         assertThrows(ResourceNotFoundException.class, () -> storage.resolve(stored));
+    }
+
+    private byte[] zip(Map<String, String> entries) throws Exception {
+        try (ByteArrayOutputStream output = new ByteArrayOutputStream(); ZipOutputStream archive = new ZipOutputStream(output)) {
+            for (Map.Entry<String, String> entry : entries.entrySet()) {
+                archive.putNextEntry(new ZipEntry(entry.getKey()));
+                archive.write(entry.getValue().getBytes(java.nio.charset.StandardCharsets.UTF_8));
+                archive.closeEntry();
+            }
+            archive.finish();
+            return output.toByteArray();
+        }
     }
 }

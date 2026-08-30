@@ -6,6 +6,7 @@ import BasicProfileForm from "../components/candidate/BasicProfileForm";
 import SkillsEditor from "../components/candidate/SkillsEditor";
 import CollectionEditor from "../components/candidate/CollectionEditor";
 import QualityReport from "../components/candidate/QualityReport";
+import ApplicationActivity from "../components/candidate/ApplicationActivity";
 import {
   candidateProfileError, deleteCandidateResume, getCandidateProfile, reparseCandidateResume,
   updateCandidateProfile, uploadCandidateResume,
@@ -100,6 +101,7 @@ export default function MyProfile() {
     <div className="min-h-screen bg-slate-50 flex flex-col"><Header />
       <main className="flex-1 max-w-6xl w-full mx-auto px-4 py-8">
         <div className="mb-7"><p className="text-sm font-bold uppercase tracking-widest text-indigo-600">Candidate intelligence</p><h1 className="text-3xl sm:text-4xl font-extrabold text-slate-900 mt-1">Profile and resume</h1><p className="text-slate-500 mt-2">Review every parsed field, make corrections, and improve your resume using transparent heuristic feedback.</p></div>
+        <div className="mb-8"><ApplicationActivity /></div>
         {loading && <div role="status" className="bg-white rounded-3xl border border-slate-200 p-10 animate-pulse text-slate-500">Loading candidate profile…</div>}
         {!loading && loadError && <div role="alert" className="bg-white rounded-3xl border border-red-200 p-10 text-center"><p className="font-bold text-red-700">{loadError}</p><button type="button" onClick={load} className="mt-5 px-5 py-2 rounded-xl bg-indigo-600 text-white font-bold">Retry</button></div>}
         {!loading && !loadError && profile && draft && (

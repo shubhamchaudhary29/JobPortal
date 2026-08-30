@@ -8,6 +8,7 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 import org.springframework.web.multipart.MultipartFile;
 
+import java.io.ByteArrayInputStream;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.AtomicMoveNotSupportedException;
@@ -20,14 +21,18 @@ import java.nio.file.attribute.PosixFilePermission;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.util.Arrays;
+import java.util.HashSet;
 import java.util.HexFormat;
 import java.util.Locale;
 import java.util.Set;
 import java.util.UUID;
+import java.util.zip.ZipInputStream;
 
 @Service
 public class CandidateResumeStorageService {
     private static final Set<String> GENERIC_MIME = Set.of("application/octet-stream", "application/zip");
+    private static final Set<String> REQUIRED_DOCX_ENTRIES = Set.of("[Content_Types].xml", "_rels/.rels", "word/document.xml");
+    private static final int MAX_DOCX_ENTRIES = 2_048;
     private final Path directory;
     private final long maxBytes;
     private final Set<String> allowedFormats;
@@ -106,8 +111,46 @@ public class CandidateResumeStorageService {
             return ResumeDocumentType.PDF;
         }
         if (bytes.length >= 4 && bytes[0] == 'P' && bytes[1] == 'K' && (bytes[2] == 3 || bytes[2] == 5 || bytes[2] == 7)
-                && (bytes[3] == 4 || bytes[3] == 6 || bytes[3] == 8)) return ResumeDocumentType.DOCX;
+                && (bytes[3] == 4 || bytes[3] == 6 || bytes[3] == 8)) {
+            validateDocxPackage(bytes);
+            return ResumeDocumentType.DOCX;
+        }
         throw new UnsupportedResumeTypeException("Resume content is not a valid PDF or DOCX");
+    }
+
+    private void validateDocxPackage(byte[] bytes) {
+        Set<String> entries = new HashSet<>();
+        long maximumExpandedBytes = Math.min(100L * 1024 * 1024, Math.max(1024L * 1024, maxBytes * 20));
+        long expandedBytes = 0;
+        int entryCount = 0;
+        byte[] buffer = new byte[8192];
+        try (ZipInputStream archive = new ZipInputStream(new ByteArrayInputStream(bytes))) {
+            for (var entry = archive.getNextEntry(); entry != null; entry = archive.getNextEntry()) {
+                if (++entryCount > MAX_DOCX_ENTRIES) throw invalidDocx();
+                String name = entry.getName();
+                if (unsafeArchiveName(name) || !entries.add(name)) throw invalidDocx();
+                int read;
+                while ((read = archive.read(buffer)) != -1) {
+                    expandedBytes += read;
+                    if (expandedBytes > maximumExpandedBytes) throw invalidDocx();
+                }
+                archive.closeEntry();
+            }
+        } catch (UnsupportedResumeTypeException ex) {
+            throw ex;
+        } catch (IOException ex) {
+            throw invalidDocx();
+        }
+        if (!entries.containsAll(REQUIRED_DOCX_ENTRIES)) throw invalidDocx();
+    }
+
+    private boolean unsafeArchiveName(String name) {
+        if (name == null || name.isBlank() || name.startsWith("/") || name.startsWith("\\") || name.contains("\\")) return true;
+        return Arrays.stream(name.split("/", -1)).anyMatch(part -> part.equals(".."));
+    }
+
+    private UnsupportedResumeTypeException invalidDocx() {
+        return new UnsupportedResumeTypeException("Resume content is not a valid DOCX package");
     }
 
     private void validateMime(String rawMime, ResumeDocumentType type) {

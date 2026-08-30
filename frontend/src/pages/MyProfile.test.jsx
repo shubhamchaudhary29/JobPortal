@@ -1,6 +1,7 @@
 // @vitest-environment jsdom
 import "@testing-library/jest-dom/vitest";
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { MemoryRouter } from "react-router-dom";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const api = vi.hoisted(() => ({
@@ -9,6 +10,9 @@ const api = vi.hoisted(() => ({
   candidateProfileError: vi.fn(),
 }));
 vi.mock("../services/candidate-profile-service", () => api);
+const activityApi = vi.hoisted(() => ({ getMyProfile: vi.fn(), getMyApplications: vi.fn() }));
+vi.mock("../services/user-service", () => ({ getMyProfile: activityApi.getMyProfile }));
+vi.mock("../services/application-service", () => ({ getMyApplications: activityApi.getMyApplications }));
 vi.mock("../components/Header", () => ({ default: () => <div data-testid="header" /> }));
 vi.mock("../components/Footer", () => ({ default: () => <div data-testid="footer" /> }));
 
@@ -28,17 +32,22 @@ const base = {
   parsingWarnings: [], quality,
 };
 
+const renderPage = () => render(<MemoryRouter><MyProfile /></MemoryRouter>);
+
 describe("candidate profile page", () => {
   beforeEach(() => {
     Object.values(api).forEach((mock) => mock.mockReset());
+    Object.values(activityApi).forEach((mock) => mock.mockReset());
     api.candidateProfileError.mockImplementation((error, fallback) => error?.safe || fallback);
     api.getCandidateProfile.mockResolvedValue(base);
     api.updateCandidateProfile.mockImplementation((payload) => Promise.resolve({ ...base, ...payload }));
+    activityApi.getMyProfile.mockResolvedValue({ totalApplications: 0, acceptedApplications: 0, rejectedApplications: 0, pendingApplications: 0 });
+    activityApi.getMyApplications.mockResolvedValue([]);
   });
   afterEach(() => cleanup());
 
   it("renders loading, empty resume/profile collections, and heuristic quality report", async () => {
-    render(<MyProfile />);
+    renderPage();
     expect(screen.getByRole("status")).toHaveTextContent("Loading candidate profile");
     expect(await screen.findByText("No resume uploaded. Your editable profile is still available below.")).toBeInTheDocument();
     expect(screen.getByText("No skills added yet.")).toBeInTheDocument();
@@ -49,7 +58,7 @@ describe("candidate profile page", () => {
   });
 
   it("edits profile, adds/removes skills, prevents duplicates, and submits no ownership metadata", async () => {
-    render(<MyProfile />); await screen.findByDisplayValue("Test Candidate");
+    renderPage(); await screen.findByDisplayValue("Test Candidate");
     fireEvent.change(screen.getByLabelText("Phone"), { target: { value: "+91 98765 43210" } });
     const skill = screen.getByLabelText("New skill");
     fireEvent.change(skill, { target: { value: "Java" } }); fireEvent.click(screen.getByRole("button", { name: "Add skill" }));
@@ -71,7 +80,7 @@ describe("candidate profile page", () => {
       resume: { filename: "resume.pdf", size: 2048, parsingStatus: "PARTIALLY_PARSED", uploadedAt: "2026-08-30T10:00:00Z" },
       parsingWarnings: ["Review the detected location."] };
     api.uploadCandidateResume.mockImplementation((_file, onProgress) => { onProgress(60); return Promise.resolve(parsed); });
-    render(<MyProfile />); await screen.findByText("No resume uploaded. Your editable profile is still available below.");
+    renderPage(); await screen.findByText("No resume uploaded. Your editable profile is still available below.");
     const file = new File(["pdf content"], "resume.pdf", { type: "application/pdf" });
     fireEvent.change(document.querySelector('input[type="file"]'), { target: { files: [file] } });
     expect(await screen.findByText("resume.pdf")).toBeInTheDocument();
@@ -81,7 +90,7 @@ describe("candidate profile page", () => {
   });
 
   it("shows client and server upload failures plus OCR parsing guidance", async () => {
-    render(<MyProfile />); await screen.findByText("No resume uploaded. Your editable profile is still available below.");
+    renderPage(); await screen.findByText("No resume uploaded. Your editable profile is still available below.");
     const input = document.querySelector('input[type="file"]');
     fireEvent.change(input, { target: { files: [new File(["text"], "resume.txt", { type: "text/plain" })] } });
     expect(screen.getByRole("alert")).toHaveTextContent("Choose a PDF or DOCX");
@@ -91,7 +100,7 @@ describe("candidate profile page", () => {
     cleanup();
 
     api.getCandidateProfile.mockResolvedValue({ ...base, resume: { filename: "scan.pdf", size: 1000, parsingStatus: "OCR_REQUIRED" }, parsingWarnings: ["OCR required"] });
-    render(<MyProfile />);
+    renderPage();
     expect(await screen.findByText(/Too little selectable text/)).toBeInTheDocument();
   });
 
@@ -100,7 +109,7 @@ describe("candidate profile page", () => {
       resume: { filename: "resume.pdf", size: 1000, parsingStatus: "PARSED" } });
     vi.spyOn(window, "confirm").mockReturnValue(true);
     api.deleteCandidateResume.mockResolvedValue({});
-    render(<MyProfile />);
+    renderPage();
     expect(await screen.findByRole("alert")).toHaveTextContent("Network unavailable");
     fireEvent.click(screen.getByRole("button", { name: "Retry" }));
     expect(await screen.findByText("resume.pdf")).toBeInTheDocument();
@@ -108,5 +117,31 @@ describe("candidate profile page", () => {
     fireEvent.click(screen.getByRole("button", { name: "Delete resume" }));
     expect(await screen.findByText(/profile data was retained/i)).toBeInTheDocument();
     expect(api.deleteCandidateResume).toHaveBeenCalledTimes(1);
+  });
+
+  it("retains application overview, recent applications, progress, job navigation, and the full applications link", async () => {
+    activityApi.getMyProfile.mockResolvedValue({
+      totalApplications: 6, acceptedApplications: 1, rejectedApplications: 1, pendingApplications: 4,
+    });
+    activityApi.getMyApplications.mockResolvedValue([{
+      applicationId: "application-1", jobId: "job-1", jobTitle: "Senior Engineer", jobCompany: "Acme Labs",
+      jobLocation: "Bengaluru", status: "IN_REVIEW", appliedAt: "2026-08-29T10:00:00Z",
+    }]);
+
+    renderPage();
+
+    expect(await screen.findByRole("heading", { name: "Application Overview" })).toBeInTheDocument();
+    expect(screen.getByLabelText("Total Applications: 6")).toBeInTheDocument();
+    expect(screen.getByLabelText("Accepted: 1")).toBeInTheDocument();
+    expect(screen.getByLabelText("Rejected: 1")).toBeInTheDocument();
+    expect(screen.getByLabelText("In Progress: 4")).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Recent Applications" })).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "Senior Engineer" })).toHaveAttribute("href", "/jobs/job-1");
+    expect(screen.getByText(/Acme Labs/)).toHaveTextContent("Bengaluru");
+    expect(screen.getAllByText("In Review").length).toBeGreaterThan(1);
+    expect(screen.getByText("Aug 29, 2026")).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: /View All Applications/ })).toHaveAttribute("href", "/my-applications");
+    expect(screen.getByText("Resume Quality Score")).toBeInTheDocument();
+    expect(screen.getByText("No resume uploaded. Your editable profile is still available below.")).toBeInTheDocument();
   });
 });
