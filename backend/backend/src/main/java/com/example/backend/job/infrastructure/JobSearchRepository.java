@@ -7,6 +7,7 @@ import org.springframework.data.mongodb.core.MongoTemplate;
 import org.springframework.data.mongodb.core.query.Criteria;
 import org.springframework.data.mongodb.core.query.Query;
 import org.springframework.data.mongodb.core.query.TextCriteria;
+import org.springframework.data.domain.Sort;
 import org.springframework.stereotype.Repository;
 
 import java.util.ArrayList;
@@ -31,5 +32,23 @@ public class JobSearchRepository {
         long total = mongo.count(Query.of(query).limit(-1).skip(-1), JobDocument.class);
         query.with(pageable);
         return new PageImpl<>(mongo.find(query, JobDocument.class), pageable, total);
+    }
+
+    /** Bounded provider-neutral input window for application-side deterministic ranking. */
+    public List<JobDocument> matchingCandidates(String location, String source, int limit) {
+        List<Criteria> filters = new ArrayList<>();
+        filters.add(new Criteria().orOperator(Criteria.where("active").is(true),
+                Criteria.where("active").exists(false), Criteria.where("active").is(null)));
+        filters.add(new Criteria().orOperator(Criteria.where("reconciliationTargetId").exists(false),
+                Criteria.where("reconciliationTargetId").is(null)));
+        filters.add(new Criteria().orOperator(Criteria.where("reconciliationConflictId").exists(false),
+                Criteria.where("reconciliationConflictId").is(null)));
+        if (location != null && !location.isBlank())
+            filters.add(Criteria.where("location").regex(Pattern.compile(Pattern.quote(location.trim()), Pattern.CASE_INSENSITIVE)));
+        if (source != null && !source.isBlank()) filters.add(Criteria.where("source").is(source.trim().toLowerCase()));
+        Query query = new Query(new Criteria().andOperator(filters));
+        query.with(Sort.by(Sort.Order.desc("createdAt"), Sort.Order.asc("_id")));
+        query.limit(limit);
+        return mongo.find(query, JobDocument.class);
     }
 }

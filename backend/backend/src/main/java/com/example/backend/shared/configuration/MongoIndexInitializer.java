@@ -49,6 +49,9 @@ public class MongoIndexInitializer implements ApplicationRunner {
         jobs.ensureIndex(new Index().on("recruiterId", Sort.Direction.ASC).on("active", Sort.Direction.ASC)
                 .on("inactiveAt", Sort.Direction.ASC).on("_id", Sort.Direction.ASC)
                 .named("jobs_cleanup_eligibility_idx"));
+        jobs.ensureIndex(new Index().on("active", Sort.Direction.ASC)
+                .on("createdAt", Sort.Direction.DESC).on("_id", Sort.Direction.ASC)
+                .named("jobs_matching_window_v2_idx"));
         jobs.ensureIndex(new TextIndexDefinition.TextIndexDefinitionBuilder().onField("title").onField("description")
                 .onField("company").named("jobs_search_text_idx").build());
         mongo.indexOps("aggregation_conflicts").ensureIndex(new Index()

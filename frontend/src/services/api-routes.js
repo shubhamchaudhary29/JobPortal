@@ -18,7 +18,9 @@ export const apiRoutes = Object.freeze({
   jobs: Object.freeze({
     collection: `${API_V1}/jobs`,
     mine: `${API_V1}/jobs/mine`,
+    matched: `${API_V1}/jobs/matched`,
     byId: (id) => `${API_V1}/jobs/${encodeURIComponent(id)}`,
+    match: (id) => `${API_V1}/jobs/${encodeURIComponent(id)}/match`,
     applications: (id) => `${API_V1}/jobs/${encodeURIComponent(id)}/applications`,
     applicationStatus: (id) => `${API_V1}/jobs/${encodeURIComponent(id)}/application-status`,
   }),

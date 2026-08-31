@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import Header from "../components/Header";
+import JobCard from "../components/jobs/JobCard";
 import { getAllJobs } from "../services/job-service";
 
 export default function Jobs() {
@@ -78,48 +79,7 @@ export default function Jobs() {
           </div>
         ) : (
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-            {jobs.map((job) => (
-              <div
-                key={job._id || job.id}
-                onClick={() => navigate(`/jobs/${job._id || job.id}`)}
-                className="group bg-white rounded-3xl p-6 border border-slate-100 shadow-sm hover:shadow-xl hover:border-indigo-100 hover:-translate-y-1 transition-all duration-300 cursor-pointer flex flex-col justify-between"
-              >
-                <div>
-                  <div className="flex justify-between items-start mb-5">
-                    <div className="w-14 h-14 rounded-2xl bg-gradient-to-br from-indigo-50 to-purple-50 flex items-center justify-center text-indigo-600 font-bold text-2xl shadow-inner">
-                      {job.company?.charAt(0)}
-                    </div>
-                    <span className="bg-green-50 text-green-600 text-xs px-3 py-1.5 rounded-full font-bold uppercase tracking-wide">
-                      Actively Hiring
-                    </span>
-                  </div>
-                  
-                  <h3 className="text-xl font-bold text-slate-900 group-hover:text-indigo-600 transition-colors line-clamp-1">
-                    {job.title}
-                  </h3>
-                  <p className="text-slate-500 font-medium mt-1">{job.company}</p>
-                  
-                  <div className="mt-5 flex flex-wrap gap-2">
-                    <span className="inline-flex items-center text-xs font-semibold text-slate-600 bg-slate-100 px-2.5 py-1.5 rounded-lg">
-                      📍 {job.location}
-                    </span>
-                    <span className="inline-flex items-center text-xs font-semibold text-slate-600 bg-slate-100 px-2.5 py-1.5 rounded-lg">
-                      💼 {job.experience}+ Yrs
-                    </span>
-                    <span className="inline-flex items-center text-xs font-semibold text-slate-600 bg-slate-100 px-2.5 py-1.5 rounded-lg">
-                      💰 ₹{job.salary ? (job.salary / 100000).toFixed(1) + ' LPA' : 'Not Disclosed'}
-                    </span>
-                  </div>
-                </div>
-
-                <div className="mt-6 pt-5 border-t border-slate-50 flex items-center justify-between">
-                   <span className="text-sm font-medium text-slate-400">Apply instantly</span>
-                   <span className="text-indigo-600 text-sm font-bold group-hover:translate-x-2 transition-transform flex items-center gap-1">
-                     View Role <span className="text-lg">→</span>
-                   </span>
-                </div>
-              </div>
-            ))}
+            {jobs.map((job) => <JobCard key={job._id || job.id} job={job} />)}
           </div>
         )}
 

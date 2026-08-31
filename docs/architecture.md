@@ -8,7 +8,8 @@ The backend is a feature-oriented modular monolith under `com.example.backend`:
 auth/{api,application,infrastructure}
 user/{api,application,domain,infrastructure}
 candidate/{api,application,domain,infrastructure}
-job/{api,application,infrastructure}
+matching/{api,application,config,domain,extraction,infrastructure}
+job/{api,application,domain,infrastructure}
 application/{api,application,domain,infrastructure}
 messaging/{api,application,infrastructure,security}
 integration/{adzuna,greenhouse,lever,aggregation,reliability}
@@ -59,6 +60,11 @@ Provider-wide and optional Greenhouse/Lever employer-specific manual runs enter 
 
 The STOMP/SockJS handshake remains at `/ws`, with messages published to `/app/chat.send`. Its request property
 is `conversationId`.
+
+Candidate-only matching is exposed by `GET /api/v1/jobs/{jobId}/match` and `GET /api/v1/jobs/matched`.
+Authentication supplies the candidate identity; match routes accept no candidate identifier. Versioned invariant
+job features are persisted on canonical jobs, while candidate-specific scores are calculated on demand over a
+bounded Mongo-prefiltered window. See [Job Matching Engine v1.2](job-matching.md) for the scoring contract.
 
 ## Contracts and mapping
 

@@ -109,6 +109,13 @@ export default function Header() {
                     {role === "USER" && (
                       <>
                         <Link
+                          to="/jobs/matches"
+                          className="block px-4 py-2.5 text-sm font-medium text-slate-700 hover:bg-slate-50 hover:text-indigo-600"
+                          onClick={() => setShowDropdown(false)}
+                        >
+                          ✨ Best Matches
+                        </Link>
+                        <Link
                           to="/my-profile"
                           className="block px-4 py-2.5 text-sm font-medium text-slate-700 hover:bg-slate-50 hover:text-indigo-600"
                           onClick={() => setShowDropdown(false)}

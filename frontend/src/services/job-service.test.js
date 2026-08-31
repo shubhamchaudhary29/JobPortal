@@ -11,4 +11,14 @@ describe("paginated job API", () => {
     await expect(getAllJobs({ page: 2, size: 20, q: "java" })).resolves.toEqual(page);
     expect(apiGet).toHaveBeenCalledWith("/api/v1/jobs", { params: { page: 2, size: 20, q: "java" } });
   });
+
+  it("uses candidate-derived matching routes without a candidate identifier", async () => {
+    apiGet.mockResolvedValue({ data: { content: [] } });
+    const { getMatchedJobs, getJobMatch } = await import("./job-service");
+    await getMatchedJobs({ page: 1, minMatch: 75 });
+    expect(apiGet).toHaveBeenCalledWith("/api/v1/jobs/matched", { params: { page: 1, minMatch: 75 } });
+    apiGet.mockResolvedValue({ data: { jobId: "job/a" } });
+    await getJobMatch("job/a");
+    expect(apiGet).toHaveBeenCalledWith("/api/v1/jobs/job%2Fa/match");
+  });
 });
