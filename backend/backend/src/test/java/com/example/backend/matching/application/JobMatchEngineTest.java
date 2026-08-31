@@ -63,6 +63,9 @@ class JobMatchEngineTest {
         var result = engine.calculate(candidate(List.of("Java", "Spring"), "Frontend Engineer"), javascript);
         assertEquals(List.of("JavaScript", "Spring Boot"), result.missingSkills());
         assertTrue(result.matchedSkills().isEmpty());
+        var springOnly = engine.calculate(candidate(List.of("Spring Boot"), "Backend Engineer"),
+                job("Backend Engineer", "Requirements: Spring.", "Remote", null));
+        assertEquals(List.of("Spring"), springOnly.missingSkills());
     }
 
     @Test
@@ -89,8 +92,8 @@ class JobMatchEngineTest {
         CandidateProfileDocument exact = candidate(List.of("Java"), "Software Engineer");
         exact.setExperience(List.of(experience("2024-09", "2026-08", false, "Software Engineer", "FULL_TIME")));
         assertEquals(100.0, engine.calculate(exact, job("Software Engineer", "Requires 2 years experience. Java", "Pune", null)).experienceScore());
-        assertTrue(engine.calculate(candidate(List.of("Java"), "Software Engineer"),
-                job("Software Engineer", "Requires 2 years experience. Java", "Pune", null)).experienceScore() == null);
+        assertEquals(0.0, engine.calculate(candidate(List.of("Java"), "Software Engineer"),
+                job("Software Engineer", "Requires 2 years experience. Java", "Pune", null)).experienceScore());
         CandidateProfileDocument below = candidate(List.of("Java"), "Software Engineer");
         below.setExperience(List.of(experience("2026-03", "2026-08", false, "Intern", "INTERNSHIP")));
         assertTrue(engine.calculate(below, job("Software Engineer", "Requires 2 years experience. Java", "Pune", null)).experienceScore() < 100);
@@ -118,6 +121,12 @@ class JobMatchEngineTest {
         assertTrue(mismatch.locationScore() <= 25);
         assertEquals(20.0, mismatch.employmentTypeScore());
         assertNull(mismatch.educationScore());
+
+        CandidateProfileDocument unrelatedDegree = candidate(List.of("Java"), "Backend Engineer");
+        var arts = new CandidateProfileDocument.Education(); arts.setDegree("Diploma"); arts.setFieldOfStudy("History");
+        unrelatedDegree.setEducation(List.of(arts));
+        assertEquals(0.0, engine.calculate(unrelatedDegree,
+                job("Backend Engineer", "B.Tech in Computer Science required. Java.", "Pune", null)).educationScore());
     }
 
     @Test
@@ -142,11 +151,12 @@ class JobMatchEngineTest {
     }
 
     @Test
-    void statedEducationWithoutCandidateEducationIsUnknownNotAnAutomaticZero() {
+    void statedEducationWithoutCandidateEducationIsARealCandidateGap() {
         var result = engine.calculate(candidate(List.of("Java"), "Backend Engineer"),
                 job("Backend Engineer", "Bachelor's degree in CS required. Java.", "Pune", null));
-        assertNull(result.educationScore());
-        assertFalse(result.normalizedWeights().containsKey("education"));
+        assertEquals(0.0, result.educationScore());
+        assertTrue(result.normalizedWeights().containsKey("education"));
+        assertTrue(result.gaps().stream().anyMatch(value -> value.contains("No education")));
     }
 
     @Test
@@ -170,6 +180,28 @@ class JobMatchEngineTest {
         assertEquals(MatchLevel.LOW_DATA, result.matchLevel());
         assertFalse(Double.isNaN(result.overallScore()));
         assertTrue(result.explanation().stream().anyMatch(value -> value.contains("too little structured data")));
+        assertEquals(0.0, result.skillScore());
+        assertEquals(0.0, result.titleScore());
+        assertEquals(0.0, result.experienceScore());
+    }
+
+    @Test
+    void zeroWeightOnlyEvidenceDoesNotDivideByZeroOrInventANormalizedWeight() {
+        MatchingProperties zeroSkillWeight = new MatchingProperties();
+        zeroSkillWeight.setSkillsWeight(0);
+        zeroSkillWeight.setExperienceWeight(60);
+        Clock clock = Clock.fixed(Instant.parse("2026-08-30T00:00:00Z"), ZoneOffset.UTC);
+        var normalizer = new SkillNormalizer();
+        var roles = new RoleNormalizer();
+        var work = new WorkAttributeNormalizer();
+        var configuredEngine = new JobMatchEngine(zeroSkillWeight, normalizer, roles, work,
+                new CandidateExperienceCalculator(clock));
+
+        var result = configuredEngine.calculate(candidate(List.of("Java"), null),
+                job("Unusual role", "Java", null, null));
+        assertEquals(0.0, result.overallScore());
+        assertTrue(result.normalizedWeights().isEmpty());
+        assertFalse(Double.isNaN(result.overallScore()));
     }
 
     private JobDocument job(String title, String description, String location, String employmentType) {

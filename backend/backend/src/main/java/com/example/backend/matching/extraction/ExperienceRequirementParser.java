@@ -13,6 +13,8 @@ public class ExperienceRequirementParser {
     private static final Pattern PLUS = Pattern.compile("(?i)\\b(\\d{1,2})\\s*\\+\\s*(?:years?|yrs?)\\b");
     private static final Pattern MINIMUM = Pattern.compile("(?i)\\b(?:minimum|min\\.?|at least)\\s*(?:of\\s*)?(\\d{1,2})\\s*(?:years?|yrs?)\\b");
     private static final Pattern SIMPLE = Pattern.compile("(?i)\\b(\\d{1,2})\\s*(?:years?|yrs?)\\s+(?:of\\s+)?experience\\b");
+    private static final Pattern FRESHER = Pattern.compile(
+            "(?i)\\b(fresher|entry[ -]?level|no experience|required experience: 0)\\b");
 
     public Requirement parse(String title, String description, double structuredYears, Seniority seniority) {
         String text = safe(title) + " " + safe(description);
@@ -24,7 +26,7 @@ public class ExperienceRequirementParser {
         if (minimum.find()) return new Requirement(months(minimum.group(1)), null);
         Matcher simple = SIMPLE.matcher(text);
         if (simple.find()) return new Requirement(months(simple.group(1)), null);
-        if (text.matches(".*\\b(fresher|entry[ -]?level|no experience|required experience: 0)\\b.*")) return new Requirement(0, 24);
+        if (FRESHER.matcher(text).find()) return new Requirement(0, 24);
         if (structuredYears > 0) return new Requirement((int) Math.round(structuredYears * 12), null);
         if (seniority == Seniority.INTERN || seniority == Seniority.ENTRY) return new Requirement(0, 24);
         if (seniority == Seniority.JUNIOR) return new Requirement(0, 36);

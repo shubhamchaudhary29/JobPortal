@@ -34,6 +34,15 @@ class JobFeatureExtractorTest {
         assertTrue(features.getPreferredSkills().containsAll(java.util.List.of("Docker", "AWS")));
         assertTrue(features.getNormalizedSkills().contains("JavaScript"));
         assertEquals(RoleFamily.BACKEND, features.getRoleFamily());
+
+        var sections = extractor.extract(job("Engineer", "Requirements:\n- Java\n- SQL\nPreferred:\n- Docker\nAbout us:\nWe use Python internally."));
+        assertTrue(sections.getRequiredSkills().containsAll(java.util.List.of("Java", "SQL")));
+        assertTrue(sections.getPreferredSkills().contains("Docker"));
+        assertFalse(sections.getRequiredSkills().contains("Python"));
+        assertFalse(sections.getPreferredSkills().contains("Python"));
+
+        var spring = extractor.extract(job("Backend Engineer", "Requirements: Spring and Spring Boot."));
+        assertTrue(spring.getRequiredSkills().containsAll(java.util.List.of("Spring", "Spring Boot")));
     }
 
     @Test
@@ -49,6 +58,8 @@ class JobFeatureExtractorTest {
         assertNotNull(features.getSourceHash());
         assertFalse(extractor.extract(job("Product Manager", "It is a role for a bachelor's graduate."))
                 .getEducationRequirements().contains("COMPUTING_FIELD"));
+        assertTrue(extractor.extract(job("Engineer", "No degree required; equivalent experience is welcome."))
+                .getEducationRequirements().isEmpty());
     }
 
     @Test
@@ -59,6 +70,7 @@ class JobFeatureExtractorTest {
         assertEquals(WorkMode.REMOTE, fresher.getWorkMode());
         assertEquals("INTERNSHIP", fresher.getEmploymentType());
         assertDoesNotThrow(() -> extractor.extract(job("Unusual ✨ role", null)));
+        assertEquals("UNKNOWN", extractor.extract(job("Unusual ✨ role", null)).getEmploymentType());
     }
 
     @Test
@@ -89,6 +101,15 @@ class JobFeatureExtractorTest {
         var mid = extractor.extract(job("Mid-level Backend Engineer", "Java services."));
         assertEquals(Seniority.MID, mid.getSeniority());
         assertEquals(36, mid.getMinimumExperienceMonths());
+
+        assertEquals(Seniority.SENIOR, extractor.extract(job("Software Engineer", "At least 5 years of experience required."))
+                .getSeniority());
+        assertEquals(RoleFamily.CLOUD, extractor.extract(job("Cloud Engineer", "AWS infrastructure."))
+                .getRoleFamily());
+        assertEquals(RoleFamily.QA, extractor.extract(job("QA Engineer", "Test automation."))
+                .getRoleFamily());
+        assertEquals(RoleFamily.MOBILE, extractor.extract(job("Android Developer", "Build mobile applications."))
+                .getRoleFamily());
 
         String large = "noise ".repeat(20_000) + "Java";
         assertDoesNotThrow(() -> extractor.extract(job("Engineer", large)));

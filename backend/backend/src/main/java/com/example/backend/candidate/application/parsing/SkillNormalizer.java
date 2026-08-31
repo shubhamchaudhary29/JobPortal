@@ -47,6 +47,7 @@ public class SkillNormalizer {
         define("RabbitMQ", "Messaging", "rabbitmq", "rabbit mq");
         define("HTML", "Frontend", "html", "html5");
         define("CSS", "Frontend", "css", "css3");
+        extractionDefinitions.sort(Comparator.comparingInt((Definition definition) -> definition.alias().length()).reversed());
     }
 
     public Skill normalize(String raw, String source, Double confidence) {
@@ -72,14 +73,8 @@ public class SkillNormalizer {
     public List<Skill> extractKnownSkills(String text) {
         if (text == null || text.isBlank()) return List.of();
         Map<String, FoundSkill> found = new LinkedHashMap<>();
-        extractionDefinitions.stream()
-                .sorted(Comparator.comparingInt((Definition definition) -> definition.alias().length()).reversed())
-                .forEach(definition -> {
-                    if (definition.canonical().equals("Spring")
-                            && Pattern.compile("(?i)\\bspring[ _-]?boot\\b").matcher(text).find()) return;
-                    String expression = "(?i)(?<![\\p{L}\\p{N}+#])" + Pattern.quote(definition.alias())
-                            + "(?![\\p{L}\\p{N}+#])";
-                    var matcher = Pattern.compile(expression).matcher(text);
+        extractionDefinitions.forEach(definition -> {
+                    var matcher = definition.extractionPattern().matcher(text);
                     if (matcher.find()) {
                         Skill skill = new Skill(definition.canonical(), definition.alias().equalsIgnoreCase(definition.canonical())
                                 ? null : definition.alias(), definition.category(), 0.85, "RESUME_PARSER");
@@ -103,14 +98,21 @@ public class SkillNormalizer {
 
     private void define(String canonical, String category, String... values) {
         for (String value : values) {
-            Definition definition = new Definition(canonical, category, value);
+            Definition definition = definition(canonical, category, value);
             aliases.put(key(value), definition);
             extractionDefinitions.add(definition);
         }
-        Definition canonicalDefinition = new Definition(canonical, category, canonical);
+        Definition canonicalDefinition = definition(canonical, category, canonical);
         aliases.putIfAbsent(key(canonical), canonicalDefinition);
         if (extractionDefinitions.stream().noneMatch(value -> value.alias().equalsIgnoreCase(canonical)))
             extractionDefinitions.add(canonicalDefinition);
+    }
+
+    private Definition definition(String canonical, String category, String alias) {
+        String expression = "(?i)(?<![\\p{L}\\p{N}+#])" + Pattern.quote(alias)
+                + (canonical.equals("Spring") && alias.equalsIgnoreCase("spring") ? "(?![ _-]?boot)" : "")
+                + "(?![\\p{L}\\p{N}+#])";
+        return new Definition(canonical, category, alias, Pattern.compile(expression));
     }
 
     private String key(String value) {
@@ -133,6 +135,6 @@ public class SkillNormalizer {
         return result.toString();
     }
 
-    private record Definition(String canonical, String category, String alias) { }
+    private record Definition(String canonical, String category, String alias, Pattern extractionPattern) { }
     private record FoundSkill(int position, Skill skill) { }
 }

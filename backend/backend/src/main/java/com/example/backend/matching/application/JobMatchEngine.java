@@ -17,6 +17,7 @@ import org.springframework.stereotype.Component;
 import java.text.Normalizer;
 import java.util.ArrayList;
 import java.util.Collection;
+import java.util.Collections;
 import java.util.Comparator;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
@@ -25,9 +26,17 @@ import java.util.Locale;
 import java.util.Map;
 import java.util.OptionalInt;
 import java.util.Set;
+import java.util.regex.Pattern;
 
 @Component
 public class JobMatchEngine {
+    private static final Pattern NON_WORD = Pattern.compile("[^\\p{L}\\p{N} ]");
+    private static final Pattern WHITESPACE = Pattern.compile("\\s+");
+    private static final Pattern BACHELOR_DEGREE = Pattern.compile(".*\\b(b tech|b e|bachelor|bsc|b sc|bs)\\b.*");
+    private static final Pattern MASTER_DEGREE = Pattern.compile(".*\\b(m tech|mca|master|msc|m sc|ms)\\b.*");
+    private static final Pattern COMPUTING_FIELD = Pattern.compile(
+            ".*\\b(computer science|cse|information technology|computer engineering|it)\\b.*");
+    private static final Pattern LOCATION_NOISE = Pattern.compile("\\b(india|remote|hybrid|onsite)\\b");
     private final MatchingProperties properties;
     private final SkillNormalizer skillNormalizer;
     private final RoleNormalizer roleNormalizer;
@@ -61,22 +70,23 @@ public class JobMatchEngine {
         components.put("education", new Component(education, properties.getEducationWeight()));
         components.put("location", new Component(location, properties.getLocationWeight()));
         components.put("employmentType", new Component(employment, properties.getEmploymentTypeWeight()));
-        int availableWeight = components.values().stream().filter(Component::available).mapToInt(Component::weight).sum();
-        double weighted = components.values().stream().filter(Component::available)
+        int availableWeight = components.values().stream().filter(Component::contributes).mapToInt(Component::weight).sum();
+        double weighted = components.values().stream().filter(Component::contributes)
                 .mapToDouble(value -> value.score() * value.weight()).sum();
         double overall = availableWeight == 0 ? 0 : round(weighted / availableWeight);
         LinkedHashMap<String, Double> normalizedWeights = new LinkedHashMap<>();
         components.forEach((name, component) -> {
-            if (component.available()) normalizedWeights.put(name, round(component.weight() * 100.0 / availableWeight));
+            if (component.contributes()) normalizedWeights.put(name, round(component.weight() * 100.0 / availableWeight));
         });
 
         int candidateSignals = evidence.signalCount(candidate);
         int jobSignals = jobSignalCount(features, job);
-        int evaluated = (int) components.values().stream().filter(Component::available).count();
+        int evaluated = (int) components.values().stream().filter(Component::contributes).count();
         DataConfidence confidence = confidence(candidateSignals, jobSignals, evaluated);
         MatchLevel level = level(overall, confidence);
         List<String> strengths = strengths(skill, title, experience, education, location, employment, features, evidence);
-        List<String> gaps = gaps(skill, candidateSignals, features, evidence);
+        List<String> gaps = gaps(skill, title, experience, education, location, employment,
+                candidateSignals, features, evidence, candidate);
         List<String> explanation = new ArrayList<>(strengths);
         explanation.addAll(gaps);
         if (confidence == DataConfidence.LOW)
@@ -84,7 +94,8 @@ public class JobMatchEngine {
 
         return new JobMatchResult(job.getId(), overall, level, confidence, skill.matched(), skill.missingRequired(),
                 skill.matchedPreferred(), title, skill.score(), experience, education, location, employment,
-                Map.copyOf(normalizedWeights), List.copyOf(strengths), List.copyOf(gaps), List.copyOf(explanation),
+                Collections.unmodifiableMap(new LinkedHashMap<>(normalizedWeights)), List.copyOf(strengths),
+                List.copyOf(gaps), List.copyOf(explanation),
                 MatchingProperties.SCORING_VERSION);
     }
 
@@ -99,7 +110,6 @@ public class JobMatchEngine {
             if (value.getTechnologies() != null) rawSkills.addAll(value.getTechnologies());
         });
         Set<String> skills = new LinkedHashSet<>(skillNormalizer.normalizeTechnologyNames(rawSkills));
-        if (skills.contains("Spring Boot")) skills.add("Spring");
         Set<RoleFamily> roles = new LinkedHashSet<>();
         if (candidate.getPreferences() != null && candidate.getPreferences().getPreferredJobTitles() != null)
             candidate.getPreferences().getPreferredJobTitles().forEach(value -> addKnownRole(roles, value));
@@ -122,7 +132,8 @@ public class JobMatchEngine {
         List<String> matched = intersection(all, candidate);
         List<String> missing = difference(required, candidate);
         List<String> matchedPreferred = intersection(preferred, candidate);
-        if (all.isEmpty() || candidate.isEmpty()) return new SkillEvidence(null, matched, missing, matchedPreferred,
+        List<String> missingPreferred = difference(preferred, candidate);
+        if (all.isEmpty()) return new SkillEvidence(null, matched, missing, matchedPreferred, missingPreferred,
                 required.size(), preferred.size());
         double score;
         double requiredScore = coverage(required, candidate);
@@ -134,11 +145,13 @@ public class JobMatchEngine {
         else if (!required.isEmpty()) score = requiredScore;
         else if (!preferred.isEmpty()) score = preferredScore;
         else score = neutralScore;
-        return new SkillEvidence(round(score), matched, missing, matchedPreferred, required.size(), preferred.size());
+        return new SkillEvidence(round(score), matched, missing, matchedPreferred, missingPreferred,
+                required.size(), preferred.size());
     }
 
     private Double titleScore(Set<RoleFamily> candidateRoles, RoleFamily jobRole) {
-        if (candidateRoles.isEmpty() || jobRole == null || jobRole == RoleFamily.UNKNOWN) return null;
+        if (jobRole == null || jobRole == RoleFamily.UNKNOWN) return null;
+        if (candidateRoles.isEmpty()) return 0.0;
         return round(candidateRoles.stream().mapToDouble(value -> roleNormalizer.similarity(value, jobRole)).max().orElse(0));
     }
 
@@ -147,7 +160,7 @@ public class JobMatchEngine {
         Integer maximum = features.getMaximumExperienceMonths();
         if (minimum == null && maximum == null) return null;
         if (minimum != null && minimum == 0 && candidateMonths.isEmpty()) return 100.0;
-        if (candidateMonths.isEmpty()) return null;
+        if (candidateMonths.isEmpty()) return 0.0;
         int months = candidateMonths.getAsInt();
         if (minimum == null || months >= minimum) return 100.0;
         if (minimum == 0) return 100.0;
@@ -156,14 +169,14 @@ public class JobMatchEngine {
 
     private Double educationScore(CandidateProfileDocument candidate, List<String> requirements) {
         if (requirements == null || requirements.isEmpty()) return null;
-        if (candidate == null || candidate.getEducation() == null || candidate.getEducation().isEmpty()) return null;
+        if (candidate == null || candidate.getEducation() == null || candidate.getEducation().isEmpty()) return 0.0;
         boolean bachelor = false, master = false, computing = false;
         for (CandidateProfileDocument.Education value : candidate.getEducation()) {
             String degree = normalized(value.getDegree());
             String field = normalized(value.getFieldOfStudy());
-            bachelor |= degree.matches(".*\\b(b tech|b e|bachelor|bsc|b sc|bs)\\b.*");
-            master |= degree.matches(".*\\b(m tech|mca|master|msc|m sc|ms)\\b.*");
-            computing |= (degree + " " + field).matches(".*\\b(computer science|cse|information technology|computer engineering|it)\\b.*");
+            bachelor |= BACHELOR_DEGREE.matcher(degree).matches();
+            master |= MASTER_DEGREE.matcher(degree).matches();
+            computing |= COMPUTING_FIELD.matcher(degree + " " + field).matches();
         }
         int matched = 0;
         for (String requirement : requirements) {
@@ -203,7 +216,7 @@ public class JobMatchEngine {
     }
 
     private Double employmentScore(CandidateProfileDocument candidate, String jobType) {
-        if (jobType == null || candidate == null || candidate.getPreferences() == null
+        if (jobType == null || "UNKNOWN".equals(jobType) || candidate == null || candidate.getPreferences() == null
                 || candidate.getPreferences().getEmploymentTypes() == null
                 || candidate.getPreferences().getEmploymentTypes().isEmpty()) return null;
         Set<String> preferred = new LinkedHashSet<>();
@@ -218,8 +231,9 @@ public class JobMatchEngine {
                                    Double location, Double employment, JobMatchFeatures features,
                                    CandidateEvidence evidence) {
         List<String> values = new ArrayList<>();
-        if (skill.requiredCount() > 0)
-            values.add("Matched " + (skill.requiredCount() - skill.missingRequired().size()) + " of " + skill.requiredCount() + " required skills.");
+        int matchedRequired = skill.requiredCount() - skill.missingRequired().size();
+        if (matchedRequired > 0)
+            values.add("Matched " + matchedRequired + " of " + skill.requiredCount() + " required skills.");
         else if (!skill.matched().isEmpty()) values.add("Matched skills: " + String.join(", ", skill.matched()) + ".");
         if (title != null && title >= 70) values.add("The role aligns with your preferred or previous role family.");
         if (experience != null && experience >= 80) values.add("Your recorded experience is compatible with the job requirement.");
@@ -229,10 +243,34 @@ public class JobMatchEngine {
         return values;
     }
 
-    private List<String> gaps(SkillEvidence skill, int candidateSignals, JobMatchFeatures features,
-                              CandidateEvidence evidence) {
+    private List<String> gaps(SkillEvidence skill, Double title, Double experience, Double education,
+                              Double location, Double employment, int candidateSignals,
+                              JobMatchFeatures features, CandidateEvidence evidence,
+                              CandidateProfileDocument candidate) {
         List<String> values = new ArrayList<>();
         if (!skill.missingRequired().isEmpty()) values.add("Required skills not found in your profile: " + String.join(", ", skill.missingRequired()) + ".");
+        if (!skill.missingPreferred().isEmpty()) values.add("Preferred skills not found in your profile: " + String.join(", ", skill.missingPreferred()) + ".");
+        if (title != null && title <= 25 && !evidence.roles().isEmpty())
+            values.add("Your preferred or previous role family does not closely align with this role.");
+        if (experience != null && experience < 80) {
+            if (evidence.experienceMonths().isEmpty())
+                values.add("No valid dated experience was found for the stated experience requirement.");
+            else if (features.getMinimumExperienceMonths() != null)
+                values.add("Your profile shows approximately " + evidence.experienceMonths().getAsInt()
+                        + " months of experience; this job asks for at least "
+                        + features.getMinimumExperienceMonths() + " months.");
+        }
+        if (education != null && education < 80) {
+            boolean missingEducation = candidate == null || candidate.getEducation() == null
+                    || candidate.getEducation().isEmpty();
+            values.add(missingEducation
+                    ? "No education was listed for the job's stated education requirement."
+                    : "Your listed education does not fully match the stated requirement.");
+        }
+        if (location != null && location < 50)
+            values.add("The job location or work mode does not align with your stated preferences.");
+        if (employment != null && employment < 50)
+            values.add("The employment type does not match your stated preferences.");
         if (candidateSignals == 0) values.add("Your candidate profile has too little structured data for a reliable comparison.");
         else {
             if (evidence.skills().isEmpty() && features.getNormalizedSkills() != null && !features.getNormalizedSkills().isEmpty())
@@ -265,7 +303,7 @@ public class JobMatchEngine {
         if (features.getMinimumExperienceMonths() != null || features.getMaximumExperienceMonths() != null) count++;
         if (features.getEducationRequirements() != null && !features.getEducationRequirements().isEmpty()) count++;
         if (features.getWorkMode() != null && features.getWorkMode() != WorkMode.UNKNOWN) count++;
-        if (features.getEmploymentType() != null) count++;
+        if (features.getEmploymentType() != null && !"UNKNOWN".equals(features.getEmploymentType())) count++;
         if (job.getDescription() != null && job.getDescription().length() >= 200) count++;
         return count;
     }
@@ -288,14 +326,15 @@ public class JobMatchEngine {
     }
 
     private String normalized(String value) {
-        return value == null ? "" : Normalizer.normalize(value, Normalizer.Form.NFKC).toLowerCase(Locale.ROOT)
-                .replaceAll("[^\\p{L}\\p{N} ]", " ").replaceAll("\\s+", " ").trim();
+        if (value == null) return "";
+        String normalized = Normalizer.normalize(value, Normalizer.Form.NFKC).toLowerCase(Locale.ROOT);
+        return WHITESPACE.matcher(NON_WORD.matcher(normalized).replaceAll(" ")).replaceAll(" ").trim();
     }
 
     private String locationKey(String value) {
         String normalized = normalized(value).replace("new delhi", "delhi ncr").replace("gurugram", "delhi ncr")
                 .replace("gurgaon", "delhi ncr").replace("noida", "delhi ncr");
-        return normalized.replaceAll("\\b(india|remote|hybrid|onsite)\\b", "").replaceAll("\\s+", " ").trim();
+        return WHITESPACE.matcher(LOCATION_NOISE.matcher(normalized).replaceAll("")).replaceAll(" ").trim();
     }
 
     private double round(double value) {
@@ -303,9 +342,12 @@ public class JobMatchEngine {
         return Math.round(bounded * 10.0) / 10.0;
     }
 
-    private record Component(Double score, int weight) { boolean available() { return score != null; } }
+    private record Component(Double score, int weight) {
+        boolean contributes() { return score != null && weight > 0; }
+    }
     private record SkillEvidence(Double score, List<String> matched, List<String> missingRequired,
-                                 List<String> matchedPreferred, int requiredCount, int preferredCount) { }
+                                 List<String> matchedPreferred, List<String> missingPreferred,
+                                 int requiredCount, int preferredCount) { }
     private record CandidateEvidence(Set<String> skills, Set<RoleFamily> roles, OptionalInt experienceMonths) {
         int signalCount(CandidateProfileDocument candidate) {
             int count = 0;

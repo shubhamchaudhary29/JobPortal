@@ -14,6 +14,7 @@ import com.example.backend.job.domain.RoleFamily;
 import com.example.backend.job.domain.WorkMode;
 import com.example.backend.matching.extraction.RoleNormalizer;
 import com.example.backend.matching.extraction.WorkAttributeNormalizer;
+import com.example.backend.matching.infrastructure.JobFeatureStore;
 import com.example.backend.shared.error.BadRequestException;
 import com.example.backend.shared.error.ForbiddenException;
 import com.example.backend.shared.error.ResourceNotFoundException;
@@ -40,6 +41,7 @@ public class JobMatchingService {
     private final CandidateProfileRepository profiles;
     private final CurrentUserProvider currentUser;
     private final JobFeatureService features;
+    private final JobFeatureStore featureStore;
     private final JobMatchEngine engine;
     private final MatchingMetrics metrics;
     private final MatchingProperties properties;
@@ -48,7 +50,8 @@ public class JobMatchingService {
 
     public JobMatchingService(JobRepository jobs, JobSearchRepository search, UserRepository users,
                               CandidateProfileRepository profiles, CurrentUserProvider currentUser,
-                              JobFeatureService features, JobMatchEngine engine, MatchingMetrics metrics,
+                              JobFeatureService features, JobFeatureStore featureStore,
+                              JobMatchEngine engine, MatchingMetrics metrics,
                               MatchingProperties properties, RoleNormalizer roles,
                               WorkAttributeNormalizer workAttributes) {
         this.jobs = jobs;
@@ -57,6 +60,7 @@ public class JobMatchingService {
         this.profiles = profiles;
         this.currentUser = currentUser;
         this.features = features;
+        this.featureStore = featureStore;
         this.engine = engine;
         this.metrics = metrics;
         this.properties = properties;
@@ -94,7 +98,7 @@ public class JobMatchingService {
             JobMatchResult result = calculate(profile, job);
             if (result.overallScore() >= minMatch) scored.add(new ScoredJob(job, result));
         }
-        if (!extracted.isEmpty()) jobs.saveAll(extracted);
+        featureStore.persistAllIfCurrent(extracted);
         scored.sort(sortChoice.comparator());
         int total = scored.size();
         int from = (int) Math.min(total, (long) page * size);
@@ -116,7 +120,7 @@ public class JobMatchingService {
     }
 
     private void prepare(JobDocument job) {
-        if (features.prepare(job)) jobs.save(job);
+        if (features.prepare(job)) featureStore.persistIfCurrent(job);
     }
 
     private JobMatchResult calculate(CandidateProfileDocument profile, JobDocument job) {
@@ -143,6 +147,9 @@ public class JobMatchingService {
             throw new BadRequestException("minMatch must be between 0 and 100");
         if (location != null && location.length() > 100) throw new BadRequestException("location filter is too long");
         if (source != null && source.length() > 30) throw new BadRequestException("source filter is too long");
+        if (source != null && !source.isBlank()
+                && !List.of("manual", "adzuna", "greenhouse", "lever").contains(source.trim().toLowerCase(Locale.ROOT)))
+            throw new BadRequestException("Unsupported source filter");
     }
 
     private String normalizeEmployment(String value) {
@@ -166,7 +173,12 @@ public class JobMatchingService {
 
     private RoleFamily normalizeRole(String value) {
         if (value == null || value.isBlank()) return null;
-        RoleFamily normalized = roles.normalize(value);
+        RoleFamily normalized;
+        try {
+            normalized = RoleFamily.valueOf(value.trim().toUpperCase(Locale.ROOT).replace('-', '_').replace(' ', '_'));
+        } catch (IllegalArgumentException ignored) {
+            normalized = roles.normalize(value);
+        }
         if (normalized == RoleFamily.UNKNOWN) throw new BadRequestException("Unsupported role filter");
         return normalized;
     }

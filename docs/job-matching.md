@@ -10,7 +10,7 @@ The same structured candidate profile, canonical job, configuration, and scoring
 
 Recruiter-created and imported jobs use the same provider-neutral `JobFeatureExtractor`. It derives versioned invariant `matchFeatures` from the canonical job title, bounded description, location, employment metadata, and existing experience field. Ordinary repository saves run the extraction callback; the canonical aggregation upsert invokes the same service because Mongo aggregation updates bypass entity callbacks.
 
-Candidate-specific scores are calculated on demand and are never stored as candidate/job pair documents. Existing jobs without features are extracted and saved lazily when matched. Extraction is idempotent: `featureExtractionVersion` and a source hash prevent repeated work and invalidate features after relevant job content changes. There is no destructive migration and no provider call in a match request.
+Candidate-specific scores are calculated on demand and are never stored as candidate/job pair documents. Existing jobs without features are extracted lazily when matched. Lazy persistence uses bounded, conditional, feature-only Mongo updates: if canonical source content changed after it was read, the stale extraction is not written, and lifecycle/source-listing fields are never replaced. Extraction is idempotent: `featureExtractionVersion` and a source hash prevent repeated work and invalidate features after relevant job content changes. There is no destructive migration and no provider call in a match request.
 
 Personalized ranking queries only active, non-conflicted canonical jobs. Mongo prefilters location and source and returns a freshness-ordered window, configured by `matching.candidate-window` (default 500). The application scores that bounded window, applies structured role/work-mode/employment/minimum-score filters, and orders deterministically by score, freshness, then job ID. This limit is appropriate for the current project scale; a search/index ranking implementation can replace the repository boundary if the corpus substantially grows.
 
@@ -21,10 +21,10 @@ The deterministic extraction layer provides:
 - normalized skills using the Phase 1 `SkillNormalizer`, preserving distinctions such as Java versus JavaScript;
 - required/preferred/neutral skill inference from local section and phrase markers;
 - experience ranges including `0-2 years`, `2+ years`, `3-5 years`, fresher, internship, and structured years;
-- title-first seniority (`INTERN`, `ENTRY`, `JUNIOR`, `MID`, `SENIOR`, `LEAD`, `UNKNOWN`);
+- title-first seniority (`INTERN`, `ENTRY`, `JUNIOR`, `MID`, `SENIOR`, `LEAD`, `UNKNOWN`) with conservative explicit-experience fallback;
 - common bachelor/master and CS/CSE/IT-equivalent education concepts;
 - remote, hybrid, onsite, and employment-type signals;
-- maintainable role families without collapsing unrelated technical roles.
+- backend, frontend, full-stack, general software, DevOps/platform, cloud, data, ML/AI, security, QA, and mobile role families without collapsing unrelated technical roles.
 
 Required/preferred inference is deliberately heuristic. When wording is ambiguous, a skill remains neutral rather than being falsely labeled mandatory.
 
@@ -43,7 +43,7 @@ Defaults are centralized, validated at startup, and must sum to 100:
 
 Required skills dominate the skill component. Preferred skills affect the result without being treated as mandatory. Candidate experience is the union of valid structured month intervals, so overlaps are not double-counted; current work uses the calculation clock and year-only dates use deterministic boundaries.
 
-Missing job information is not scored as zero. Unavailable dimensions are excluded and their weights are normalized across dimensions with evidence. Responses expose the normalized weights and `HIGH`, `MEDIUM`, or `LOW` confidence. Sparse candidate/job evidence yields `LOW_DATA` even when the compatibility over the small amount of evidence is high, and the UI asks the candidate to add skills and preferences rather than presenting an overstated percentage.
+Missing job information is not scored as zero. Unavailable job dimensions are excluded and their weights are normalized across dimensions with evidence. By contrast, an explicit job requirement that is absent from the candidate profile remains a real scored gap; it is not normalized away. Responses expose the normalized weights and `HIGH`, `MEDIUM`, or `LOW` confidence. Sparse candidate/job evidence yields `LOW_DATA`, and the UI asks the candidate to add skills and preferences rather than presenting an overstated percentage.
 
 Scoring version: `job-match-1.2.0`. Feature version: `job-features-1.2.0`.
 

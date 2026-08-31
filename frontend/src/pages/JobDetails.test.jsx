@@ -28,12 +28,13 @@ describe("Job detail matching", () => {
   afterEach(cleanup);
 
   it("shows evidence-backed explanation, matched and missing skills to candidates", async () => {
-    mocks.getJobMatch.mockResolvedValue({ overallScore: 87, matchLevel: "STRONG", confidence: "HIGH", matchedSkills: ["Java", "Spring Boot"], missingSkills: ["Kafka"], skillScore: 80, titleScore: 100, explanation: ["The role aligns with your preferred role family."] });
+    mocks.getJobMatch.mockResolvedValue({ overallScore: 87, matchLevel: "STRONG", confidence: "HIGH", matchedSkills: ["Java", "Spring Boot"], missingSkills: ["Kafka"], skillScore: 80, titleScore: 100, normalizedWeights: { skills: 40, title: 15 }, explanation: ["The role aligns with your preferred role family."] });
     renderPage(session("USER"));
     expect(await screen.findByText("Your match: 87%")).toBeInTheDocument();
     expect(screen.getByText(/Spring Boot/)).toBeInTheDocument();
     expect(screen.getByText("Kafka")).toBeInTheDocument();
     expect(screen.getByText("The role aligns with your preferred role family.")).toBeInTheDocument();
+    expect(screen.getByText("32.0 / 40.0 points")).toBeInTheDocument();
   });
 
   it("shows sparse-profile guidance without a misleading percentage", async () => {

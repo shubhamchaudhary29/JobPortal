@@ -12,10 +12,13 @@ import java.security.NoSuchAlgorithmException;
 import java.time.Clock;
 import java.time.Instant;
 import java.util.HexFormat;
+import java.util.regex.Pattern;
 
 @Component
 public class JobFeatureExtractor {
     private static final int MAX_TEXT = 50_000;
+    private static final Pattern HORIZONTAL_WHITESPACE = Pattern.compile("[\\t\\x0B\\f\\r ]+");
+    private static final Pattern LINE_WHITESPACE = Pattern.compile(" *\\n+ *");
     private final JobSkillExtractor skills;
     private final ExperienceRequirementParser experience;
     private final EducationRequirementParser education;
@@ -70,7 +73,8 @@ public class JobFeatureExtractor {
 
     private String bounded(String value) {
         if (value == null) return "";
-        String normalized = value.strip().replaceAll("\\s+", " ");
+        String normalized = HORIZONTAL_WHITESPACE.matcher(value.strip()).replaceAll(" ");
+        normalized = LINE_WHITESPACE.matcher(normalized).replaceAll("\n");
         return normalized.length() <= MAX_TEXT ? normalized : normalized.substring(0, MAX_TEXT);
     }
 }
