@@ -14,6 +14,8 @@ public class SeniorityParser {
     private static final Pattern MID = Pattern.compile("\\b(mid[ -]?level|mid|intermediate)\\b");
     private static final Pattern SENIOR = Pattern.compile("\\b(senior|sr\\.?)\\b");
     private static final Pattern LEAD = Pattern.compile("\\b(lead|principal|staff|architect|manager)\\b");
+    private static final Pattern EXPERIENCE_RANGE = Pattern.compile("\\b(\\d{1,2})\\s*(?:-|–|—|to)\\s*(\\d{1,2})\\s*(?:years?|yrs?)\\b");
+    private static final Pattern EXPERIENCE_MINIMUM = Pattern.compile("\\b(\\d{1,2})\\s*(?:\\+\\s*)?(?:years?|yrs?)\\s+(?:of\\s+)?experience\\b");
 
     public Seniority parse(String title, String description) {
         String normalizedTitle = safe(title);
@@ -27,7 +29,18 @@ public class SeniorityParser {
         if (beginning.length() > 1000) beginning = beginning.substring(0, 1000);
         if (INTERN.matcher(beginning).find()) return Seniority.INTERN;
         if (ENTRY.matcher(beginning).find()) return Seniority.ENTRY;
+        var range = EXPERIENCE_RANGE.matcher(beginning);
+        if (range.find()) return fromMinimumYears(Integer.parseInt(range.group(1)));
+        var minimum = EXPERIENCE_MINIMUM.matcher(beginning);
+        if (minimum.find()) return fromMinimumYears(Integer.parseInt(minimum.group(1)));
         return Seniority.UNKNOWN;
+    }
+
+    private Seniority fromMinimumYears(int years) {
+        if (years >= 5) return Seniority.SENIOR;
+        if (years >= 3) return Seniority.MID;
+        if (years >= 1) return Seniority.JUNIOR;
+        return Seniority.ENTRY;
     }
 
     private String safe(String value) { return value == null ? "" : value.toLowerCase(Locale.ROOT); }

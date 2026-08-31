@@ -63,4 +63,14 @@ describe("Best Matches feed", () => {
     expect(await screen.findByText(/couldn't calculate your job matches/)).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Retry" })).toBeInTheDocument();
   });
+
+  it("shows sparse-profile guidance when every result has low confidence", async () => {
+    const lowData = matched("sparse", 90);
+    lowData.match.confidence = "LOW";
+    lowData.match.matchLevel = "LOW_DATA";
+    getMatchedJobs.mockResolvedValue({ content: [lowData], page: 0, totalElements: 1, totalPages: 1, first: true, last: true });
+    render(<MemoryRouter><MatchedJobs /></MemoryRouter>);
+    expect(await screen.findByText("Limited profile data.")).toBeInTheDocument();
+    expect(screen.getByText(/Add skills and preferred roles/)).toBeInTheDocument();
+  });
 });

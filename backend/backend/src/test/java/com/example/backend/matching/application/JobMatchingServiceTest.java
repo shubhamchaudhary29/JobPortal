@@ -12,6 +12,7 @@ import com.example.backend.matching.config.MatchingProperties;
 import com.example.backend.matching.domain.*;
 import com.example.backend.matching.extraction.RoleNormalizer;
 import com.example.backend.matching.extraction.WorkAttributeNormalizer;
+import com.example.backend.matching.infrastructure.JobFeatureStore;
 import com.example.backend.shared.error.BadRequestException;
 import com.example.backend.shared.error.ForbiddenException;
 import com.example.backend.shared.error.ResourceNotFoundException;
@@ -37,6 +38,7 @@ class JobMatchingServiceTest {
     private UserRepository users;
     private CandidateProfileRepository profiles;
     private JobFeatureService features;
+    private JobFeatureStore featureStore;
     private JobMatchEngine engine;
     private JobMatchingService service;
 
@@ -44,12 +46,13 @@ class JobMatchingServiceTest {
     void setUp() {
         jobs = mock(JobRepository.class); search = mock(JobSearchRepository.class); users = mock(UserRepository.class);
         profiles = mock(CandidateProfileRepository.class); features = mock(JobFeatureService.class);
+        featureStore = mock(JobFeatureStore.class);
         engine = mock(JobMatchEngine.class); MatchingMetrics metrics = mock(MatchingMetrics.class);
         CurrentUserProvider current = mock(CurrentUserProvider.class);
         when(current.email()).thenReturn("candidate@example.test");
         when(users.findByEmail(anyString())).thenReturn(Optional.of(user("candidate-1", UserRole.USER)));
         when(profiles.findByUserId("candidate-1")).thenReturn(Optional.of(new CandidateProfileDocument()));
-        service = new JobMatchingService(jobs, search, users, profiles, current, features, engine, metrics,
+        service = new JobMatchingService(jobs, search, users, profiles, current, features, featureStore, engine, metrics,
                 new MatchingProperties(), new RoleNormalizer(), new WorkAttributeNormalizer());
     }
 
@@ -58,11 +61,11 @@ class JobMatchingServiceTest {
         JobDocument job = job("job-1", 80, LocalDateTime.now());
         when(jobs.findById("job-1")).thenReturn(Optional.of(job));
         when(features.prepare(job)).thenReturn(true);
-        when(jobs.save(job)).thenReturn(job);
         when(engine.calculate(any(), eq(job))).thenReturn(result("job-1", 80));
         assertEquals("job-1", service.match("job-1").jobId());
         verify(profiles).findByUserId("candidate-1");
-        verify(jobs).save(job);
+        verify(featureStore).persistIfCurrent(job);
+        verify(jobs, never()).save(job);
     }
 
     @Test
@@ -112,9 +115,8 @@ class JobMatchingServiceTest {
         when(features.prepare(any())).thenReturn(true);
         when(engine.calculate(any(), any())).thenReturn(result("job", 80));
         service.matched(0, 20, 0, null, null, null, null, null, "matchScore");
-        verify(jobs).saveAll(List.of(first, second));
-        verify(jobs, never()).save(first);
-        verify(jobs, never()).save(second);
+        verify(featureStore).persistAllIfCurrent(List.of(first, second));
+        verify(jobs, never()).saveAll(any());
     }
 
     @Test
@@ -127,6 +129,8 @@ class JobMatchingServiceTest {
         when(engine.calculate(any(), eq(job))).thenReturn(result("job-1", 80));
         assertEquals(1, service.matched(0, 20, 0, "Pune", "manual", "full-time", "remote",
                 "Backend Developer", "newest").totalElements());
+        assertDoesNotThrow(() -> service.matched(0, 20, 0, "Pune", "manual", null, null,
+                "BACKEND", "matchScore"));
         assertDoesNotThrow(() -> service.matched(0, 20, 0, "Pune", "manual", null, null, null, "oldest"));
     }
 
@@ -136,6 +140,7 @@ class JobMatchingServiceTest {
         assertThrows(BadRequestException.class, () -> service.matched(0, 101, 0, null, null, null, null, null, null));
         assertThrows(BadRequestException.class, () -> service.matched(0, 20, 101, null, null, null, null, null, null));
         assertThrows(BadRequestException.class, () -> service.matched(0, 20, 0, null, null, "volunteer", null, null, null));
+        assertThrows(BadRequestException.class, () -> service.matched(0, 20, 0, null, "unknown", null, null, null, null));
         assertThrows(BadRequestException.class, () -> service.matched(0, 20, 0, null, null, null, "somewhere", null, null));
         assertThrows(BadRequestException.class, () -> service.matched(0, 20, 0, null, null, null, null, "Wizard", null));
         assertThrows(BadRequestException.class, () -> service.matched(0, 20, 0, null, null, null, null, null, "salary"));

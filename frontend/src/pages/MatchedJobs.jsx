@@ -15,6 +15,8 @@ export default function MatchedJobs() {
   const [loadedKey, setLoadedKey] = useState("");
   const requestKey = `${page}:${JSON.stringify(applied)}:${retry}`;
   const loading = loadedKey !== requestKey;
+  const limitedFeed = !loading && !error && data?.content?.length > 0
+    && data.content.every(({ match }) => match?.confidence === "LOW" || match?.matchLevel === "LOW_DATA");
 
   useEffect(() => {
     let cancelled = false;
@@ -78,7 +80,7 @@ export default function MatchedJobs() {
           </label>
           <label className="text-xs font-bold text-slate-600">Role
             <select name="role" value={filters.role} onChange={update} className="mt-1 block w-full rounded-lg border border-slate-200 p-2 text-sm">
-              <option value="">Any</option><option value="Backend Engineer">Backend</option><option value="Frontend Engineer">Frontend</option><option value="Full Stack Engineer">Full stack</option><option value="Software Engineer">Software engineering</option><option value="DevOps Engineer">DevOps</option><option value="Data Engineer">Data engineering</option><option value="Data Scientist">Data science</option><option value="ML Engineer">ML / AI</option><option value="Security Engineer">Security</option>
+              <option value="">Any</option><option value="Backend Engineer">Backend</option><option value="Frontend Engineer">Frontend</option><option value="Full Stack Engineer">Full stack</option><option value="Software Engineer">Software engineering</option><option value="DevOps Engineer">DevOps</option><option value="Cloud Engineer">Cloud</option><option value="Data Engineer">Data engineering</option><option value="Data Scientist">Data science</option><option value="ML Engineer">ML / AI</option><option value="Security Engineer">Security</option><option value="QA Engineer">QA</option><option value="Mobile Engineer">Mobile</option>
             </select>
           </label>
           <label className="text-xs font-bold text-slate-600">Location
@@ -100,6 +102,7 @@ export default function MatchedJobs() {
           <div className="rounded-3xl border border-dashed border-slate-300 bg-white py-20 text-center"><h2 className="text-xl font-bold text-slate-700">No personalized matches found</h2><p className="mx-auto mt-2 max-w-md text-slate-500">Try broader filters, or add skills and job preferences to your profile for better matching.</p><button onClick={clear} className="mt-5 rounded-lg bg-indigo-50 px-5 py-2 font-semibold text-indigo-700">Clear filters</button></div>
         ) : (
           <>
+            {limitedFeed && <div className="mb-5 rounded-xl bg-amber-50 p-4 text-sm font-medium text-amber-800"><strong>Limited profile data.</strong> Add skills and preferred roles to improve match accuracy.</div>}
             <p className="mb-5 text-sm font-semibold text-slate-500">{data.totalElements} compatible {data.totalElements === 1 ? "job" : "jobs"}</p>
             <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3">{data.content.map(({ job, match }) => <JobCard key={job.id} job={job} match={match} />)}</div>
             {data.totalPages > 1 && <nav className="mt-10 flex items-center justify-center gap-4" aria-label="Personalized job pages"><button disabled={data.first} onClick={() => setPage((value) => value - 1)} className="rounded-xl border bg-white px-5 py-2.5 font-semibold disabled:opacity-40">Previous</button><span className="text-sm font-semibold text-slate-600">Page {data.page + 1} of {data.totalPages}</span><button disabled={data.last} onClick={() => setPage((value) => value + 1)} className="rounded-xl border bg-white px-5 py-2.5 font-semibold disabled:opacity-40">Next</button></nav>}

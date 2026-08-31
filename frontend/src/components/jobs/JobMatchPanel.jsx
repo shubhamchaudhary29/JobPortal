@@ -1,10 +1,10 @@
 const breakdown = [
-  ["Skills", "skillScore"],
-  ["Experience", "experienceScore"],
-  ["Role", "titleScore"],
-  ["Education", "educationScore"],
-  ["Location", "locationScore"],
-  ["Employment", "employmentTypeScore"],
+  ["Skills", "skillScore", "skills"],
+  ["Experience", "experienceScore", "experience"],
+  ["Role", "titleScore", "title"],
+  ["Education", "educationScore", "education"],
+  ["Location", "locationScore", "location"],
+  ["Employment", "employmentTypeScore", "employmentType"],
 ];
 
 export default function JobMatchPanel({ match, loading, error, onRetry }) {
@@ -48,10 +48,15 @@ export default function JobMatchPanel({ match, loading, error, onRetry }) {
       {match.explanation?.length > 0 && <div className="mt-7"><h3 className="font-bold text-slate-900">Why this matches</h3><ul className="mt-3 space-y-2 text-sm text-slate-600">{match.explanation.map((reason) => <li key={reason} className="flex gap-2"><span aria-hidden="true">•</span><span>{reason}</span></li>)}</ul></div>}
 
       <div className="mt-7 grid grid-cols-2 gap-3 sm:grid-cols-3">
-        {breakdown.filter(([, key]) => match[key] != null).map(([label, key]) => (
-          <div key={key} className="rounded-xl bg-slate-50 p-3"><p className="text-xs font-semibold text-slate-500">{label}</p><p className="mt-1 font-extrabold text-slate-800">{Math.round(match[key])}%</p></div>
-        ))}
+        {breakdown.filter(([, scoreKey]) => match[scoreKey] != null).map(([label, scoreKey, weightKey]) => {
+          const weight = match.normalizedWeights?.[weightKey];
+          const value = weight == null
+            ? `${Math.round(match[scoreKey])}%`
+            : `${(match[scoreKey] * weight / 100).toFixed(1)} / ${weight.toFixed(1)} points`;
+          return <div key={scoreKey} className="rounded-xl bg-slate-50 p-3"><p className="text-xs font-semibold text-slate-500">{label}</p><p className="mt-1 font-extrabold text-slate-800">{value}</p></div>;
+        })}
       </div>
+      {match.normalizedWeights && <p className="mt-3 text-xs text-slate-500">Component weights are normalized across the requirements this job actually states.</p>}
     </section>
   );
 }
