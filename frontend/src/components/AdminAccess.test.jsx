@@ -45,6 +45,7 @@ describe("ADMIN route and navigation", () => {
     renderHeader(session("USER"));
     fireEvent.click(screen.getByRole("button"));
     expect(screen.queryByText("Aggregation Operations")).not.toBeInTheDocument();
+    expect(screen.getByText(/Best Matches/)).toBeInTheDocument();
     cleanup();
     renderHeader(session("ADMIN"));
     fireEvent.click(screen.getByRole("button"));

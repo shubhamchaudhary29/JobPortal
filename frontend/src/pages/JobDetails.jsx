@@ -2,8 +2,9 @@ import { useEffect, useState } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import Header from "../components/Header";
 import ApplyJobModal from "../components/ApplyJobModal";
+import JobMatchPanel from "../components/jobs/JobMatchPanel";
 import { useAuth } from "../auth/auth-context";
-import { getJobById } from "../services/job-service";
+import { getJobById, getJobMatch } from "../services/job-service";
 import { hasUserApplied } from "../services/application-service";
 
 const formatDescription = (text) => {
@@ -53,9 +54,16 @@ export default function JobDetails() {
   const [loading, setLoading] = useState(true);
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [hasApplied, setHasApplied] = useState(false);
+  const [match, setMatch] = useState(null);
+  const [matchError, setMatchError] = useState("");
+  const [matchRetry, setMatchRetry] = useState(0);
+  const [loadedMatchKey, setLoadedMatchKey] = useState("");
 
-  const { accessToken } = useAuth();
+  const { accessToken, role } = useAuth();
   const isLoggedIn = Boolean(accessToken);
+  const isCandidate = isLoggedIn && role === "USER";
+  const matchRequestKey = `${jobId}:${matchRetry}`;
+  const matchLoading = isCandidate && loadedMatchKey !== matchRequestKey;
 
   useEffect(() => {
     if (jobId) {
@@ -64,15 +72,35 @@ export default function JobDetails() {
           setJob(data);
           setLoading(false);
         })
-        .catch((err) => console.error(err));
+        .catch(() => setLoading(false));
 
-      if (isLoggedIn) {
+      if (isCandidate) {
         hasUserApplied(jobId)
           .then((status) => setHasApplied(status))
           .catch((err) => console.error(err));
       }
     }
-  }, [jobId, isLoggedIn]);
+  }, [jobId, isCandidate]);
+
+  useEffect(() => {
+    if (!jobId || !isCandidate) {
+      return;
+    }
+    let cancelled = false;
+    getJobMatch(jobId).then((response) => {
+      if (!cancelled) {
+        setMatch(response);
+        setMatchError("");
+      }
+    }).catch((failure) => {
+      if (cancelled) return;
+      if (failure?.response?.status === 404) setMatchError("This job is no longer available for matching.");
+      else setMatchError("We couldn't calculate this match right now.");
+    }).finally(() => {
+      if (!cancelled) setLoadedMatchKey(matchRequestKey);
+    });
+    return () => { cancelled = true; };
+  }, [isCandidate, jobId, matchRequestKey]);
 
   if (loading) return <div className="min-h-screen bg-slate-50 flex items-center justify-center">Loading...</div>;
   if (!job) return <div className="min-h-screen bg-slate-50 flex items-center justify-center">Job not found</div>;
@@ -153,6 +181,7 @@ export default function JobDetails() {
             </div>
           </div>
         </div>
+        {isCandidate && <JobMatchPanel match={match} loading={matchLoading} error={matchError} onRetry={() => setMatchRetry((value) => value + 1)} />}
       </main>
     </div>
   );

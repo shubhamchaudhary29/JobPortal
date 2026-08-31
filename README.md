@@ -40,6 +40,8 @@ See [Backend architecture and API v1](docs/architecture.md).
 
 See [Candidate Intelligence](docs/candidate-intelligence.md) for structured profiles, secure PDF/DOCX parsing, skill normalization, quality analysis, storage, API contracts, and limitations.
 
+See [Job Matching Engine v1.2](docs/job-matching.md) for deterministic scoring, feature extraction, missing-data normalization, authorization, ranking limits, and score semantics.
+
 For aggregation reliability, migrations, registry evidence, and local/Docker verification, see [aggregation operations](docs/phase-3-operations.md).
 
 </div>
@@ -135,6 +137,7 @@ This transforms JobPortal into a **centralized recruitment hub** instead of just
 - Filter by Location
 - View Job Details
 - Explore cached Adzuna, Greenhouse, and Lever jobs
+- Review candidate-only, explainable profile-to-job compatibility and a ranked Best Matches feed
 
 ### Applications
 

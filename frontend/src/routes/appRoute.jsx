@@ -10,6 +10,7 @@ import Profile from "../pages/Profile";
 import CreateJob from "../pages/CreateJob";
 import MyApplications from "../pages/MyApplications";
 import MyProfile from "../pages/MyProfile";
+import MatchedJobs from "../pages/MatchedJobs";
 import ChatList from "../pages/ChatList";
 import ChatRoom from "../pages/ChatRoom";
 import AggregationAdmin from "../pages/AggregationAdmin";
@@ -58,6 +59,14 @@ export default function AppRoutes() {
         element={
           <ProtectedRoute requiredRole="USER">
             <MyProfile />
+          </ProtectedRoute>
+        }
+      />
+      <Route
+        path="/jobs/matches"
+        element={
+          <ProtectedRoute requiredRole="USER">
+            <MatchedJobs />
           </ProtectedRoute>
         }
       />

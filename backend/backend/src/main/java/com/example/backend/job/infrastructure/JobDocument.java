@@ -7,6 +7,7 @@ import org.springframework.data.mongodb.core.mapping.Document;
 import java.time.LocalDateTime;
 import java.util.LinkedHashSet;
 import java.util.Set;
+import com.example.backend.job.domain.JobMatchFeatures;
 
 @Data
 @Document(collection = "jobs")
@@ -56,5 +57,7 @@ public class JobDocument {
     private long applicationReferenceCount;
     private String cleanupClaimId;
     private LocalDateTime cleanupClaimedAt;
+    /** Provider-neutral, versioned invariant features; candidate-specific scores are never stored here. */
+    private JobMatchFeatures matchFeatures;
 
 }

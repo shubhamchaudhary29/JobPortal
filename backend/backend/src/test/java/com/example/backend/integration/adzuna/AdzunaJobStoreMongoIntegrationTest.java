@@ -44,6 +44,8 @@ class AdzunaJobStoreMongoIntegrationTest {
         JobDocument persisted = mongo.findAll(JobDocument.class).get(0);
         assertEquals(first, persisted.getFirstSeenAt());
         assertTrue(persisted.getLastSeenAt().isAfter(first));
+        assertNotNull(persisted.getMatchFeatures());
+        assertEquals("job-features-1.2.0", persisted.getMatchFeatures().getFeatureExtractionVersion());
         for (var future : futures) assertEquals(UpsertOutcome.UNCHANGED, future.get());
 
         assertEquals(UpsertOutcome.UPDATED, store.upsert(job("same", "changed"), first.plusMinutes(2)));
@@ -82,6 +84,8 @@ class AdzunaJobStoreMongoIntegrationTest {
     void applicationOwnsTheNamedUniqueIndexAndImportedJobsDoNotAlterRecruiterJobs() {
         assertTrue(mongo.indexOps(JobDocument.class).getIndexInfo().stream()
                 .anyMatch(index -> "source_external_id_unique".equals(index.getName()) && index.isUnique()));
+        assertTrue(mongo.indexOps(JobDocument.class).getIndexInfo().stream()
+                .anyMatch(index -> "jobs_matching_window_v2_idx".equals(index.getName())));
 
         JobDocument recruiterJob = job("recruiter-id", "recruiter job");
         recruiterJob.setSource("manual");

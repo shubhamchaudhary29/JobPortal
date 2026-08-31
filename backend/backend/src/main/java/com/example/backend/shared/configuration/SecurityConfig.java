@@ -65,6 +65,7 @@ public class SecurityConfig {
                         .requestMatchers("/actuator/**").hasRole("ADMIN")
                         .requestMatchers("/api/v1/admin/**").hasRole("ADMIN")
                         .requestMatchers("/api/v1/candidate-profile/**", "/api/v1/candidate-profile").hasRole("USER")
+                        .requestMatchers(HttpMethod.GET, "/api/v1/jobs/matched", "/api/v1/jobs/*/match").hasRole("USER")
                         .requestMatchers(new RegexRequestMatcher("^/api/v1/jobs/(?!mine$)[^/]+$", "GET")).permitAll()
                         .requestMatchers("/ws/**").permitAll()
                         .anyRequest().authenticated())

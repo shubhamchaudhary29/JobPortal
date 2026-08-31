@@ -78,6 +78,21 @@ class JobSearchMongoIntegrationTest {
         verifyNoInteractions(adzunaClient);
     }
 
+    @Test
+    void matchingWindowIsBoundedAndExcludesInactiveAndReconciliationRecords() {
+        JobDocument conflicted = new JobDocument();
+        conflicted.setTitle("Conflicted Engineer"); conflicted.setDescription("Java"); conflicted.setLocation("Pune");
+        conflicted.setCompany("Co"); conflicted.setSource("adzuna"); conflicted.setActive(true);
+        conflicted.setReconciliationConflictId("conflict-1");
+        mongo.save(conflicted);
+
+        List<JobDocument> results = search.matchingCandidates("Pune", "adzuna", 1);
+        assertEquals(1, results.size());
+        assertEquals("Data Engineer", results.get(0).getTitle());
+        assertFalse(search.matchingCandidates(null, null, 20).stream()
+                .anyMatch(job -> "Inactive Engineer".equals(job.getTitle()) || "Conflicted Engineer".equals(job.getTitle())));
+    }
+
     private void save(String title, String location, String source, boolean active, String recruiterId, int day) {
         JobDocument job = new JobDocument();
         job.setTitle(title); job.setDescription(title + " description"); job.setLocation(location); job.setCompany("Co");

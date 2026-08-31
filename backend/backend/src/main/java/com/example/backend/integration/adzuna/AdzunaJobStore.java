@@ -18,21 +18,25 @@ import java.time.ZoneId;
 import java.util.Date;
 import java.util.List;
 import com.example.backend.job.infrastructure.ImportedSourceListing;
+import com.example.backend.matching.application.JobFeatureService;
 
 @Repository
 public class AdzunaJobStore {
     private final MongoTemplate mongo;
     private final AggregationConflictService conflicts;
+    private final JobFeatureService jobFeatures;
     @Autowired
-    public AdzunaJobStore(MongoTemplate mongo, AggregationConflictService conflicts) {
+    public AdzunaJobStore(MongoTemplate mongo, AggregationConflictService conflicts, JobFeatureService jobFeatures) {
         this.mongo = mongo;
         this.conflicts = conflicts;
+        this.jobFeatures = jobFeatures;
     }
-    AdzunaJobStore(MongoTemplate mongo) { this(mongo, null); }
+    AdzunaJobStore(MongoTemplate mongo) { this(mongo, null, null); }
     public UpsertOutcome upsert(JobDocument job, LocalDateTime now) {
         return upsert(job, now, null);
     }
     public UpsertOutcome upsert(JobDocument job, LocalDateTime now, String employer) {
+        if (jobFeatures != null) jobFeatures.prepare(job);
         if (job.getFingerprint() == null || job.getFingerprint().isBlank()) job.setFingerprint(legacyFingerprint(job));
         String identity = job.getSource() + ":" + job.getExternalId();
         // A provider listing identity is permanent even when its title/location changes.
@@ -132,27 +136,32 @@ public class AdzunaJobStore {
                 .append("createdAt", new Document("$ifNull", List.of("$createdAt", observedDate)))
                 .append("recruiterId", new Document("$ifNull", java.util.Arrays.asList("$recruiterId", null)));
 
+        Document canonicalFields = new Document("title", canonicalValue("title", job.getTitle(), identity))
+                .append("description", canonicalValue("description", job.getDescription(), identity))
+                .append("company", canonicalValue("company", job.getCompany(), identity))
+                .append("location", canonicalValue("location", job.getLocation(), identity))
+                .append("salary", canonicalValue("salary", job.getSalary(), identity))
+                .append("experience", canonicalValue("experience", job.getExperience(), identity))
+                .append("employmentType", canonicalValue("employmentType", job.getEmploymentType(), identity))
+                .append("salaryMin", canonicalValue("salaryMin", job.getSalaryMin(), identity))
+                .append("salaryMax", canonicalValue("salaryMax", job.getSalaryMax(), identity))
+                .append("publishedAt", canonicalValue("publishedAt", mongoDate(job.getPublishedAt()), identity))
+                .append("expiresAt", canonicalValue("expiresAt", mongoDate(job.getExpiresAt()), identity))
+                .append("source", "$_canonicalSourceListing.provider")
+                .append("externalId", "$_canonicalSourceListing.externalId")
+                .append("applicationUrl", "$_canonicalSourceListing.applicationUrl")
+                .append("sourceUrl", "$_canonicalSourceListing.applicationUrl")
+                .append("sourceIdentities", listingIdentities)
+                .append("applicationUrls", listingUrls);
+        if (job.getMatchFeatures() != null) {
+            Object mappedFeatures = mongo.getConverter().convertToMongoType(job.getMatchFeatures());
+            canonicalFields.append("matchFeatures", canonicalValue("matchFeatures", mappedFeatures, identity));
+        }
         return AggregationUpdate.from(List.of(
                 Aggregation.stage(new Document("$set", managedFields)),
                 Aggregation.stage(new Document("$set", new Document("_canonicalSourceListing",
                         new Document("$arrayElemAt", List.of("$sourceListings", 0))))),
-                Aggregation.stage(new Document("$set", new Document("title", canonicalValue("title", job.getTitle(), identity))
-                        .append("description", canonicalValue("description", job.getDescription(), identity))
-                        .append("company", canonicalValue("company", job.getCompany(), identity))
-                        .append("location", canonicalValue("location", job.getLocation(), identity))
-                        .append("salary", canonicalValue("salary", job.getSalary(), identity))
-                        .append("experience", canonicalValue("experience", job.getExperience(), identity))
-                        .append("employmentType", canonicalValue("employmentType", job.getEmploymentType(), identity))
-                        .append("salaryMin", canonicalValue("salaryMin", job.getSalaryMin(), identity))
-                        .append("salaryMax", canonicalValue("salaryMax", job.getSalaryMax(), identity))
-                        .append("publishedAt", canonicalValue("publishedAt", mongoDate(job.getPublishedAt()), identity))
-                        .append("expiresAt", canonicalValue("expiresAt", mongoDate(job.getExpiresAt()), identity))
-                        .append("source", "$_canonicalSourceListing.provider")
-                        .append("externalId", "$_canonicalSourceListing.externalId")
-                        .append("applicationUrl", "$_canonicalSourceListing.applicationUrl")
-                        .append("sourceUrl", "$_canonicalSourceListing.applicationUrl")
-                        .append("sourceIdentities", listingIdentities)
-                        .append("applicationUrls", listingUrls))),
+                Aggregation.stage(new Document("$set", canonicalFields)),
                 Aggregation.stage(new Document("$unset", List.of("_canonicalSourceListing", "inactiveReason", "inactiveAt")))));
     }
     private Document canonicalValue(String field, Object incoming, String identity) {
@@ -188,8 +197,16 @@ public class AdzunaJobStore {
                 && java.util.Objects.equals(a.getSalaryMin(), b.getSalaryMin()) && java.util.Objects.equals(a.getSalaryMax(), b.getSalaryMax())
                 && java.util.Objects.equals(a.getEmploymentType(), b.getEmploymentType()) && java.util.Objects.equals(a.getSourceUrl(), b.getSourceUrl())
                 && java.util.Objects.equals(a.getPublishedAt(), b.getPublishedAt()) && java.util.Objects.equals(a.getExpiresAt(), b.getExpiresAt())
+                && sameFeatures(a, b)
                 && java.util.Objects.equals(a.getActive(), b.getActive()) && Double.compare(a.getSalary(), b.getSalary()) == 0
                 && Double.compare(a.getExperience(), b.getExperience()) == 0;
+    }
+    private boolean sameFeatures(JobDocument a, JobDocument b) {
+        if (a.getMatchFeatures() == null || b.getMatchFeatures() == null)
+            return a.getMatchFeatures() == b.getMatchFeatures();
+        return java.util.Objects.equals(a.getMatchFeatures().getFeatureExtractionVersion(),
+                b.getMatchFeatures().getFeatureExtractionVersion())
+                && java.util.Objects.equals(a.getMatchFeatures().getSourceHash(), b.getMatchFeatures().getSourceHash());
     }
     private String legacyFingerprint(JobDocument job) {
         String value = String.join("|", safe(job.getCompany()), safe(job.getTitle()), safe(job.getLocation())).toLowerCase(java.util.Locale.ROOT);
