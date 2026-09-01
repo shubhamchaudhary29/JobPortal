@@ -123,6 +123,13 @@ export default function Header() {
                           👤 My Profile
                         </Link>
                         <Link
+                          to="/application-workspace"
+                          className="block px-4 py-2.5 text-sm font-medium text-slate-700 hover:bg-slate-50 hover:text-indigo-600"
+                          onClick={() => setShowDropdown(false)}
+                        >
+                          🗂️ Application Workspace
+                        </Link>
+                        <Link
                           to="/my-applications"
                           className="block px-4 py-2.5 text-sm font-medium text-slate-700 hover:bg-slate-50 hover:text-indigo-600"
                           onClick={() => setShowDropdown(false)}

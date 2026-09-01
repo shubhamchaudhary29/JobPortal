@@ -68,5 +68,22 @@ public class MongoIndexInitializer implements ApplicationRunner {
                 .expire(Duration.ZERO).named("sync_run_retention_ttl"));
         mongo.indexOps("candidate_profiles").ensureIndex(new Index().on("userId", Sort.Direction.ASC)
                 .unique().named("candidate_profile_user_unique"));
+        IndexOperations resumes = mongo.indexOps("tailored_resume_versions");
+        resumes.ensureIndex(new Index().on("userId", Sort.Direction.ASC).on("jobId", Sort.Direction.ASC)
+                .on("createdAt", Sort.Direction.DESC).named("tailored_resume_user_job_created_idx"));
+        resumes.ensureIndex(new Index().on("userId", Sort.Direction.ASC).on("updatedAt", Sort.Direction.DESC)
+                .named("tailored_resume_user_updated_idx"));
+        IndexOperations letters = mongo.indexOps("cover_letter_versions");
+        letters.ensureIndex(new Index().on("userId", Sort.Direction.ASC).on("jobId", Sort.Direction.ASC)
+                .on("createdAt", Sort.Direction.DESC).named("cover_letter_user_job_created_idx"));
+        letters.ensureIndex(new Index().on("userId", Sort.Direction.ASC).on("updatedAt", Sort.Direction.DESC)
+                .named("cover_letter_user_updated_idx"));
+        IndexOperations workspaces = mongo.indexOps("candidate_job_workspaces");
+        workspaces.ensureIndex(new Index().on("userId", Sort.Direction.ASC).on("jobId", Sort.Direction.ASC)
+                .unique().named("candidate_workspace_user_job_unique"));
+        workspaces.ensureIndex(new Index().on("userId", Sort.Direction.ASC).on("updatedAt", Sort.Direction.DESC)
+                .named("candidate_workspace_user_updated_idx"));
+        workspaces.ensureIndex(new Index().on("userId", Sort.Direction.ASC).on("stage", Sort.Direction.ASC)
+                .on("updatedAt", Sort.Direction.DESC).named("candidate_workspace_user_stage_updated_idx"));
     }
 }
