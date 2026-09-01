@@ -65,6 +65,10 @@ public class SecurityConfig {
                         .requestMatchers("/actuator/**").hasRole("ADMIN")
                         .requestMatchers("/api/v1/admin/**").hasRole("ADMIN")
                         .requestMatchers("/api/v1/candidate-profile/**", "/api/v1/candidate-profile").hasRole("USER")
+                        .requestMatchers("/api/v1/application-workspace/**", "/api/v1/application-workspace",
+                                "/api/v1/resume-versions/**", "/api/v1/cover-letters/**",
+                                "/api/v1/jobs/*/application-readiness", "/api/v1/jobs/*/tailoring-plan",
+                                "/api/v1/jobs/*/resume-versions", "/api/v1/jobs/*/cover-letters").hasRole("USER")
                         .requestMatchers(HttpMethod.GET, "/api/v1/jobs/matched", "/api/v1/jobs/*/match").hasRole("USER")
                         .requestMatchers(new RegexRequestMatcher("^/api/v1/jobs/(?!mine$)[^/]+$", "GET")).permitAll()
                         .requestMatchers("/ws/**").permitAll()

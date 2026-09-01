@@ -3,6 +3,7 @@ import { useParams, useNavigate } from "react-router-dom";
 import Header from "../components/Header";
 import ApplyJobModal from "../components/ApplyJobModal";
 import JobMatchPanel from "../components/jobs/JobMatchPanel";
+import ApplicationReadinessCard from "../components/copilot/ApplicationReadinessCard";
 import { useAuth } from "../auth/auth-context";
 import { getJobById, getJobMatch } from "../services/job-service";
 import { hasUserApplied } from "../services/application-service";
@@ -182,6 +183,7 @@ export default function JobDetails() {
           </div>
         </div>
         {isCandidate && <JobMatchPanel match={match} loading={matchLoading} error={matchError} onRetry={() => setMatchRetry((value) => value + 1)} />}
+        {isCandidate && <ApplicationReadinessCard jobId={jobId} onPrepare={() => navigate(`/jobs/${jobId}/prepare`)} />}
       </main>
     </div>
   );

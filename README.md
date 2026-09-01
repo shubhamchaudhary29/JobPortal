@@ -42,6 +42,8 @@ See [Candidate Intelligence](docs/candidate-intelligence.md) for structured prof
 
 See [Job Matching Engine v1.2](docs/job-matching.md) for deterministic scoring, feature extraction, missing-data normalization, authorization, ranking limits, and score semantics.
 
+See [Application Copilot v1.3](docs/application-copilot.md) for evidence-based readiness, truthful resume/cover-letter versioning, DOCX export, private tracking, and status semantics.
+
 For aggregation reliability, migrations, registry evidence, and local/Docker verification, see [aggregation operations](docs/phase-3-operations.md).
 
 </div>
@@ -138,6 +140,7 @@ This transforms JobPortal into a **centralized recruitment hub** instead of just
 - View Job Details
 - Explore cached Adzuna, Greenhouse, and Lever jobs
 - Review candidate-only, explainable profile-to-job compatibility and a ranked Best Matches feed
+- Prepare truthful job-specific resume and cover-letter versions with keyword evidence and Application Readiness
 
 ### Applications
 
@@ -145,6 +148,7 @@ This transforms JobPortal into a **centralized recruitment hub** instead of just
 - Track Applied Jobs
 - View Application Status
 - Resume Submission
+- Save external jobs, track personal stages, private notes, and follow-up dates
 
 ### Communication
 

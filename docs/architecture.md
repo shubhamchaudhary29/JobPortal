@@ -9,6 +9,7 @@ auth/{api,application,infrastructure}
 user/{api,application,domain,infrastructure}
 candidate/{api,application,domain,infrastructure}
 matching/{api,application,config,domain,extraction,infrastructure}
+copilot/{api,application,domain,infrastructure}
 job/{api,application,domain,infrastructure}
 application/{api,application,domain,infrastructure}
 messaging/{api,application,infrastructure,security}
@@ -65,6 +66,10 @@ Candidate-only matching is exposed by `GET /api/v1/jobs/{jobId}/match` and `GET 
 Authentication supplies the candidate identity; match routes accept no candidate identifier. Versioned invariant
 job features are persisted on canonical jobs, while candidate-specific scores are calculated on demand over a
 bounded Mongo-prefiltered window. See [Job Matching Engine v1.2](job-matching.md) for the scoring contract.
+
+Candidate-only Application Copilot routes extend that result into a distinct readiness analysis and candidate-owned,
+versioned preparation package. Tailored resumes, cover letters, and personal workspace state live outside the canonical
+candidate profile and recruiter-controlled application record. See [Application Copilot v1.3](application-copilot.md).
 
 ## Contracts and mapping
 

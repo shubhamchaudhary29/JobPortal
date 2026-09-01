@@ -6,9 +6,10 @@ import { MemoryRouter, Route, Routes } from "react-router-dom";
 import { AuthContext } from "../auth/auth-context";
 import JobDetails from "./JobDetails";
 
-const mocks = vi.hoisted(() => ({ getJobById: vi.fn(), getJobMatch: vi.fn(), hasUserApplied: vi.fn() }));
+const mocks = vi.hoisted(() => ({ getJobById: vi.fn(), getJobMatch: vi.fn(), hasUserApplied: vi.fn(), getApplicationReadiness: vi.fn() }));
 vi.mock("../services/job-service", () => ({ getJobById: mocks.getJobById, getJobMatch: mocks.getJobMatch }));
 vi.mock("../services/application-service", () => ({ hasUserApplied: mocks.hasUserApplied }));
+vi.mock("../services/application-copilot-service", () => ({ getApplicationReadiness: mocks.getApplicationReadiness, updateWorkspaceJob: vi.fn() }));
 vi.mock("../components/Header", () => ({ default: () => <header>Header</header> }));
 vi.mock("../components/ApplyJobModal", () => ({ default: () => null }));
 
@@ -24,6 +25,7 @@ describe("Job detail matching", () => {
     Object.values(mocks).forEach((mock) => mock.mockReset());
     mocks.getJobById.mockResolvedValue(job);
     mocks.hasUserApplied.mockResolvedValue(false);
+    mocks.getApplicationReadiness.mockResolvedValue({ matchScore: 87, readiness: { readinessScore: 72, readinessLevel: "NEARLY_READY", active: true, recommendations: ["Add detail"] }, keywordAnalysis: { missing: [{ keyword: "Kafka" }] } });
   });
   afterEach(cleanup);
 
@@ -35,6 +37,7 @@ describe("Job detail matching", () => {
     expect(screen.getByText("Kafka")).toBeInTheDocument();
     expect(screen.getByText("The role aligns with your preferred role family.")).toBeInTheDocument();
     expect(screen.getByText("32.0 / 40.0 points")).toBeInTheDocument();
+    expect(await screen.findByRole("button", { name: "Prepare Application" })).toBeInTheDocument();
   });
 
   it("shows sparse-profile guidance without a misleading percentage", async () => {

@@ -11,6 +11,8 @@ import CreateJob from "../pages/CreateJob";
 import MyApplications from "../pages/MyApplications";
 import MyProfile from "../pages/MyProfile";
 import MatchedJobs from "../pages/MatchedJobs";
+import ApplicationCopilot from "../pages/ApplicationCopilot";
+import ApplicationWorkspace from "../pages/ApplicationWorkspace";
 import ChatList from "../pages/ChatList";
 import ChatRoom from "../pages/ChatRoom";
 import AggregationAdmin from "../pages/AggregationAdmin";
@@ -69,6 +71,14 @@ export default function AppRoutes() {
             <MatchedJobs />
           </ProtectedRoute>
         }
+      />
+      <Route
+        path="/jobs/:jobId/prepare"
+        element={<ProtectedRoute requiredRole="USER"><ApplicationCopilot /></ProtectedRoute>}
+      />
+      <Route
+        path="/application-workspace"
+        element={<ProtectedRoute requiredRole="USER"><ApplicationWorkspace /></ProtectedRoute>}
       />
 
       {/* Shared protected chat routes */}
