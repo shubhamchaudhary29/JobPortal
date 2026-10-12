@@ -107,7 +107,7 @@ class AdminManualSyncSecurityTest {
         mvc.perform(get("/api/v1/admin/ingestion/providers")
                         .header(HttpHeaders.AUTHORIZATION, bearer("ADMIN")))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.length()").value(3))
+                .andExpect(jsonPath("$.length()").value(4))
                 .andExpect(jsonPath("$[0].name").value("adzuna"))
                 .andExpect(jsonPath("$[0].kind").value("SEARCH_API"))
                 .andExpect(jsonPath("$[0].displayName").value("Adzuna"))
@@ -116,6 +116,9 @@ class AdminManualSyncSecurityTest {
                 .andExpect(jsonPath("$[1].kind").value("ATS_BOARD"))
                 .andExpect(jsonPath("$[1].employerScoped").value(true))
                 .andExpect(jsonPath("$[2].name").value("lever"))
+                .andExpect(jsonPath("$[3].name").value("ashby"))
+                .andExpect(jsonPath("$[3].kind").value("ATS_BOARD"))
+                .andExpect(jsonPath("$[3].employerScoped").value(true))
                 .andExpect(jsonPath("$[0].scheduleProperty").doesNotExist())
                 .andExpect(jsonPath("$[1].defaultBaseUrl").doesNotExist());
     }
@@ -139,6 +142,14 @@ class AdminManualSyncSecurityTest {
                         .header(HttpHeaders.AUTHORIZATION, bearer("ADMIN")))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.runId").value("run-lever"));
+        when(coordinator.run(EmployerRegistryProperties.Source.ASHBY, "acme", SyncRunService.Trigger.MANUAL))
+                .thenReturn(new IngestionCoordinator.Result(new EmployerIngestionService.Result(2, 0, 0, 0, 0),
+                        false, false, "run-ashby"));
+        mvc.perform(post("/api/v1/admin/ingestion/ashby/sync?employer=acme")
+                        .header(HttpHeaders.AUTHORIZATION, bearer("ADMIN")))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.runId").value("run-ashby"))
+                .andExpect(jsonPath("$.sync.inserted").value(2));
     }
 
     private String bearer(String role) {

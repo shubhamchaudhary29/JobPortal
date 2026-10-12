@@ -73,7 +73,7 @@ class AggregationMetricsTest {
                 .map(counter -> counter.getId().getTag("provider"))
                 .collect(java.util.stream.Collectors.toSet());
         assertEquals(expected, tagged);
-        assertEquals(7, registry.get("jobportal.aggregation.runs").tags("provider", "other")
+        assertEquals(6, registry.get("jobportal.aggregation.runs").tags("provider", "other")
                 .counter().count());
     }
 }

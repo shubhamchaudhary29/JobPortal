@@ -9,8 +9,12 @@ import java.util.Locale;
 public final class ExternalJobNormalizer {
  private ExternalJobNormalizer() {}
  public static ExternalJob normalize(String id,String title,String description,String company,String location,String type,String url,String date) {
+  return normalize(id,title,description,company,location,type,url,date,null,null);
+ }
+ /** Salary bounds are optional and never part of the fingerprint. */
+ public static ExternalJob normalize(String id,String title,String description,String company,String location,String type,String url,String date,Double salaryMin,Double salaryMax) {
   String canonical=canonicalUrl(url); String t=text(title); String c=text(company); String l=location(location);
-  return new ExternalJob(id, t, sanitize(description), c, l, text(type), null,null,canonical,parseDate(date),null, fingerprint(c,t,l,canonical));
+  return new ExternalJob(id, t, sanitize(description), c, l, text(type), salaryMin,salaryMax,canonical,parseDate(date),null, fingerprint(c,t,l,canonical));
  }
  static String text(String v){ return v==null?null:Normalizer.normalize(v.replaceAll("\\s+"," ").trim(),Normalizer.Form.NFKC); }
  static String location(String v){ String value=text(v); return value==null?null:value.replaceAll("(?i)^remote\\s*[-,]?\\s*", "Remote - ").replaceAll("(?i)^remote$", "Remote"); }

@@ -162,6 +162,9 @@ public class EmployerIngestionService {
         job.setCompany(external.company());
         job.setLocation(external.location());
         job.setEmploymentType(external.employmentType());
+        job.setSalaryMin(external.salaryMin());
+        job.setSalaryMax(external.salaryMax());
+        if (external.salaryMin() != null) job.setSalary(external.salaryMin());
         job.setApplicationUrl(external.applicationUrl());
         job.setSourceUrl(external.applicationUrl());
         job.setPublishedAt(external.publishedAt());

@@ -26,12 +26,13 @@ class EmployerIngestionSchedulerTest {
         assertEquals(EmployerRegistryProperties.Source.values().length, tasks.size());
         Map<Duration, Long> delays = tasks.stream()
                 .collect(Collectors.groupingBy(IntervalTask::getIntervalDuration, Collectors.counting()));
-        assertEquals(Map.of(Duration.ofMillis(21_600_000L), 1L, Duration.ofMillis(1234), 1L), delays);
+        assertEquals(Map.of(Duration.ofMillis(21_600_000L), 2L, Duration.ofMillis(1234), 1L), delays);
         assertTrue(tasks.stream().allMatch(task -> task.getInitialDelayDuration().isZero()));
 
         tasks.forEach(task -> task.getRunnable().run());
         verify(coordinator).run(EmployerRegistryProperties.Source.GREENHOUSE, SyncRunService.Trigger.SCHEDULED);
         verify(coordinator).run(EmployerRegistryProperties.Source.LEVER, SyncRunService.Trigger.SCHEDULED);
+        verify(coordinator).run(EmployerRegistryProperties.Source.ASHBY, SyncRunService.Trigger.SCHEDULED);
         verifyNoMoreInteractions(coordinator);
     }
 }

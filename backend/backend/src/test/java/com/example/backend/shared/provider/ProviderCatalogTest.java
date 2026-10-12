@@ -9,12 +9,12 @@ import org.junit.jupiter.api.Test;
 class ProviderCatalogTest {
     @Test
     void listsEveryProviderOnceInStableOrderWithKinds() {
-        assertEquals(List.of("adzuna", "greenhouse", "lever"),
+        assertEquals(List.of("adzuna", "greenhouse", "lever", "ashby"),
                 ProviderCatalog.all().stream().map(ProviderCatalog.Provider::name).toList());
-        assertEquals(Set.of("adzuna", "greenhouse", "lever"), ProviderCatalog.names());
+        assertEquals(Set.of("adzuna", "greenhouse", "lever", "ashby"), ProviderCatalog.names());
         assertEquals(List.of("adzuna"), ProviderCatalog.ofKind(ProviderCatalog.Kind.SEARCH_API).stream()
                 .map(ProviderCatalog.Provider::name).toList());
-        assertEquals(List.of("greenhouse", "lever"), ProviderCatalog.ofKind(ProviderCatalog.Kind.ATS_BOARD).stream()
+        assertEquals(List.of("greenhouse", "lever", "ashby"), ProviderCatalog.ofKind(ProviderCatalog.Kind.ATS_BOARD).stream()
                 .map(ProviderCatalog.Provider::name).toList());
     }
 
@@ -45,6 +45,13 @@ class ProviderCatalogTest {
         ProviderCatalog.Provider lever = ProviderCatalog.find("lever").orElseThrow();
         assertEquals("job-aggregation.scheduling.lever-delay-ms", lever.scheduleProperty());
         assertEquals("https://api.lever.co/v0/postings", lever.defaultBaseUrl());
+        ProviderCatalog.Provider ashby = ProviderCatalog.find("ashby").orElseThrow();
+        assertTrue(ashby.employerScoped());
+        assertEquals("ASHBY", ashby.registrySource());
+        assertEquals("job-aggregation.scheduling.ashby-delay-ms", ashby.scheduleProperty());
+        assertEquals(21_600_000L, ashby.defaultDelayMs());
+        assertEquals("job-aggregation.providers.ashby-base-url", ashby.baseUrlProperty());
+        assertEquals("https://api.ashbyhq.com/posting-api/job-board", ashby.defaultBaseUrl());
     }
 
     @Test

@@ -12,22 +12,27 @@ timeout_seconds=${REGISTRY_TIMEOUT_SECONDS:-15}
 declare -A provider_base=(
   [GREENHOUSE]=https://boards-api.greenhouse.io/v1/boards
   [LEVER]=https://api.lever.co/v0/postings
+  [ASHBY]=https://api.ashbyhq.com/posting-api/job-board
 )
 declare -A provider_path=(
   [GREENHOUSE]='/{board}/jobs?content=true'
   [LEVER]='/{board}?mode=json'
+  [ASHBY]='/{board}?includeCompensation=true'
 )
 declare -A provider_shape=(
   [GREENHOUSE]='type == "object" and (.jobs | type == "array")'
   [LEVER]='type == "array"'
+  [ASHBY]='type == "object" and (.jobs | type == "array")'
 )
 declare -A provider_items=(
   [GREENHOUSE]='all(.jobs[]?; (.id != null and (.absolute_url | type == "string") and (.absolute_url | length > 0)))'
   [LEVER]='all(.[]?; (.id != null and (.hostedUrl | type == "string") and (.hostedUrl | length > 0)))'
+  [ASHBY]='all(.jobs[]?; (.id != null and (.jobUrl | type == "string") and (.jobUrl | length > 0)))'
 )
 declare -A provider_count=(
   [GREENHOUSE]='.jobs | length'
   [LEVER]='length'
+  [ASHBY]='[.jobs[] | select(.isListed != false)] | length'
 )
 for source in "${!provider_base[@]}"; do
   override="REGISTRY_${source}_BASE_URL"

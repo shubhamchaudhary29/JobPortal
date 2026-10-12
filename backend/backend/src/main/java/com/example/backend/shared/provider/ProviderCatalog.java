@@ -25,7 +25,10 @@ public final class ProviderCatalog {
                     "job-aggregation.providers.greenhouse-base-url", "https://boards-api.greenhouse.io/v1/boards"),
             new Provider("lever", Kind.ATS_BOARD, "Lever", "LEVER",
                     "job-aggregation.scheduling.lever-delay-ms", 21_600_000L,
-                    "job-aggregation.providers.lever-base-url", "https://api.lever.co/v0/postings"));
+                    "job-aggregation.providers.lever-base-url", "https://api.lever.co/v0/postings"),
+            new Provider("ashby", Kind.ATS_BOARD, "Ashby", "ASHBY",
+                    "job-aggregation.scheduling.ashby-delay-ms", 21_600_000L,
+                    "job-aggregation.providers.ashby-base-url", "https://api.ashbyhq.com/posting-api/job-board"));
 
     private static final Map<String, Provider> BY_NAME = index(PROVIDERS);
 

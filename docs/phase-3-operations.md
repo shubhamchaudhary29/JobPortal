@@ -70,7 +70,7 @@ BACKFILL_APPLY=true mongosh "$MONGODB_URI" backend/backend/scripts/backfill-sour
 The script is idempotent and does not delete, merge, or guess ambiguous documents. Back up the `jobs` collection before applying; rollback consists of restoring that backup or manually removing only the reviewed additive `sourceListings` fields. Recruiter-created jobs are excluded.
 
 Public job search reads MongoDB only; it never invokes Greenhouse, Lever, or Adzuna.
-Greenhouse and Lever are independently scheduled every six hours by default and can be globally disabled with `JOB_AGGREGATION_SCHEDULING_ENABLED=false` (the test profile does this).
+Greenhouse, Lever, and Ashby are independently scheduled every six hours by default and can be globally disabled with `JOB_AGGREGATION_SCHEDULING_ENABLED=false` (the test profile does this).
 
 Imported records use a provider-independent SHA-256 fingerprint of normalized company, title, and location. The original provider identity and each original application deep link are retained on the canonical record. Apply the `imported_fingerprint_unique` index only after running the read-only audit:
 
@@ -147,7 +147,7 @@ lock acquisition failures are recorded as failed runs.
 
 ### Greenhouse and Lever transport reliability
 
-Greenhouse and Lever use one provider-neutral HTTP failure and retry policy. Timeouts, HTTP `429`,
+Greenhouse, Lever, and Ashby use one provider-neutral HTTP failure and retry policy. Timeouts, HTTP `429`,
 and HTTP `5xx` are transient; other `4xx` responses and malformed JSON are permanent for that run.
 Retries are bounded, use exponential backoff with jitter, and honor both delta-seconds and HTTP-date
 `Retry-After` values without exceeding the configured maximum delay. An interrupted backoff stops
@@ -169,6 +169,8 @@ The supported settings and safe defaults are:
 | `JOB_AGGREGATION_PROVIDER_CIRCUIT_OPEN_MS` | `60000` | `100`–`600000` ms before one half-open probe |
 | `GREENHOUSE_BASE_URL` | official boards API | HTTP(S) endpoint; override only for controlled testing/proxying |
 | `LEVER_BASE_URL` | official postings API | HTTP(S) endpoint; override only for controlled testing/proxying |
+| `ASHBY_BASE_URL` | official job-posting API | HTTP(S) endpoint; override only for controlled testing/proxying |
+| `ASHBY_SYNC_DELAY_MS` | `21600000` | fixed delay between scheduled Ashby runs |
 
 Automated reliability tests point these base URLs at an in-process mock HTTP server and never call
 live providers. Keep credentials and query-bearing upstream URLs out of logs and support output.
