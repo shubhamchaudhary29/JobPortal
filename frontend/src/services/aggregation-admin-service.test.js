@@ -14,11 +14,13 @@ describe("aggregation ADMIN API", () => {
     await service.getSyncHistory({ page: 2, size: 20 });
     await service.getSyncRun("run/1");
     await service.getAggregationConflicts({ status: "OPEN", page: 0, size: 20 });
+    await service.getAggregationProviders();
 
     expect(get).toHaveBeenNthCalledWith(1, "/api/v1/admin/ingestion/status", { params: { provider: "lever" } });
     expect(get).toHaveBeenNthCalledWith(2, "/api/v1/admin/ingestion/history", { params: { page: 2, size: 20 } });
     expect(get).toHaveBeenNthCalledWith(3, "/api/v1/admin/ingestion/history/run%2F1");
     expect(get).toHaveBeenNthCalledWith(4, "/api/v1/admin/ingestion/conflicts", { params: { status: "OPEN", page: 0, size: 20 } });
+    expect(get).toHaveBeenNthCalledWith(5, "/api/v1/admin/ingestion/providers");
   });
 
   it("supports provider-wide, employer-specific, and reference-safe resolution posts", async () => {

@@ -24,6 +24,7 @@ import org.springframework.data.domain.Sort;
 import com.example.backend.shared.error.BadRequestException;
 import com.example.backend.shared.error.ResourceNotFoundException;
 import com.example.backend.shared.pagination.PageResponse;
+import com.example.backend.shared.provider.ProviderCatalog;
 
 @Service
 public class SyncRunService {
@@ -147,11 +148,8 @@ public class SyncRunService {
 
     private String normalizedProvider(String provider) {
         if (provider == null || provider.isBlank()) return null;
-        String normalized = provider.trim().toLowerCase(Locale.ROOT);
-        if (!List.of("adzuna", "greenhouse", "lever").contains(normalized)) {
-            throw new BadRequestException("Unsupported provider");
-        }
-        return normalized;
+        return ProviderCatalog.find(provider.trim()).map(ProviderCatalog.Provider::name)
+                .orElseThrow(() -> new BadRequestException("Unsupported provider"));
     }
 
     private String normalizedEmployer(String employer) {

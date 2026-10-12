@@ -1,11 +1,11 @@
 // @vitest-environment jsdom
 import "@testing-library/jest-dom/vitest";
-import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const api = vi.hoisted(() => ({
   getAggregationStatus: vi.fn(), getSyncHistory: vi.fn(), getSyncRun: vi.fn(),
-  getAggregationConflicts: vi.fn(), startAggregationSync: vi.fn(),
+  getAggregationConflicts: vi.fn(), getAggregationProviders: vi.fn(), startAggregationSync: vi.fn(),
   resolveAggregationConflict: vi.fn(), aggregationAdminError: vi.fn(),
 }));
 vi.mock("../services/aggregation-admin-service", () => api);
@@ -28,6 +28,11 @@ const status = {
   activeImportedJobs: 7, inactiveImportedJobs: 2, latestRuns: [run()],
   providerCompanyCounts: [{ provider: "lever", employer: "board", company: "Acme", activeListings: 4, inactiveListings: 1 }],
 };
+const providers = [
+  { name: "adzuna", kind: "SEARCH_API", displayName: "Adzuna", employerScoped: false },
+  { name: "greenhouse", kind: "ATS_BOARD", displayName: "Greenhouse", employerScoped: true },
+  { name: "lever", kind: "ATS_BOARD", displayName: "Lever", employerScoped: true },
+];
 const conflict = {
   id: "conflict-1", type: "IDENTITY_FINGERPRINT", status: "OPEN", jobIds: ["job-a", "job-b"],
   occurrences: 2, lastObservedAt: "2026-08-16T12:00:00Z",
@@ -38,6 +43,11 @@ function successfulLoad(history = page([run()]), conflicts = page([conflict])) {
   api.getSyncHistory.mockResolvedValue(history);
   api.getAggregationConflicts.mockResolvedValue(conflicts);
   api.getSyncRun.mockResolvedValue({ ...run(), failureDetail: "bounded failure" });
+  api.getAggregationProviders.mockResolvedValue(providers);
+}
+
+async function providersReady() {
+  await within(await screen.findByLabelText("Provider")).findByRole("option", { name: "Lever" });
 }
 
 describe("aggregation ADMIN page", () => {
@@ -86,6 +96,7 @@ describe("aggregation ADMIN page", () => {
     api.startAggregationSync.mockResolvedValue({ outcome, runId: `run-${outcome}` });
     render(<AggregationAdmin />);
     await screen.findByText("Manual synchronization");
+    await providersReady();
     fireEvent.click(screen.getByRole("button", { name: "Start sync" }));
     expect(await screen.findByText(new RegExp(expected))).toBeInTheDocument();
   });
@@ -98,6 +109,7 @@ describe("aggregation ADMIN page", () => {
     api.startAggregationSync.mockRejectedValue({ safe });
     render(<AggregationAdmin />);
     await screen.findByText("Manual synchronization");
+    await providersReady();
     fireEvent.click(screen.getByRole("button", { name: "Start sync" }));
     expect(await screen.findByText(new RegExp(expected))).toBeInTheDocument();
   });
@@ -108,7 +120,10 @@ describe("aggregation ADMIN page", () => {
     api.startAggregationSync.mockReturnValue(new Promise((resolve) => { resolveSync = resolve; }));
     render(<AggregationAdmin />);
     await screen.findByText("Manual synchronization");
+    await providersReady();
+    expect(screen.getByLabelText("Employer board")).toBeDisabled();
     fireEvent.change(screen.getByLabelText("Provider"), { target: { value: "greenhouse" } });
+    expect(screen.getByLabelText("Employer board")).toBeEnabled();
     fireEvent.change(screen.getByLabelText("Employer board"), { target: { value: "board" } });
     const button = screen.getByRole("button", { name: "Start sync" });
     fireEvent.click(button);
@@ -135,5 +150,36 @@ describe("aggregation ADMIN page", () => {
     expect(api.resolveAggregationConflict).toHaveBeenCalledTimes(1);
     expect(api.resolveAggregationConflict).toHaveBeenCalledWith("conflict-1", "job-a", "job-b");
     await act(async () => finishResolution({ status: "RESOLVED" }));
+  });
+
+  it("loads provider options from the ADMIN catalog and blocks sync until they are available", async () => {
+    successfulLoad();
+    let finishProviders;
+    api.getAggregationProviders.mockReturnValue(new Promise((resolve) => { finishProviders = resolve; }));
+    api.startAggregationSync.mockResolvedValue({ outcome: "COMPLETED", runId: "run" });
+    render(<AggregationAdmin />);
+    await screen.findByText("Manual synchronization");
+    expect(within(screen.getByLabelText("Provider")).getByRole("option", { name: "Loading providers…" })).toBeInTheDocument();
+    expect(screen.getByLabelText("Provider")).toBeDisabled();
+    expect(screen.getByRole("button", { name: "Start sync" })).toBeDisabled();
+    await act(async () => finishProviders(providers));
+    expect(within(screen.getByLabelText("Provider")).getAllByRole("option").map((option) => option.textContent))
+      .toEqual(["Adzuna", "Greenhouse", "Lever"]);
+    expect(screen.getByLabelText("Provider")).toHaveValue("adzuna");
+    fireEvent.click(screen.getByRole("button", { name: "Start sync" }));
+    await waitFor(() => expect(api.startAggregationSync).toHaveBeenCalledWith("adzuna", null));
+  });
+
+  it("shows a provider-list error with retry and keeps sync disabled", async () => {
+    successfulLoad();
+    api.getAggregationProviders.mockRejectedValueOnce({ safe: "Could not load providers." });
+    render(<AggregationAdmin />);
+    expect(await screen.findByText("Could not load providers.")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Start sync" })).toBeDisabled();
+    expect(within(screen.getByLabelText("Provider")).queryByRole("option")).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Retry providers" }));
+    await providersReady();
+    expect(screen.queryByText("Could not load providers.")).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Start sync" })).toBeEnabled();
   });
 });

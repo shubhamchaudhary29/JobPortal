@@ -5,8 +5,34 @@ script_dir=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 backend_dir=$(cd "$script_dir/.." && pwd)
 registry=${1:-"$backend_dir/src/main/resources/application.properties"}
 timeout_seconds=${REGISTRY_TIMEOUT_SECONDS:-15}
-greenhouse_base=${REGISTRY_GREENHOUSE_BASE_URL:-https://boards-api.greenhouse.io/v1/boards}
-lever_base=${REGISTRY_LEVER_BASE_URL:-https://api.lever.co/v0/postings}
+
+# ATS provider table: one entry per registry source of the backend ProviderCatalog. Each base URL can be
+# overridden with REGISTRY_<SOURCE>_BASE_URL. The board path uses {board} as its placeholder; the jq
+# filters check the response shape, that every item has an id and a public link, and count the items.
+declare -A provider_base=(
+  [GREENHOUSE]=https://boards-api.greenhouse.io/v1/boards
+  [LEVER]=https://api.lever.co/v0/postings
+)
+declare -A provider_path=(
+  [GREENHOUSE]='/{board}/jobs?content=true'
+  [LEVER]='/{board}?mode=json'
+)
+declare -A provider_shape=(
+  [GREENHOUSE]='type == "object" and (.jobs | type == "array")'
+  [LEVER]='type == "array"'
+)
+declare -A provider_items=(
+  [GREENHOUSE]='all(.jobs[]?; (.id != null and (.absolute_url | type == "string") and (.absolute_url | length > 0)))'
+  [LEVER]='all(.[]?; (.id != null and (.hostedUrl | type == "string") and (.hostedUrl | length > 0)))'
+)
+declare -A provider_count=(
+  [GREENHOUSE]='.jobs | length'
+  [LEVER]='length'
+)
+for source in "${!provider_base[@]}"; do
+  override="REGISTRY_${source}_BASE_URL"
+  [[ -n "${!override:-}" ]] && provider_base[$source]=${!override}
+done
 
 for dependency in awk curl jq mktemp; do
   command -v "$dependency" >/dev/null || { printf 'Missing prerequisite: %s\n' "$dependency" >&2; exit 3; }
@@ -34,14 +60,12 @@ while IFS=$'\t' read -r index company source board enabled; do
     printf '%s\t%s\t-\tDISABLED\t0\n' "$source" "$board" | tee -a "$results"
     continue
   fi
-  if [[ "$source" == "GREENHOUSE" ]]; then
-    url="${greenhouse_base%/}/$board/jobs?content=true"
-  elif [[ "$source" == "LEVER" ]]; then
-    url="${lever_base%/}/$board?mode=json"
-  else
+  if [[ -z "$source" || -z "${provider_base[$source]+set}" ]]; then
     printf '%s\t%s\t-\tINVALID\t0\n' "$source" "$board" | tee -a "$results"
     continue
   fi
+  path=${provider_path[$source]}
+  url="${provider_base[$source]%/}${path//\{board\}/$board}"
 
   response=$(mktemp)
   http_code=$(curl --silent --show-error --location --connect-timeout "$timeout_seconds" \
@@ -52,24 +76,13 @@ while IFS=$'\t' read -r index company source board enabled; do
   if [[ "$curl_status" -eq 0 && "$http_code" == "200" ]]; then
     if ! jq -e . "$response" >/dev/null 2>&1; then
       classification=MALFORMED
-    elif [[ "$source" == "GREENHOUSE" ]]; then
-      if ! jq -e 'type == "object" and (.jobs | type == "array")' "$response" >/dev/null; then
-        classification=MALFORMED
-      elif ! jq -e 'all(.jobs[]?; (.id != null and (.absolute_url | type == "string") and (.absolute_url | length > 0)))' "$response" >/dev/null; then
-        classification=MALFORMED
-      else
-        count=$(jq '.jobs | length' "$response")
-        [[ "$count" -eq 0 ]] && classification=EMPTY || classification=ACTIVE
-      fi
+    elif ! jq -e "${provider_shape[$source]}" "$response" >/dev/null; then
+      classification=MALFORMED
+    elif ! jq -e "${provider_items[$source]}" "$response" >/dev/null; then
+      classification=MALFORMED
     else
-      if ! jq -e 'type == "array"' "$response" >/dev/null; then
-        classification=MALFORMED
-      elif ! jq -e 'all(.[]?; (.id != null and (.hostedUrl | type == "string") and (.hostedUrl | length > 0)))' "$response" >/dev/null; then
-        classification=MALFORMED
-      else
-        count=$(jq 'length' "$response")
-        [[ "$count" -eq 0 ]] && classification=EMPTY || classification=ACTIVE
-      fi
+      count=$(jq "${provider_count[$source]}" "$response")
+      [[ "$count" -eq 0 ]] && classification=EMPTY || classification=ACTIVE
     fi
   elif [[ "$curl_status" -eq 0 && ( "$http_code" == "404" || "$http_code" == "410" ) ]]; then
     classification=INVALID

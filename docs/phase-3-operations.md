@@ -128,8 +128,10 @@ History is ordered by start time descending and run ID ascending. Unsupported fi
 identifiers, negative pages, and sizes outside 1–100 are rejected; retention metadata and exception
 stacks are never returned.
 
+`GET /api/v1/admin/ingestion/providers` returns the provider catalog (name, kind, display name, and
+whether employer-scoped runs are supported); the ADMIN page builds its provider selector from it.
 An administrator starts a provider-wide run with `POST /api/v1/admin/ingestion/{provider}/sync` for
-`adzuna`, `greenhouse`, or `lever`. Greenhouse and Lever also accept an optional configured board,
+any catalog provider, currently `adzuna`, `greenhouse`, or `lever`. Greenhouse and Lever also accept an optional configured board,
 for example `?employer=airbnb`; unknown or disabled boards are rejected and Adzuna does not accept
 an employer. Manual and scheduled requests call the same coordinator. Employer-specific runs retain
 the provider-wide lease key deliberately, so they cannot overlap that provider's scheduled or broad

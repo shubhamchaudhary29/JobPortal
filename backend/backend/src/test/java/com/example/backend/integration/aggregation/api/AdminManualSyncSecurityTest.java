@@ -1,6 +1,7 @@
 package com.example.backend.integration.aggregation.api;
 
 import static org.mockito.Mockito.when;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
@@ -92,6 +93,52 @@ class AdminManualSyncSecurityTest {
                 .andExpect(status().isServiceUnavailable())
                 .andExpect(jsonPath("$.status").value("LEASE_LOST"))
                 .andExpect(jsonPath("$.runId").value("run-lost"));
+    }
+
+    @Test
+    void providerCatalogIsAdminOnlyAndListsEveryProviderInCatalogOrder() throws Exception {
+        mvc.perform(get("/api/v1/admin/ingestion/providers")).andExpect(status().isUnauthorized());
+        mvc.perform(get("/api/v1/admin/ingestion/providers")
+                        .header(HttpHeaders.AUTHORIZATION, bearer("USER")))
+                .andExpect(status().isForbidden());
+        mvc.perform(get("/api/v1/admin/ingestion/providers")
+                        .header(HttpHeaders.AUTHORIZATION, bearer("RECRUITER")))
+                .andExpect(status().isForbidden());
+        mvc.perform(get("/api/v1/admin/ingestion/providers")
+                        .header(HttpHeaders.AUTHORIZATION, bearer("ADMIN")))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.length()").value(3))
+                .andExpect(jsonPath("$[0].name").value("adzuna"))
+                .andExpect(jsonPath("$[0].kind").value("SEARCH_API"))
+                .andExpect(jsonPath("$[0].displayName").value("Adzuna"))
+                .andExpect(jsonPath("$[0].employerScoped").value(false))
+                .andExpect(jsonPath("$[1].name").value("greenhouse"))
+                .andExpect(jsonPath("$[1].kind").value("ATS_BOARD"))
+                .andExpect(jsonPath("$[1].employerScoped").value(true))
+                .andExpect(jsonPath("$[2].name").value("lever"))
+                .andExpect(jsonPath("$[0].scheduleProperty").doesNotExist())
+                .andExpect(jsonPath("$[1].defaultBaseUrl").doesNotExist());
+    }
+
+    @Test
+    void unknownProvidersAreStillRejectedBeforeAnyCoordinatorRuns() throws Exception {
+        mvc.perform(post("/api/v1/admin/ingestion/%20lever/sync")
+                        .header(HttpHeaders.AUTHORIZATION, bearer("ADMIN")))
+                .andExpect(status().isBadRequest());
+        for (String provider : new String[] {"unknown", "other", "linkedin", "GREENHOUSE2"}) {
+            mvc.perform(post("/api/v1/admin/ingestion/" + provider + "/sync")
+                            .header(HttpHeaders.AUTHORIZATION, bearer("ADMIN")))
+                    .andExpect(status().isBadRequest())
+                    .andExpect(jsonPath("$.code").value("BAD_REQUEST"));
+        }
+        org.mockito.Mockito.verifyNoInteractions(coordinator, adzuna);
+        when(coordinator.run(EmployerRegistryProperties.Source.LEVER, null, SyncRunService.Trigger.MANUAL))
+                .thenReturn(new IngestionCoordinator.Result(new EmployerIngestionService.Result(0, 0, 1, 0, 0),
+                        false, false, "run-lever"));
+        mvc.perform(post("/api/v1/admin/ingestion/LeVeR/sync")
+                        .header(HttpHeaders.AUTHORIZATION, bearer("ADMIN")))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.runId").value("run-lever"));
     }
 
     private String bearer(String role) {

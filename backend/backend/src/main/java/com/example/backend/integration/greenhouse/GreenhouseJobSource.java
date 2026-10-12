@@ -40,7 +40,7 @@ public class GreenhouseJobSource implements JobSource {
     }
     @Override
     public FetchResult fetchWithMetadata(JobFetchRequest request, BooleanSupplier requestValid) {
-        String url = UriComponentsBuilder.fromUriString(properties.greenhouseBaseUrl())
+        String url = UriComponentsBuilder.fromUriString(properties.baseUrl(sourceName()))
                 .pathSegment(request.boardId(), "jobs").queryParam("content", true).build().toUriString();
         ProviderRetryExecutor.Result<GreenhouseJobsResponse> result = retries.execute(requestValid, () -> circuit.execute(
                 sourceName(), request.boardId(), () -> {

@@ -9,6 +9,7 @@ import com.example.backend.integration.aggregation.SyncRunService;
 import com.example.backend.integration.adzuna.AdzunaIngestionCoordinator;
 import com.example.backend.shared.error.BadRequestException;
 import com.example.backend.shared.pagination.PageResponse;
+import com.example.backend.shared.provider.ProviderCatalog;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.NotBlank;
 import io.swagger.v3.oas.annotations.security.SecurityRequirement;
@@ -47,12 +48,19 @@ public class AdminIngestionController {
         IngestionAdminService.Counts counts = admin.counts();
         return new Summary(counts.active(), counts.inactive());
     }
+    @GetMapping("/providers")
+    public java.util.List<ProviderView> providers() {
+        return ProviderCatalog.all().stream().map(ProviderView::from).toList();
+    }
     @PostMapping("/{provider}/sync")
     public ResponseEntity<?> sync(@PathVariable String provider,
             @org.springframework.web.bind.annotation.RequestParam(required = false) String employer) {
-        if ("adzuna".equalsIgnoreCase(provider)) {
+        ProviderCatalog.Provider selected = ProviderCatalog.find(provider)
+                .orElseThrow(() -> new BadRequestException("Unsupported provider"));
+        if (!selected.employerScoped()) {
             if (employer != null && !employer.isBlank()) {
-                throw new BadRequestException("Adzuna does not support employer-specific synchronization");
+                throw new BadRequestException(selected.displayName()
+                        + " does not support employer-specific synchronization");
             }
             AdzunaIngestionCoordinator.Result result = adzuna.run(SyncRunService.Trigger.MANUAL);
             if (result.locked()) return operationalFailure(HttpStatus.CONFLICT, "LOCKED", result.runId());
@@ -61,12 +69,8 @@ public class AdminIngestionController {
             }
             return ResponseEntity.ok(result);
         }
-        EmployerRegistryProperties.Source source;
-        try {
-            source = EmployerRegistryProperties.Source.valueOf(provider.toUpperCase(java.util.Locale.ROOT));
-        } catch (IllegalArgumentException badProvider) {
-            throw new BadRequestException("Unsupported provider");
-        }
+        EmployerRegistryProperties.Source source =
+                EmployerRegistryProperties.Source.valueOf(selected.registrySource());
         IngestionCoordinator.Result result = coordinator.run(source, employer, SyncRunService.Trigger.MANUAL);
         if (result.locked()) return operationalFailure(HttpStatus.CONFLICT, "LOCKED", result.runId());
         if (result.leaseLost()) {
@@ -111,6 +115,12 @@ public class AdminIngestionController {
                 admin.providerCompanyCounts());
     }
     public record Summary(long activeImportedJobs, long inactiveImportedJobs) { }
+    public record ProviderView(String name, ProviderCatalog.Kind kind, String displayName, boolean employerScoped) {
+        static ProviderView from(ProviderCatalog.Provider provider) {
+            return new ProviderView(provider.name(), provider.kind(), provider.displayName(),
+                    provider.employerScoped());
+        }
+    }
     public record Status(java.util.List<SyncRunService.RunView> latestRuns,
                          long activeImportedJobs, long inactiveImportedJobs,
                          java.util.List<IngestionAdminService.ProviderCompanyCount> providerCompanyCounts) { }

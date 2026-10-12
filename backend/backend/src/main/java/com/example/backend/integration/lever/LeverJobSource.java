@@ -42,7 +42,7 @@ public class LeverJobSource implements JobSource {
     }
     @Override
     public FetchResult fetchWithMetadata(JobFetchRequest request, BooleanSupplier requestValid) {
-        String url = UriComponentsBuilder.fromUriString(properties.leverBaseUrl())
+        String url = UriComponentsBuilder.fromUriString(properties.baseUrl(sourceName()))
                 .pathSegment(request.boardId()).queryParam("mode", "json").build().toUriString();
         ProviderRetryExecutor.Result<List<LeverJobDto>> result = retries.execute(requestValid, () -> circuit.execute(
                 sourceName(), request.boardId(), () -> {

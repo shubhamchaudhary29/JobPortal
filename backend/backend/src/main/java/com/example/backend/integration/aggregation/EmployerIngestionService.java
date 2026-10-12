@@ -6,6 +6,7 @@ import com.example.backend.integration.jobs.JobFetchRequest;
 import com.example.backend.integration.jobs.JobSource;
 import com.example.backend.job.infrastructure.JobDocument;
 import java.time.LocalDateTime;
+import java.util.EnumMap;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
@@ -13,9 +14,9 @@ import java.util.Set;
 import java.util.function.BooleanSupplier;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.stereotype.Service;
 import com.example.backend.shared.error.BadRequestException;
+import com.example.backend.shared.provider.ProviderCatalog;
 
 @Service
 public class EmployerIngestionService {
@@ -25,11 +26,9 @@ public class EmployerIngestionService {
     private final EmployerRegistryProperties registry;
     private final ImportedJobLifecycleService lifecycle;
 
-    public EmployerIngestionService(@Qualifier("greenhouseJobSource") JobSource greenhouse,
-            @Qualifier("leverJobSource") JobSource lever, AdzunaJobStore store,
+    public EmployerIngestionService(List<JobSource> sources, AdzunaJobStore store,
             EmployerRegistryProperties registry, ImportedJobLifecycleService lifecycle) {
-        this.sources = Map.of(EmployerRegistryProperties.Source.GREENHOUSE, greenhouse,
-                EmployerRegistryProperties.Source.LEVER, lever);
+        this.sources = boardSources(sources);
         this.store = store;
         this.registry = registry;
         this.lifecycle = lifecycle;
@@ -53,6 +52,12 @@ public class EmployerIngestionService {
                     || (employerBoard != null && !employer.boardId().equalsIgnoreCase(employerBoard))) continue;
             attemptedEmployers++;
             JobSource source = sources.get(employer.source());
+            if (source == null) {
+                failed++;
+                log.warn("event=employer_board_failed provider={} board={}",
+                        employer.source().provider().name(), employer.boardId());
+                continue;
+            }
             Set<String> seenIdentities = new HashSet<>();
             boolean complete = true;
             LocalDateTime observedAt = LocalDateTime.now();
@@ -108,6 +113,25 @@ public class EmployerIngestionService {
         }
         return new Result(inserted, updated, unchanged, rejected, failed,
                 lifecycleMatched, lifecycleModified, attemptedEmployers, retries);
+    }
+
+    /** True when a {@link JobSource} bean is registered for the registry source. */
+    public boolean supports(EmployerRegistryProperties.Source source) { return sources.containsKey(source); }
+
+    /** Resolves ATS-board sources by {@code sourceName()}; search APIs and unnamed beans are ignored. */
+    private static Map<EmployerRegistryProperties.Source, JobSource> boardSources(List<JobSource> candidates) {
+        Map<EmployerRegistryProperties.Source, JobSource> resolved =
+                new EnumMap<>(EmployerRegistryProperties.Source.class);
+        for (JobSource candidate : candidates) {
+            ProviderCatalog.Provider provider = ProviderCatalog.find(candidate.sourceName())
+                    .filter(ProviderCatalog.Provider::employerScoped).orElse(null);
+            if (provider == null) continue;
+            var source = EmployerRegistryProperties.Source.valueOf(provider.registrySource());
+            if (resolved.putIfAbsent(source, candidate) != null) {
+                throw new IllegalStateException("Duplicate job source for provider " + provider.name());
+            }
+        }
+        return Map.copyOf(resolved);
     }
 
     String requireEnabledEmployer(EmployerRegistryProperties.Source source, String employer) {

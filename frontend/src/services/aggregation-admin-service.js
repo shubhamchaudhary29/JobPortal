@@ -4,6 +4,9 @@ import { apiRoutes } from "./api-routes";
 export const getAggregationStatus = async (filters = {}) =>
   (await apiClient.get(apiRoutes.adminAggregation.status, { params: filters })).data;
 
+export const getAggregationProviders = async () =>
+  (await apiClient.get(apiRoutes.adminAggregation.providers)).data;
+
 export const getSyncHistory = async (params = {}) =>
   (await apiClient.get(apiRoutes.adminAggregation.history, { params })).data;
 

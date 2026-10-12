@@ -50,6 +50,7 @@ export const apiRoutes = Object.freeze({
   }),
   adminAggregation: Object.freeze({
     status: `${API_V1}/admin/ingestion/status`,
+    providers: `${API_V1}/admin/ingestion/providers`,
     history: `${API_V1}/admin/ingestion/history`,
     historyById: (id) => `${API_V1}/admin/ingestion/history/${encodeURIComponent(id)}`,
     conflicts: `${API_V1}/admin/ingestion/conflicts`,
