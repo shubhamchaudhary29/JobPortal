@@ -1,6 +1,6 @@
 # Aggregation completion plan
 
-This document is the durable implementation and acceptance source of truth for the Phase 2/3 job-aggregation work. Work only the first unchecked milestone. Update its evidence and checkbox before committing.
+This document is the durable implementation and acceptance source of truth for the Phase 2/3 job-aggregation work. Work only the first unchecked milestone (Phase 1–3 is complete; Phase 4 starts at M6). Update its evidence and checkbox before committing.
 
 ## Frozen foundations
 
@@ -177,7 +177,7 @@ The remaining scope is per-source lifecycle and safe migration; deterministic ca
 - Migration audit completeness: the bounded read-only audit now detects cross-document imported source-identity duplicates and both compatibility-field mismatch classes before unique-index creation. Its seeded harness proves clean acceptance, status `2` for each new anomaly category, and byte-for-byte unchanged job/conflict snapshots after every audit invocation.
 - Local evidence (2026-08-16): `cd backend/backend && ./mvnw -Dtest='ProviderReliabilityMockServerTest,EmployerIngestionServiceTest,ApplicationServiceTest,ImportedJobCleanupMongoIntegrationTest' test` passed 31 tests (0 failures/errors/skips), including deterministic Greenhouse/Lever retry cancellation, interrupted retry/rate-limit waits, and both sides of the cleanup/application race. `cd backend/backend && ./mvnw clean verify` passed 146 tests (0 failures/errors/skips). `cd frontend && npm ci && npm run lint && npm test -- --run && npm run build && npm audit --omit=dev` passed 24 tests across 8 files, a 210-module build, and 0 production vulnerabilities. Both `MONGODB_URI=mongodb://localhost:27017 bash backend/backend/scripts/verify-backfill-source-listings.sh` and `MONGODB_URI=mongodb://localhost:27017 bash backend/backend/scripts/verify-aggregation-migration.sh` passed against disposable databases; the latter covered clean, duplicate cross-document identity, compatibility mismatch, legacy anomaly, and no-mutation assertions. `bash backend/backend/scripts/verify-employer-registry-classification.sh`, `docker compose config`, `docker compose build`, `bash backend/backend/scripts/compose-smoke-test.sh`, and `git diff --check` all passed.
 
-## Release checklist
+## Phase 1–3 release checklist
 
 - [x] `./mvnw clean verify` passes, including real Mongo integration tests.
 - [x] Frontend clean install, lint, tests, audit, and production build pass.
@@ -187,3 +187,135 @@ The remaining scope is per-source lifecycle and safe migration; deterministic ca
 - [x] `git diff --check` and secret scanning pass.
 - [x] GitHub Actions succeeds on the pushed branch.
 - [x] PR description documents migrations/configuration/results and contains no premature completion claim.
+
+## Phase 4 — Source expansion (India focus)
+
+Phase 1–3 above are complete. Phase 4 grows job coverage, mainly for India, without weakening the frozen foundations. New providers must go through the existing normalizer, fingerprint/source-listing upsert, lifecycle, durable sync history, leases, reliability stack (`ProviderHttpClient`, retries, circuit, limiter, payload limits), metrics, and ADMIN controls. Do not add new ingestion paths around them.
+
+### Source policy (applies to every Phase 4 milestone)
+
+- Allowed: public company ATS job-board APIs (Greenhouse, Lever, Ashby, SmartRecruiters, Workable) and publisher/affiliate aggregator APIs (Adzuna, Jooble, Careerjet) used within their terms.
+- Aggregator listings keep the provider's own redirect link as `applicationUrl` and show provider attribution wherever the job is displayed. Respect each provider's documented caching/retention rules; record them in `docs/provider-terms.md` before enabling the provider.
+- Not allowed: LinkedIn, Naukri, Indeed, or any scraping that breaks a site's terms. JSearch (RapidAPI) is limited to local/manual testing and is never scheduled or enabled by default.
+- API keys come from environment variables only, are never logged, and every new provider is disabled by default when its key is missing.
+- Order: ATS growth first (best data, no quota), then dedup normalization (so more sources do not multiply duplicates), then the aggregator APIs, then Adzuna tuning, then the Mongo-backed registry.
+
+- [ ] **M6 — Provider extensibility groundwork (no behavior change)**
+
+  - Required behavior: remove the hard-coded provider lists so later milestones add a provider in one place. Today `adzuna|greenhouse|lever` is repeated in `EmployerRegistryProperties.Source`, `EmployerIngestionService` (fixed `Map.of` of two qualified beans), `EmployerIngestionScheduler` (one `@Scheduled` method per source), `SyncRunService` provider validation, `AggregationMetrics` tag allow-list, `JobMatchingService` source allow-list, `AdminIngestionController`, `ProviderReliabilityProperties` base URLs, the ADMIN page provider `<select>`, and `validate-employer-registry.sh`. Introduce a single provider catalog (name, kind `ATS_BOARD` or `SEARCH_API`, display name, registry source enum, default schedule property) and have these places read from it. `EmployerIngestionService` resolves `JobSource` beans by `sourceName()` instead of fixed qualifiers. The ADMIN frontend reads the provider list from an ADMIN API instead of hard-coded options. Metric tags stay a fixed, low-cardinality allow-list (derived from the catalog, not from input).
+  - Expected files/components: new `integration/aggregation/ProviderCatalog` (or equivalent), the files listed above, a `GET /api/admin/aggregation/providers` endpoint, `aggregation-admin-service.js`, `AggregationAdmin.jsx`.
+  - Tests required: catalog unit tests; existing Greenhouse/Lever/Adzuna, metrics tag, sync-history validation, admin security and frontend tests stay green unchanged in intent; new test proving an unknown provider is still rejected (`400`) and metric tags still reject arbitrary values; frontend test for the provider list loading/error state.
+  - Verification commands: `cd backend/backend && ./mvnw clean verify`; `cd frontend && npm ci && npm run lint && npm test -- --run && npm run build`; `git diff --check`.
+  - Dependencies: M1–M5 complete.
+  - Done when: adding a provider requires a `JobSource` bean, a catalog entry, and config only; all existing tests pass with identical observable behavior.
+  - Evidence: _pending_.
+
+- [ ] **M7 — Ashby ATS adapter**
+
+  - Required behavior: `AshbyJobSource` (`sourceName()` = `ashby`) reading the public posting API (`https://api.ashbyhq.com/posting-api/job-board/{boardId}?includeCompensation=true`), mapping id, title, description (HTML sanitized by the normalizer), location, employment type, compensation min/max when present, `jobUrl`/`applyUrl`, and `publishedAt`. Use the shared reliability stack with the same malformed-response rules as Greenhouse (only `{"jobs":[]}` is a valid empty board; `null`, `{}`, missing `jobs`, empty/204 are `MALFORMED_RESPONSE`). Skip unlisted postings (`isListed=false`). Add `ASHBY` to the registry source, a schedule property `job-aggregation.scheduling.ashby-delay-ms`, a base-URL property, and registry-validation script support.
+  - Expected files/components: `integration/ashby/{AshbyJobSource,AshbyJobBoardResponse,AshbyJobDto}.java`, catalog entry, `application.properties`, `.env.example`, `validate-employer-registry.sh` + fixture, `docs/architecture.md`.
+  - Tests required: MockServer tests for success, empty board, each malformed shape, payload limit, retry/`Retry-After`, circuit open, cancellation before HTTP, rejected item counting; ingestion test proving Ashby jobs merge with an identical Greenhouse job through fingerprint/source listings; registry script fixture covering ACTIVE/EMPTY/MALFORMED/INVALID for Ashby.
+  - Verification commands: `cd backend/backend && ./mvnw -Dtest='*Ashby*,ProviderReliabilityMockServerTest,EmployerIngestionServiceTest' test && ./mvnw clean verify`; `bash backend/backend/scripts/verify-employer-registry-classification.sh`; `git diff --check`.
+  - Dependencies: M6.
+  - Done when: Ashby boards in the registry ingest, deactivate/reactivate, appear in sync history/metrics/ADMIN, and all checks pass.
+  - Evidence: _pending_.
+
+- [ ] **M8 — SmartRecruiters ATS adapter**
+
+  - Required behavior: `SmartRecruitersJobSource` (`smartrecruiters`) reading `https://api.smartrecruiters.com/v1/companies/{boardId}/postings` with `offset`/`limit` pagination (bounded by `maxItems` and a max-pages guard), then the per-posting detail only when needed for description (bounded request count per run). Map id, name, location (city/region/country, `remote` flag), `typeOfEmployment`, `releasedDate`, and the public apply/posting URL. Same malformed/empty rules, reliability, cancellation, registry, schedule and script support as M7.
+  - Expected files/components: `integration/smartrecruiters/*`, catalog entry, properties, `.env.example`, registry script + fixture, docs.
+  - Tests required: as M7, plus multi-page pagination, a page-count cap, and a partial failure mid-pagination that must not advance lifecycle missing state.
+  - Verification commands: `cd backend/backend && ./mvnw -Dtest='*SmartRecruiters*,ProviderReliabilityMockServerTest,EmployerIngestionServiceTest' test && ./mvnw clean verify`; `bash backend/backend/scripts/verify-employer-registry-classification.sh`; `git diff --check`.
+  - Dependencies: M6 (M7 for the shared pattern).
+  - Done when: as M7 for SmartRecruiters.
+  - Evidence: _pending_.
+
+- [ ] **M9 — Workable ATS adapter**
+
+  - Required behavior: `WorkableJobSource` (`workable`) reading the public widget endpoint `https://apply.workable.com/api/v1/widget/accounts/{boardId}?details=true`. Map shortcode as external id, title, description, city/state/country (or telecommuting → `Remote`), employment type, published date, and `url`/`application_url`. Same malformed/empty rules, reliability, cancellation, registry, schedule and script support as M7. If the endpoint's terms or availability cannot be confirmed, record the blocker in `docs/provider-terms.md` and stop rather than scraping HTML pages.
+  - Expected files/components: `integration/workable/*`, catalog entry, properties, `.env.example`, registry script + fixture, docs.
+  - Tests required: as M7.
+  - Verification commands: `cd backend/backend && ./mvnw -Dtest='*Workable*,ProviderReliabilityMockServerTest,EmployerIngestionServiceTest' test && ./mvnw clean verify`; `bash backend/backend/scripts/verify-employer-registry-classification.sh`; `git diff --check`.
+  - Dependencies: M6.
+  - Done when: as M7 for Workable.
+  - Evidence: _pending_.
+
+- [ ] **M10 — India employer registry expansion with dated evidence**
+
+  - Required behavior: research and add Indian employers on supported ATSes (candidates to check, not assumptions: Razorpay, CRED, Zepto, Groww, Meesho, PhonePe, Swiggy, Zomato, Postman, BrowserStack, Freshworks, Zerodha, Atlassian India, Nykaa, Ola, Dream11, InMobi, ShareChat, Unacademy, Upstox, Slice, Jar, Rapido, Urban Company). For each, record the careers page checked, ATS detected, and board id. Add only entries whose live validation is ACTIVE or EMPTY; keep INVALID/UNREACHABLE ones out or `enabled=false` with the reason. Respect the 1000-entry cap and the unique enabled-company rule.
+  - Expected files/components: `application.properties` registry entries, `docs/employer-registry-verification.md` (new dated section with per-board classification and counts), `docs/india-employer-sources.md` (research table).
+  - Tests required: existing registry property validation tests pass; `validate-employer-registry.sh` run live.
+  - Verification commands: `bash backend/backend/scripts/validate-employer-registry.sh` (live, when network permits); `cd backend/backend && ./mvnw clean verify`; `git diff --check`.
+  - Dependencies: M7–M9 (an employer on an unsupported ATS is recorded but not added).
+  - Done when: at least 15 enabled Indian employers across the supported ATSes are ACTIVE with dated evidence, or the network blocker is documented truthfully.
+  - Evidence: _pending_.
+
+- [ ] **M11 — Cross-provider dedup normalization (city and company)**
+
+  - Required behavior: the fingerprint is `company|title|location`, so `Bengaluru` vs `Bangalore`, `Gurgaon` vs `Gurugram`, `Bombay` vs `Mumbai`, `New Delhi`/`Delhi NCR`, or `Razorpay` vs `Razorpay Software Pvt Ltd` create duplicates. Add deterministic, versioned normalization used only for the fingerprint (display values stay as the provider sent them): a city alias table (Indian city renames plus `, India`/`, IN`/state suffix stripping), and company suffix stripping (`Pvt Ltd`, `Private Limited`, `Ltd`, `Limited`, `Inc`, `LLC`, `Technologies`, `Software`, `India`) plus an explicit company alias table. Store a `fingerprintVersion`. Because `imported_fingerprint_unique` is a unique index, supply a dry-run/apply migration that recomputes fingerprints for imported jobs and sends any resulting collision into the existing conflict reconciliation (never auto-deleting or silently merging, and never touching recruiter jobs or jobs with applications). Extend the migration audit to report version mismatches. Geocoded-coordinate matching is out of scope (future work).
+  - Expected files/components: `ExternalJobNormalizer` (+ alias tables as resources), `JobDocument.fingerprintVersion`, a migration script and its verify harness under `backend/backend/scripts/`, audit script update, `docs/phase-3-operations.md` migration section.
+  - Tests required: normalizer table-driven tests for every alias and suffix rule and for non-merging look-alikes; Mongo integration tests for migration dry-run/apply/idempotence, collision → conflict record, recruiter/application protection; audit harness with a version-mismatch anomaly; existing fingerprint/upsert tests updated only where the expected value legitimately changes.
+  - Verification commands: `cd backend/backend && ./mvnw clean verify`; `MONGODB_URI=mongodb://localhost:27017 bash backend/backend/scripts/verify-aggregation-migration.sh` (plus the new fingerprint migration harness); `git diff --check`.
+  - Dependencies: M6 (and ideally M10 so real Indian data exercises it).
+  - Done when: equivalent city/company variants share one fingerprint, the migration is safe and idempotent on seeded data, and all checks pass.
+  - Evidence: _pending_.
+
+- [ ] **M12 — Search-API provider framework (generalize the Adzuna path)**
+
+  - Required behavior: Adzuna has its own service/coordinator/circuit/metrics. Jooble and Careerjet are the same kind of keyword × location search API. Extract a reusable search-provider ingestion service (query plan of keyword × location × page, per-run request budget, shared reliability stack, seen-set lifecycle only after a fully successful run, durable sync runs, lease coordinator, metrics) and move Adzuna onto it without changing Adzuna's observable behavior, configuration names, or history. Add a per-provider monthly request budget counter persisted in Mongo so a run stops (outcome `PARTIAL`, reason `BUDGET_EXHAUSTED`) before exceeding the quota.
+  - Expected files/components: `integration/search/{SearchProviderIngestionService,SearchQueryPlan,ProviderRequestBudget}` (names indicative), Adzuna wiring, `SyncRunDocument` reason, docs.
+  - Tests required: all existing Adzuna tests pass unchanged in intent; budget tests (exhaustion mid-run, month rollover, concurrent runs on two instances); lifecycle not advanced on a budget-stopped run.
+  - Verification commands: `cd backend/backend && ./mvnw -Dtest='*Adzuna*,*Search*,*Budget*' test && ./mvnw clean verify`; `git diff --check`.
+  - Dependencies: M6.
+  - Done when: Adzuna runs on the shared framework with identical behavior and the budget guard is proven.
+  - Evidence: _pending_.
+
+- [ ] **M13 — Jooble adapter**
+
+  - Required behavior: `JoobleJobSource` (`jooble`) using `POST https://jooble.org/api/{JOOBLE_API_KEY}` with `keywords`, `location`, `page`. Map id, title, snippet, company, location, type, salary text (parse min/max only when unambiguous), `updated`, and keep Jooble's `link` as the application URL. Key never logged (the key is in the URL path: logging must redact it). Disabled when `JOOBLE_API_KEY` is empty. Attribution shown on job detail/cards for `jooble` jobs. Terms (attribution, caching, link rules) recorded in `docs/provider-terms.md` first.
+  - Expected files/components: `integration/jooble/*`, catalog entry, properties, `.env.example`, frontend attribution, `docs/provider-terms.md`.
+  - Tests required: MockServer success/empty/malformed/retry/429/circuit/cancellation, key redaction in logs (`SanitizedLogTest`), disabled-when-no-key, dedup merge with an ATS job, frontend attribution test.
+  - Verification commands: `cd backend/backend && ./mvnw -Dtest='*Jooble*,SanitizedLogTest' test && ./mvnw clean verify`; `cd frontend && npm test -- --run && npm run build`; `git diff --check`.
+  - Dependencies: M11, M12.
+  - Done when: Jooble ingests within budget, merges with existing jobs, shows attribution, and all checks pass.
+  - Evidence: _pending_.
+
+- [ ] **M14 — Careerjet adapter**
+
+  - Required behavior: `CareerjetJobSource` (`careerjet`) using the Careerjet public search API with `affid`, `keywords`, `location`, `locale_code=en_IN`, `page`. Careerjet's API expects the end user's IP and user agent; confirm in its terms whether server-side scheduled caching is permitted. If it is not, record this in `docs/provider-terms.md` and mark the milestone blocked instead of implementing a non-compliant integration. Otherwise mirror M13 (redirect URL kept, attribution, disabled without `CAREERJET_AFFID`).
+  - Expected files/components: `integration/careerjet/*`, catalog entry, properties, `.env.example`, `docs/provider-terms.md`.
+  - Tests required: as M13.
+  - Verification commands: `cd backend/backend && ./mvnw -Dtest='*Careerjet*' test && ./mvnw clean verify`; `git diff --check`.
+  - Dependencies: M12, M13.
+  - Done when: as M13 for Careerjet, or the terms blocker is documented.
+  - Evidence: _pending_.
+
+- [ ] **M15 — Adzuna India tuning (keyword × city within quota)**
+
+  - Required behavior: Adzuna already queries `/jobs/in/` with 8 keywords × 2 pages every 12 h (about 960 requests/month). Add a configurable city list (default: Bengaluru, Delhi, Gurugram, Noida, Mumbai, Pune, Hyderabad, Chennai, Kolkata, Ahmedabad) passed as `where`, plus a broader keyword list, and let the M12 query plan pick keyword × city × page combinations under a configured monthly budget (default 2,000 of the 2,500 free requests, leaving headroom for manual runs). Rotate combinations across runs so every combination is covered within the month. The lifecycle seen-set must account for rotation: a job is only counted missing when the query that previously returned it ran successfully (or lifecycle is skipped for partial-coverage runs); document the chosen rule.
+  - Expected files/components: `AdzunaProperties`, `RestTemplateAdzunaClient`/Adzuna `JobSource`, query plan rotation state in Mongo, `application.properties`, `.env.example`, docs.
+  - Tests required: budget math, rotation coverage over a simulated month, `where` parameter encoding, no false deactivation caused by rotation.
+  - Verification commands: `cd backend/backend && ./mvnw -Dtest='*Adzuna*,*Search*,*Budget*,ImportedJobLifecycle*' test && ./mvnw clean verify`; `git diff --check`.
+  - Dependencies: M12.
+  - Done when: projected monthly requests stay under budget, all combinations rotate, no rotation-induced deactivations, and all checks pass.
+  - Evidence: _pending_.
+
+- [ ] **M16 — Mongo-backed employer registry with ADMIN management**
+
+  - Required behavior: move the registry from `application.properties` into an `employer_registry` collection (unique `source+boardId`, unique enabled company), with a one-time idempotent import from properties and properties kept as a fallback seed. ADMIN API and page to list/search/add/edit/enable/disable entries and run validation for one entry; changes are audited (who/when). Remove the 1000-entry cap from properties validation only for the Mongo path; keep paging and a sane per-run limit. Schedulers read the collection.
+  - Expected files/components: registry document/repository/service, admin controller, migration/import, frontend page and service, docs.
+  - Tests required: import idempotence, uniqueness, security (`401/403`), validation endpoint, scheduler reads Mongo, frontend component tests.
+  - Verification commands: `cd backend/backend && ./mvnw clean verify`; `cd frontend && npm ci && npm run lint && npm test -- --run && npm run build`; `git diff --check`.
+  - Dependencies: M6, M10.
+  - Done when: ADMIN manages the registry without redeploys and all checks pass.
+  - Evidence: _pending_.
+
+### Phase 4 release checklist
+
+- [ ] `./mvnw clean verify` passes, including real Mongo integration tests.
+- [ ] Frontend clean install, lint, tests, audit, and production build pass.
+- [ ] Fingerprint migration and duplicate/index audit pass against seeded data.
+- [ ] `docs/provider-terms.md` covers every enabled provider; no disallowed source is ingested.
+- [ ] Registry validation evidence for new ATS boards is dated and truthful.
+- [ ] No API key appears in logs, history, metrics, or the repository; secret scanning passes.
+- [ ] GitHub Actions succeeds on the pushed branch.
