@@ -28,7 +28,10 @@ public final class ProviderCatalog {
                     "job-aggregation.providers.lever-base-url", "https://api.lever.co/v0/postings"),
             new Provider("ashby", Kind.ATS_BOARD, "Ashby", "ASHBY",
                     "job-aggregation.scheduling.ashby-delay-ms", 21_600_000L,
-                    "job-aggregation.providers.ashby-base-url", "https://api.ashbyhq.com/posting-api/job-board"));
+                    "job-aggregation.providers.ashby-base-url", "https://api.ashbyhq.com/posting-api/job-board"),
+            new Provider("smartrecruiters", Kind.ATS_BOARD, "SmartRecruiters", "SMARTRECRUITERS",
+                    "job-aggregation.scheduling.smartrecruiters-delay-ms", 21_600_000L,
+                    "job-aggregation.providers.smartrecruiters-base-url", "https://api.smartrecruiters.com/v1/companies"));
 
     private static final Map<String, Provider> BY_NAME = index(PROVIDERS);
 

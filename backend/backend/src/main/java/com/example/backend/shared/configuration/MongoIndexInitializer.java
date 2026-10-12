@@ -66,6 +66,8 @@ public class MongoIndexInitializer implements ApplicationRunner {
                 .named("sync_run_outcome_started_idx"));
         syncRuns.ensureIndex(new Index().on("expiresAt", Sort.Direction.ASC)
                 .expire(Duration.ZERO).named("sync_run_retention_ttl"));
+        mongo.indexOps("smartrecruiters_posting_details").ensureIndex(new Index().on("expiresAt", Sort.Direction.ASC)
+                .expire(Duration.ZERO).named("smartrecruiters_detail_retention_ttl"));
         mongo.indexOps("candidate_profiles").ensureIndex(new Index().on("userId", Sort.Direction.ASC)
                 .unique().named("candidate_profile_user_unique"));
         IndexOperations resumes = mongo.indexOps("tailored_resume_versions");

@@ -13,7 +13,7 @@ copilot/{api,application,domain,infrastructure}
 job/{api,application,domain,infrastructure}
 application/{api,application,domain,infrastructure}
 messaging/{api,application,infrastructure,security}
-integration/{adzuna,greenhouse,lever,ashby,aggregation,reliability}
+integration/{adzuna,greenhouse,lever,ashby,smartrecruiters,aggregation,reliability}
 shared/{api,configuration,error,pagination,security}
 ```
 
@@ -60,6 +60,8 @@ Aggregation administration is exposed only below `/api/v1/admin/ingestion`: summ
 Supported providers are listed once in `shared/provider/ProviderCatalog` (name, `ATS_BOARD` or `SEARCH_API` kind, display name, registry source, schedule property, and base URL). Provider validation, history filters, metric tags, ATS schedules, base URLs, `JobSource` resolution, and the ADMIN provider list (`GET /api/v1/admin/ingestion/providers`) all read it, so adding an ATS provider needs a `JobSource` bean, a catalog entry with its registry source constant, and configuration. The catalog lives in `shared` because both `integration` and `matching` read it.
 
 Ashby (`ashby`) is an ATS-board provider on the shared reliability stack: it reads the public job-posting API, skips unlisted postings, applies the Greenhouse empty/malformed rules (only a `jobs` array is a valid empty board), and maps compensation only for annual INR salaries. Its terms and usage limits are recorded in [`provider-terms.md`](provider-terms.md).
+
+SmartRecruiters (`smartrecruiters`) pages through the public Posting API with bounded pages and items, and reads each posting's detail (description and public link) once per release through a TTL-bounded Mongo cache with a per-run detail budget. A source may return `FetchResult.complete=false` (page cap, a failed later page, or deferred details); the ingestion service then stores what it received, records the board as failed for that run (`PARTIAL`/`FAILED`), and does not advance lifecycle missing state.
 
 Provider-wide and optional Greenhouse/Lever employer-specific manual runs enter the exact coordinator used by scheduling. Employer scope affects fetching and history, but not the provider lease key; this prevents a narrow run from overlapping a full-provider run on another instance. Adzuna uses its own equivalent Mongo-backed coordinator and accepts provider-wide scope only.
 
@@ -172,5 +174,5 @@ uses its local HTTP configuration. Production must mount the certificate or term
 proxy; the HTTP fallback is for local Compose use.
 
 All provider and retention scheduling can be disabled for isolated environments with
-`JOB_AGGREGATION_SCHEDULING_ENABLED=false`. Adzuna, Greenhouse, Lever, and Ashby otherwise use their configured
+`JOB_AGGREGATION_SCHEDULING_ENABLED=false`. Adzuna, Greenhouse, Lever, Ashby, and SmartRecruiters otherwise use their configured
 fixed delays and shared Mongo-backed coordinator/lease paths.

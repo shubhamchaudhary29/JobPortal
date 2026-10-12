@@ -8,7 +8,7 @@ public record EmployerRegistryProperties(List<Employer> employers) {
  public record Employer(String company, Source source, String boardId, boolean enabled) { }
  /** Registry sources are the ATS providers of {@link ProviderCatalog}; each constant must have a catalog entry. */
  public enum Source {
-  GREENHOUSE, LEVER, ASHBY;
+  GREENHOUSE, LEVER, ASHBY, SMARTRECRUITERS;
   public ProviderCatalog.Provider provider() {
    return ProviderCatalog.byRegistrySource(name()).orElseThrow(() -> new IllegalStateException("Registry source missing from provider catalog: " + name()));
   }

@@ -211,4 +211,29 @@ class EmployerIngestionServiceTest {
         verify(store, times(1)).upsert(any(), any(), any());
         verifyNoInteractions(lifecycle);
     }
+
+    @Test
+    void incompleteFetchStoresItemsButCountsTheBoardAsFailedAndNeverAdvancesLifecycle() {
+        JobSource smartRecruiters = mock(JobSource.class);
+        AdzunaJobStore store = mock(AdzunaJobStore.class);
+        ImportedJobLifecycleService lifecycle = mock(ImportedJobLifecycleService.class);
+        when(smartRecruiters.sourceName()).thenReturn("smartrecruiters");
+        when(smartRecruiters.fetchWithMetadata(any(), any())).thenReturn(new JobSource.FetchResult(List.of(
+                new ExternalJob("1", "Engineer", null, "Acme", null, null, null, null,
+                        "https://jobs.example.test/1", null, null, "fingerprint")), 2, 0, false));
+        when(store.upsert(any(), any(), any())).thenReturn(UpsertOutcome.INSERTED);
+        EmployerRegistryProperties registry = new EmployerRegistryProperties(List.of(
+                new EmployerRegistryProperties.Employer("Acme", EmployerRegistryProperties.Source.SMARTRECRUITERS,
+                        "acme", true)));
+
+        var result = new EmployerIngestionService(List.of(smartRecruiters), store, registry, lifecycle).sync();
+
+        assertAll(
+                () -> assertEquals(1, result.inserted()),
+                () -> assertEquals(1, result.failedEmployers()),
+                () -> assertEquals(2, result.retries()),
+                () -> assertEquals(0, result.rejected()));
+        verify(store).upsert(any(), any(), eq("acme"));
+        verifyNoInteractions(lifecycle);
+    }
 }

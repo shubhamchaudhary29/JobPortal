@@ -19,6 +19,7 @@ set +e
 output=$(REGISTRY_GREENHOUSE_BASE_URL="http://127.0.0.1:$port" \
   REGISTRY_LEVER_BASE_URL="http://127.0.0.1:$port" \
   REGISTRY_ASHBY_BASE_URL="http://127.0.0.1:$port/ashby" \
+  REGISTRY_SMARTRECRUITERS_BASE_URL="http://127.0.0.1:$port/smartrecruiters" \
   bash "$script_dir/validate-employer-registry.sh" \
   "$script_dir/fixtures/employer-registry-classification.properties")
 status=$?
@@ -35,7 +36,11 @@ for expected in \
   $'ASHBY\tactive\t200\tACTIVE\t1' \
   $'ASHBY\tempty\t200\tEMPTY\t0' \
   $'ASHBY\tmalformed\t200\tMALFORMED\t0' \
-  $'ASHBY\tinvalid\t404\tINVALID\t0'; do
+  $'ASHBY\tinvalid\t404\tINVALID\t0' \
+  $'SMARTRECRUITERS\tactive\t200\tACTIVE\t1' \
+  $'SMARTRECRUITERS\tempty\t200\tEMPTY\t0' \
+  $'SMARTRECRUITERS\tmalformed\t200\tMALFORMED\t0' \
+  $'SMARTRECRUITERS\tinvalid\t404\tINVALID\t0'; do
   grep -Fqx "$expected" <<< "$output"
 done
 printf 'registry classification verification passed\n'

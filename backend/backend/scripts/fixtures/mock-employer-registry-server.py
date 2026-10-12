@@ -3,7 +3,7 @@ import json
 from urllib.parse import urlparse
 
 
-PREFIXED_PROVIDERS = {"ashby"}
+PREFIXED_PROVIDERS = {"ashby", "smartrecruiters"}
 
 
 class Handler(BaseHTTPRequestHandler):
@@ -31,6 +31,9 @@ class Handler(BaseHTTPRequestHandler):
             payload = {"apiVersion": "1", "jobs": [] if board == "empty" else [
                 {"id": "one", "isListed": True, "jobUrl": "https://jobs.test/one"},
                 {"id": "hidden", "isListed": False, "jobUrl": "https://jobs.test/hidden"}]}
+        elif provider == "smartrecruiters":
+            content = [] if board == "empty" else [{"id": "744000000000001", "name": "Engineer"}]
+            payload = {"offset": 0, "limit": 100, "totalFound": len(content), "content": content}
         elif board == "empty":
             payload = {"jobs": []} if "/jobs" in path else []
         elif "/jobs" in path:

@@ -29,3 +29,31 @@ come only from environment variables, are never logged, and a provider stays dis
   `JOB_AGGREGATION_MISSING_THRESHOLD` successful misses) and retention cleanup.
 - Compensation: mapped to `salaryMin`/`salaryMax` only for an annual (`1 YEAR`) `Salary` component in `INR`,
   because jobs store no currency and the UI displays salaries in rupees. Other currencies are not stored.
+
+## SmartRecruiters (ATS board, `smartrecruiters`)
+
+- Checked: 2026-10-13 against <https://developers.smartrecruiters.com/docs/posting-api>,
+  <https://developers.smartrecruiters.com/docs/endpoints>, <https://developers.smartrecruiters.com/docs/rate-limiting>,
+  and live read-only requests to the `BoschGroup` board.
+- Endpoints: `GET https://api.smartrecruiters.com/v1/companies/{companyIdentifier}/postings?offset={n}&limit={1..100}`
+  for the list and `GET .../postings/{postingId}` for one posting's detail.
+- Authentication: none for public postings (verified live). The docs note API-key/OAuth access for internal
+  postings, which we never request.
+- Purpose stated by SmartRecruiters: the Posting API lets customers build their own career sites from postings
+  they made public. We use it read-only.
+- Rate limits: documented as up to 10 requests/second and 8 concurrent requests per API user, with `429` on
+  excess. We use at most `JOB_AGGREGATION_PROVIDER_REQUESTS_PER_SECOND` (default 5) per board, sequentially, and
+  honor `Retry-After`.
+- Request volume: list pages are bounded by `SMARTRECRUITERS_MAX_PAGES` (default 20) and the provider item limit.
+  List items have no description or public link, so a posting's detail is fetched once per `releasedDate` and
+  cached in `smartrecruiters_posting_details` (TTL `SMARTRECRUITERS_DETAIL_RETENTION_DAYS`, default 30). At most
+  `SMARTRECRUITERS_MAX_DETAIL_REQUESTS` (default 100) details are fetched per board run; postings still waiting
+  for a detail are not imported yet and the run is recorded as incomplete, so lifecycle never advances on it.
+- Unknown companies: the list endpoint returns `200` with an empty `content` array for a nonexistent company
+  identifier (verified with a random identifier), and `/v1/companies/{id}` returns `404` even for real companies.
+  Registry validation therefore reports such entries as `EMPTY`; confirm a new identifier against the employer's
+  `https://careers.smartrecruiters.com/{identifier}` page before enabling it.
+- Links: the detail `postingUrl` (SmartRecruiters-hosted posting page) is the application URL, falling back to
+  `applyUrl`. No URL rewriting.
+- Attribution and caching/retention: not documented for the Posting API. Imported postings follow the shared
+  lifecycle and retention cleanup.

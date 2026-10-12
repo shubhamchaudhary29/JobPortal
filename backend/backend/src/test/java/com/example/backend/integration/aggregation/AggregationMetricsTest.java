@@ -61,8 +61,11 @@ class AggregationMetricsTest {
     void providerTagsAreDerivedFromTheCatalogAndRejectArbitraryValues() {
         SimpleMeterRegistry registry = new SimpleMeterRegistry();
         AggregationMetrics metrics = new AggregationMetrics(registry);
-        for (String provider : new String[] {"adzuna", "Greenhouse", "LEVER", "board-123", "https://x.test",
-                "lever ", "", null, "jooble", "ashby"}) {
+        java.util.List<String> inputs = new java.util.ArrayList<>(java.util.Arrays.asList(
+                "board-123", "https://x.test", "lever ", "", null, "jooble"));
+        com.example.backend.shared.provider.ProviderCatalog.names()
+                .forEach(name -> inputs.add(name.toUpperCase(java.util.Locale.ROOT)));
+        for (String provider : inputs) {
             metrics.record(provider, SyncRunService.Outcome.COMPLETED, SyncRunService.Trigger.MANUAL,
                     SyncRunService.Counts.empty(), Duration.ZERO, false);
         }

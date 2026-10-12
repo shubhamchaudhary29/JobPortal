@@ -69,6 +69,7 @@ public class EmployerIngestionService {
                 retries += fetch.retries();
                 rejected += fetch.rejectedItems();
                 if (fetch.rejectedItems() > 0) complete = false;
+                if (!fetch.complete()) complete = false;
                 List<ExternalJob> response = fetch.jobs();
                 if (response.isEmpty()) log.info("event=employer_board_empty provider={} board={}",
                         source.sourceName(), employer.boardId());
@@ -96,6 +97,11 @@ public class EmployerIngestionService {
                         log.warn("event=employer_job_rejected provider={} board={}",
                                 source.sourceName(), employer.boardId());
                     }
+                }
+                if (!fetch.complete()) {
+                    failed++;
+                    log.warn("event=employer_board_incomplete provider={} board={}",
+                            source.sourceName(), employer.boardId());
                 }
                 if (complete && leaseValid.getAsBoolean()) {
                     ImportedJobLifecycleService.Result lifecycleResult = lifecycle.completeSuccessfulRun(
