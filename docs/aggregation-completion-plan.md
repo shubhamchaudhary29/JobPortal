@@ -374,7 +374,7 @@ Phase 1–3 above are complete. Phase 4 grows job coverage, mainly for India, wi
 - [x] `docs/provider-terms.md` covers every enabled provider; no disallowed source is ingested.
 - [x] Registry validation evidence for new ATS boards is dated and truthful.
 - [x] No API key appears in logs, history, metrics, or the repository; secret scanning passes.
-- [ ] GitHub Actions succeeds on the pushed branch.
+- [x] GitHub Actions succeeds on the pushed branch.
 
 Release evidence (2026-10-13):
 
@@ -386,3 +386,4 @@ Release evidence (2026-10-13):
 - Secrets: `gitleaks detect` (v8.24.3, the tool the Secret scan workflow uses) found no leaks in 100 commits. Tests prove provider keys stay out of logs and errors (`JoobleKeyRedactionTest`, `RestTemplateAdzunaClientTest`), out of history (`SyncRunService` URL/credential sanitization, `SyncHistoryMongoIntegrationTest`), and out of metrics (catalog-only provider tags, `AggregationMetricsTest`). Only `test-only` placeholder values are committed.
 - Docker: with CI's environment values, `docker compose config` (186 lines, all Phase 4 variables forwarded), `docker compose build`, and `bash backend/backend/scripts/compose-smoke-test.sh` passed (MongoDB, backend, frontend proxy, and SPA healthy; disposable project removed).
 - Documentation: `README.md`, `docs/architecture.md`, `docs/phase-3-operations.md`, the new `docs/phase-4-operations.md` (providers, rollout order, budgets, rotation, registry, attribution), and `.env.example` describe the new providers, environment variables, schedules, budgets, and migration steps.
+- CI: on release commit `e387fb0`, [push Verify](https://github.com/shubhamchaudhary29/JobPortal/actions/runs/38353451817) and [PR Verify](https://github.com/shubhamchaudhary29/JobPortal/actions/runs/38353458698) passed the backend, frontend (including `npm audit --omit=dev`), Compose build/smoke, and whitespace jobs, and [push Secret scan](https://github.com/shubhamchaudhary29/JobPortal/actions/runs/38353451792) and [PR Secret scan](https://github.com/shubhamchaudhary29/JobPortal/actions/runs/38353458497) passed. Verify had failed on every earlier commit of this branch only because of the axios advisory; it has been green since the axios fix (`d78c65c`).
