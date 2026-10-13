@@ -113,3 +113,25 @@ come only from environment variables, are never logged, and a provider stays dis
 - Data handling: postings without a company are skipped, because they cannot be attributed or de-duplicated.
   Free-text salaries are parsed only for explicit annual rupee amounts. Listings follow the shared lifecycle and
   retention. Caching/retention limits are unknown until the terms are read.
+
+## Careerjet (search API) — blocked, not integrated
+
+- Status: **blocked by terms; no adapter exists and nothing is ingested.** This follows the plan's M14 rule:
+  document the blocker instead of building a non-compliant integration.
+- Checked: 2026-10-13 against <https://www.careerjet.co.in/partners/api/>, its cURL guide
+  <https://www.careerjet.co.in/partners/api/curl>, and the publisher page
+  <https://www.careerjet.co.in/partners/publishers>.
+- Endpoint: `GET https://search.api.careerjet.net/v4/query` with HTTP basic authentication (API key as the user
+  name) and parameters including `locale_code` (`en_IN`), `keywords`, `location`, `page`, `page_size`.
+- Blocking requirement: `user_ip` and `user_agent` are **required**, documented as "the IP address of the user
+  whose action(s) triggered the API call" and "the user agent string of the user whose action(s) triggered the
+  API call". The cURL guide repeats "Replace <USER_IP> with your user's actual IP address" and "Replace
+  <USER_AGENT> with your user's actual User Agent", and requests without them fail with `403`. The publisher
+  program is described as monetising the publisher's own web traffic by displaying Careerjet listings.
+- Why it is blocked here: this portal's aggregation is scheduled server-side ingestion into MongoDB (public search
+  never calls a provider live; that is a frozen foundation). A scheduled run has no end user whose action
+  triggered the request, so complying would mean sending the server's IP and a synthetic user agent, which is
+  not what the API requires. No caching or retention permission is published either.
+- What would unblock it: written permission from Careerjet for scheduled server-side retrieval and storage (with
+  the values to send for `user_ip`/`user_agent`), or a product decision to add a live, user-triggered Careerjet
+  search outside the Mongo-only job search. Both are owner decisions.

@@ -1,6 +1,5 @@
 const AGGREGATORS = Object.freeze({
   jooble: { name: "Jooble", url: "https://in.jooble.org" },
-  careerjet: { name: "Careerjet", url: "https://www.careerjet.co.in" },
 });
 
 /** Listings from job-search aggregators must credit the provider wherever they are shown. */

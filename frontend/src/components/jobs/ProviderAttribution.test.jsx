@@ -13,8 +13,8 @@ describe("ProviderAttribution", () => {
     expect(link).toHaveAttribute("href", "https://in.jooble.org");
     expect(link).toHaveAttribute("rel", "noopener noreferrer");
     cleanup();
-    render(<ProviderAttribution source="careerjet" />);
-    expect(screen.getByTestId("provider-attribution")).toHaveTextContent("Jobs by Careerjet");
+    render(<ProviderAttribution source="jooble" />);
+    expect(screen.getByTestId("provider-attribution")).toHaveTextContent("Jobs by Jooble");
     cleanup();
     const { container } = render(<ProviderAttribution source="lever" />);
     expect(container).toBeEmptyDOMElement();
