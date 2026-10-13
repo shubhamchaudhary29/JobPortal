@@ -130,6 +130,8 @@ public class AdzunaJobStore {
                 .append("lastSeenAt", observedDate)
                 .append("active", true)
                 .append("fingerprint", literal(job.getFingerprint()))
+                // Every imported write path computes the current JobFingerprint version.
+                .append("fingerprintVersion", com.example.backend.integration.aggregation.JobFingerprint.VERSION)
                 .append("lastSuccessfulSyncAt", observedDate)
                 .append("consecutiveMissingRuns", 0)
                 .append("firstSeenAt", new Document("$ifNull", List.of("$firstSeenAt", observedDate)))
@@ -209,9 +211,8 @@ public class AdzunaJobStore {
                 && java.util.Objects.equals(a.getMatchFeatures().getSourceHash(), b.getMatchFeatures().getSourceHash());
     }
     private String legacyFingerprint(JobDocument job) {
-        String value = String.join("|", safe(job.getCompany()), safe(job.getTitle()), safe(job.getLocation())).toLowerCase(java.util.Locale.ROOT);
-        try { return java.util.HexFormat.of().formatHex(java.security.MessageDigest.getInstance("SHA-256").digest(value.getBytes(java.nio.charset.StandardCharsets.UTF_8))); }
-        catch (java.security.NoSuchAlgorithmException impossible) { throw new IllegalStateException(impossible); }
+        return com.example.backend.integration.aggregation.JobFingerprint.of(safe(job.getCompany()), safe(job.getTitle()),
+                job.getLocation());
     }
     private String safe(String value) { return value == null ? "" : value.trim().replaceAll("\\s+", " "); }
 }

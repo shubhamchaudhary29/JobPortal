@@ -95,9 +95,7 @@ class WorkableJobSourceMockServerTest {
                 () -> assertEquals("https://apply.workable.com/j/AB12CD34EF", onsite.applicationUrl()),
                 () -> assertEquals(LocalDateTime.of(2026, 9, 1, 0, 0), onsite.publishedAt()),
                 () -> assertNull(onsite.salaryMin()),
-                // The shared normalizer currently renders a bare "Remote" as "Remote - "; M11 fixes that with a
-                // versioned fingerprint migration. WorkableJobSourceTest covers the adapter's own "Remote" mapping.
-                () -> assertTrue(remote.location().startsWith("Remote")),
+                () -> assertEquals("Remote", remote.location()),
                 () -> assertEquals("Contract", remote.employmentType()),
                 () -> assertEquals("https://apply.workable.com/j/ZZ99/apply", remote.applicationUrl()),
                 () -> assertNull(remote.publishedAt()));

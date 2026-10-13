@@ -17,7 +17,8 @@ public final class ExternalJobNormalizer {
   return new ExternalJob(id, t, sanitize(description), c, l, text(type), salaryMin,salaryMax,canonical,parseDate(date),null, fingerprint(c,t,l,canonical));
  }
  static String text(String v){ return v==null?null:Normalizer.normalize(v.replaceAll("\\s+"," ").trim(),Normalizer.Form.NFKC); }
- static String location(String v){ String value=text(v); return value==null?null:value.replaceAll("(?i)^remote\\s*[-,]?\\s*", "Remote - ").replaceAll("(?i)^remote$", "Remote"); }
+ /** "remote" alone stays "Remote"; "remote - x", "remote, x", and "remote x" become "Remote - x". */
+ static String location(String v){ String value=text(v); if(value==null)return null; if(value.matches("(?i)^remote$"))return "Remote"; return value.replaceAll("(?i)^remote(?:\\s*[-,]\\s*|\\s+)(?=\\S)", "Remote - "); }
  /**
   * Validate a link without rewriting it.  Application URLs frequently contain signed
   * or tracking query parameters which are part of the employer's application flow.
@@ -27,8 +28,5 @@ public final class ExternalJobNormalizer {
  }
  static String sanitize(String html){ return html == null ? null : text(org.jsoup.Jsoup.parse(html).text()); }
  static LocalDateTime parseDate(String value){ if(value==null||value.isBlank())return null; try{return OffsetDateTime.parse(value).toLocalDateTime();}catch(DateTimeParseException e){try{return LocalDate.parse(value).atStartOfDay();}catch(DateTimeParseException ignored){return null;}} }
- static String fingerprint(String c,String t,String l,String ignoredUrl){
-  if(c==null||t==null)return null;
-  try{return java.util.HexFormat.of().formatHex(java.security.MessageDigest.getInstance("SHA-256").digest((c+"|"+t+"|"+(l==null?"":l)).toLowerCase(Locale.ROOT).getBytes(java.nio.charset.StandardCharsets.UTF_8)));}catch(java.security.NoSuchAlgorithmException e){throw new IllegalStateException(e);}
- }
+ static String fingerprint(String c,String t,String l,String ignoredUrl){ return JobFingerprint.of(c,t,l); }
 }
