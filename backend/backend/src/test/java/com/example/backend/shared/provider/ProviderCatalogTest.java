@@ -9,12 +9,13 @@ import org.junit.jupiter.api.Test;
 class ProviderCatalogTest {
     @Test
     void listsEveryProviderOnceInStableOrderWithKinds() {
-        assertEquals(List.of("adzuna", "greenhouse", "lever", "ashby", "smartrecruiters"),
+        assertEquals(List.of("adzuna", "greenhouse", "lever", "ashby", "smartrecruiters", "workable"),
                 ProviderCatalog.all().stream().map(ProviderCatalog.Provider::name).toList());
-        assertEquals(Set.of("adzuna", "greenhouse", "lever", "ashby", "smartrecruiters"), ProviderCatalog.names());
+        assertEquals(Set.of("adzuna", "greenhouse", "lever", "ashby", "smartrecruiters", "workable"),
+                ProviderCatalog.names());
         assertEquals(List.of("adzuna"), ProviderCatalog.ofKind(ProviderCatalog.Kind.SEARCH_API).stream()
                 .map(ProviderCatalog.Provider::name).toList());
-        assertEquals(List.of("greenhouse", "lever", "ashby", "smartrecruiters"), ProviderCatalog.ofKind(ProviderCatalog.Kind.ATS_BOARD).stream()
+        assertEquals(List.of("greenhouse", "lever", "ashby", "smartrecruiters", "workable"), ProviderCatalog.ofKind(ProviderCatalog.Kind.ATS_BOARD).stream()
                 .map(ProviderCatalog.Provider::name).toList());
     }
 
@@ -57,6 +58,10 @@ class ProviderCatalogTest {
         assertEquals("job-aggregation.scheduling.smartrecruiters-delay-ms", smartRecruiters.scheduleProperty());
         assertEquals("job-aggregation.providers.smartrecruiters-base-url", smartRecruiters.baseUrlProperty());
         assertEquals("https://api.smartrecruiters.com/v1/companies", smartRecruiters.defaultBaseUrl());
+        ProviderCatalog.Provider workable = ProviderCatalog.find("workable").orElseThrow();
+        assertEquals("WORKABLE", workable.registrySource());
+        assertEquals("job-aggregation.scheduling.workable-delay-ms", workable.scheduleProperty());
+        assertEquals("https://apply.workable.com/api/v1/widget/accounts", workable.defaultBaseUrl());
     }
 
     @Test

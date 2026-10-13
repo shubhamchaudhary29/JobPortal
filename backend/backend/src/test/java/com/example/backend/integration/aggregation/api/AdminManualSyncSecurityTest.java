@@ -107,7 +107,7 @@ class AdminManualSyncSecurityTest {
         mvc.perform(get("/api/v1/admin/ingestion/providers")
                         .header(HttpHeaders.AUTHORIZATION, bearer("ADMIN")))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.length()").value(5))
+                .andExpect(jsonPath("$.length()").value(6))
                 .andExpect(jsonPath("$[0].name").value("adzuna"))
                 .andExpect(jsonPath("$[0].kind").value("SEARCH_API"))
                 .andExpect(jsonPath("$[0].displayName").value("Adzuna"))
@@ -121,6 +121,7 @@ class AdminManualSyncSecurityTest {
                 .andExpect(jsonPath("$[3].employerScoped").value(true))
                 .andExpect(jsonPath("$[4].name").value("smartrecruiters"))
                 .andExpect(jsonPath("$[4].displayName").value("SmartRecruiters"))
+                .andExpect(jsonPath("$[5].name").value("workable"))
                 .andExpect(jsonPath("$[0].scheduleProperty").doesNotExist())
                 .andExpect(jsonPath("$[1].defaultBaseUrl").doesNotExist());
     }

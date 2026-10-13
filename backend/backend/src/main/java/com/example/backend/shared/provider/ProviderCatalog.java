@@ -31,7 +31,10 @@ public final class ProviderCatalog {
                     "job-aggregation.providers.ashby-base-url", "https://api.ashbyhq.com/posting-api/job-board"),
             new Provider("smartrecruiters", Kind.ATS_BOARD, "SmartRecruiters", "SMARTRECRUITERS",
                     "job-aggregation.scheduling.smartrecruiters-delay-ms", 21_600_000L,
-                    "job-aggregation.providers.smartrecruiters-base-url", "https://api.smartrecruiters.com/v1/companies"));
+                    "job-aggregation.providers.smartrecruiters-base-url", "https://api.smartrecruiters.com/v1/companies"),
+            new Provider("workable", Kind.ATS_BOARD, "Workable", "WORKABLE",
+                    "job-aggregation.scheduling.workable-delay-ms", 21_600_000L,
+                    "job-aggregation.providers.workable-base-url", "https://apply.workable.com/api/v1/widget/accounts"));
 
     private static final Map<String, Provider> BY_NAME = index(PROVIDERS);
 

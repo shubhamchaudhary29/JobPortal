@@ -57,3 +57,29 @@ come only from environment variables, are never logged, and a provider stays dis
   `applyUrl`. No URL rewriting.
 - Attribution and caching/retention: not documented for the Posting API. Imported postings follow the shared
   lifecycle and retention cleanup.
+
+## Workable (ATS board, `workable`)
+
+- Status: **unverified, needs a human check before enabling production boards.** The endpoint is public and
+  returns only what employers publish, but Workable does not document it for third-party server-side use.
+- Checked: 2026-10-13 with live read-only requests (`huggingface`, `blueground`, `skroutz`, `hubspot-1`), the
+  help-center articles "How to embed jobs on your website (job widget)" (updated 2026-06-17), "Using the Workable
+  API to create a careers page" (updated 2026-09-17), and "Comparing careers page options" (updated 2026-05-19),
+  the Workable Terms of Use (<https://www.workable.com/terms>, last updated 2026-03-02), and
+  <https://apply.workable.com/robots.txt>.
+- Endpoint: `GET https://apply.workable.com/api/v1/widget/accounts/{account}?details=true`, the JSON backend of
+  Workable's embeddable jobs widget. It returns `{"name", "description", "jobs": [...]}` with each published job's
+  `shortcode`, `title`, `description` (HTML), `employment_type`, `telecommuting`, `city`/`state`/`country`,
+  `published_on`, `url`, and `application_url`. An unknown account returns `404` with a plain-text body.
+- Authentication: none. Workable's documented API (`/spi/v3`) requires an account-owned token with `r_jobs`, so
+  it is only usable by the employer itself.
+- What was found: the help center documents the widget for employers' own websites and the token API for custom
+  careers pages; neither page addresses third-party aggregation. The Terms of Use bind Workable customers and do
+  not address read-only access to published postings. `apply.workable.com/robots.txt` allows all paths
+  (`Disallow:` empty; `Content-Signal: search=yes, ai-input=yes, ai-train=no`). No rate limit is documented.
+- Decision: implemented against mocks with the shared reliability stack (5 req/s per account, `429` and
+  `Retry-After` honored, one request per account per 6-hour run). Workable is not HTML scraping. No production
+  registry entry should be enabled until the owner confirms this use with Workable or accepts the risk.
+- Links: `url` (`https://apply.workable.com/j/{shortcode}`) is the application URL, falling back to
+  `application_url`. No URL rewriting.
+- Attribution and caching/retention: not documented. Imported postings follow the shared lifecycle and retention.

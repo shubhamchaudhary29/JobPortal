@@ -70,7 +70,7 @@ BACKFILL_APPLY=true mongosh "$MONGODB_URI" backend/backend/scripts/backfill-sour
 The script is idempotent and does not delete, merge, or guess ambiguous documents. Back up the `jobs` collection before applying; rollback consists of restoring that backup or manually removing only the reviewed additive `sourceListings` fields. Recruiter-created jobs are excluded.
 
 Public job search reads MongoDB only; it never invokes Greenhouse, Lever, or Adzuna.
-Greenhouse, Lever, Ashby, and SmartRecruiters are independently scheduled every six hours by default and can be globally disabled with `JOB_AGGREGATION_SCHEDULING_ENABLED=false` (the test profile does this).
+Greenhouse, Lever, Ashby, SmartRecruiters, and Workable are independently scheduled every six hours by default and can be globally disabled with `JOB_AGGREGATION_SCHEDULING_ENABLED=false` (the test profile does this).
 
 Imported records use a provider-independent SHA-256 fingerprint of normalized company, title, and location. The original provider identity and each original application deep link are retained on the canonical record. Apply the `imported_fingerprint_unique` index only after running the read-only audit:
 
@@ -147,7 +147,7 @@ lock acquisition failures are recorded as failed runs.
 
 ### Greenhouse and Lever transport reliability
 
-Greenhouse, Lever, Ashby, and SmartRecruiters use one provider-neutral HTTP failure and retry policy. Timeouts, HTTP `429`,
+Greenhouse, Lever, Ashby, SmartRecruiters, and Workable use one provider-neutral HTTP failure and retry policy. Timeouts, HTTP `429`,
 and HTTP `5xx` are transient; other `4xx` responses and malformed JSON are permanent for that run.
 Retries are bounded, use exponential backoff with jitter, and honor both delta-seconds and HTTP-date
 `Retry-After` values without exceeding the configured maximum delay. An interrupted backoff stops
@@ -177,6 +177,8 @@ The supported settings and safe defaults are:
 | `SMARTRECRUITERS_MAX_PAGES` | `20` | `1`–`100` list pages per board run; more pages make the run incomplete |
 | `SMARTRECRUITERS_MAX_DETAIL_REQUESTS` | `100` | `0`–`1000` uncached posting details fetched per board run |
 | `SMARTRECRUITERS_DETAIL_RETENTION_DAYS` | `30` | `1`–`365`; TTL of cached posting details |
+| `WORKABLE_BASE_URL` | public jobs-widget API | HTTP(S) endpoint; override only for controlled testing/proxying |
+| `WORKABLE_SYNC_DELAY_MS` | `21600000` | fixed delay between scheduled Workable runs |
 
 Automated reliability tests point these base URLs at an in-process mock HTTP server and never call
 live providers. Keep credentials and query-bearing upstream URLs out of logs and support output.
