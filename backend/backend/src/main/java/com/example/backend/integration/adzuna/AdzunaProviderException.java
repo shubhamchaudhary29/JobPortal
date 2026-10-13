@@ -1,11 +1,8 @@
 package com.example.backend.integration.adzuna;
 
 /** Deliberately contains no provider response body, URI, or credentials. */
-public class AdzunaProviderException extends RuntimeException {
-    private final boolean retryable;
+public class AdzunaProviderException extends com.example.backend.integration.search.SearchProviderException {
     public AdzunaProviderException(String safeMessage, boolean retryable, Throwable cause) {
-        super(safeMessage, cause);
-        this.retryable = retryable;
+        super(safeMessage, retryable, cause);
     }
-    public boolean retryable() { return retryable; }
 }

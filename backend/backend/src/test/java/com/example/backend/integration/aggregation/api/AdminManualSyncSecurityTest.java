@@ -6,8 +6,9 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
-import com.example.backend.integration.adzuna.AdzunaIngestionCoordinator;
-import com.example.backend.integration.adzuna.AdzunaService;
+import com.example.backend.integration.search.SearchIngestionCoordinator;
+import com.example.backend.integration.search.SearchIngestionCoordinators;
+import com.example.backend.integration.search.SearchSyncResult;
 import com.example.backend.integration.aggregation.AggregationConflictService;
 import com.example.backend.integration.aggregation.EmployerIngestionService;
 import com.example.backend.integration.aggregation.EmployerRegistryProperties;
@@ -29,7 +30,7 @@ class AdminManualSyncSecurityTest {
     @Autowired MockMvc mvc;
     @Autowired JwtUtil jwt;
     @MockitoBean IngestionCoordinator coordinator;
-    @MockitoBean AdzunaIngestionCoordinator adzuna;
+    @MockitoBean SearchIngestionCoordinators search;
     @MockitoBean IngestionAdminService admin;
     @MockitoBean AggregationConflictService conflicts;
     @MockitoBean SyncRunService runs;
@@ -55,9 +56,11 @@ class AdminManualSyncSecurityTest {
 
     @Test
     void adzunaProviderWideSyncUsesItsSharedCoordinator() throws Exception {
-        when(adzuna.run(SyncRunService.Trigger.MANUAL)).thenReturn(new AdzunaIngestionCoordinator.Result(
-                new AdzunaService.SyncResult(1, 0, 0, 0, 0, 0, AdzunaService.Outcome.FULL_SUCCESS),
-                false, false, "run-adzuna"));
+        SearchIngestionCoordinator adzuna = org.mockito.Mockito.mock(SearchIngestionCoordinator.class);
+        when(search.find("adzuna")).thenReturn(java.util.Optional.of(adzuna));
+        when(adzuna.run(SyncRunService.Trigger.MANUAL)).thenReturn(new SearchIngestionCoordinator.Result(
+                new SearchSyncResult(1, 0, 0, 0, 0, 0, 0, 0, 0, 1, SearchSyncResult.Outcome.FULL_SUCCESS, false),
+                false, false, "run-adzuna", SyncRunService.Outcome.COMPLETED));
 
         mvc.perform(post("/api/v1/admin/ingestion/adzuna/sync")
                         .header(HttpHeaders.AUTHORIZATION, bearer("ADMIN")))
@@ -137,7 +140,7 @@ class AdminManualSyncSecurityTest {
                     .andExpect(status().isBadRequest())
                     .andExpect(jsonPath("$.code").value("BAD_REQUEST"));
         }
-        org.mockito.Mockito.verifyNoInteractions(coordinator, adzuna);
+        org.mockito.Mockito.verifyNoInteractions(coordinator, search);
         when(coordinator.run(EmployerRegistryProperties.Source.LEVER, null, SyncRunService.Trigger.MANUAL))
                 .thenReturn(new IngestionCoordinator.Result(new EmployerIngestionService.Result(0, 0, 1, 0, 0),
                         false, false, "run-lever"));

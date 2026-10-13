@@ -6,7 +6,8 @@ import com.example.backend.integration.aggregation.IngestionAdminService;
 import com.example.backend.integration.aggregation.IngestionCoordinator;
 import com.example.backend.integration.aggregation.AggregationConflictService;
 import com.example.backend.integration.aggregation.SyncRunService;
-import com.example.backend.integration.adzuna.AdzunaIngestionCoordinator;
+import com.example.backend.integration.search.SearchIngestionCoordinator;
+import com.example.backend.integration.search.SearchIngestionCoordinators;
 import com.example.backend.shared.error.BadRequestException;
 import com.example.backend.shared.pagination.PageResponse;
 import com.example.backend.shared.provider.ProviderCatalog;
@@ -33,15 +34,15 @@ public class AdminIngestionController {
     private final IngestionAdminService admin;
     private final AggregationConflictService conflicts;
     private final SyncRunService runs;
-    private final AdzunaIngestionCoordinator adzuna;
+    private final SearchIngestionCoordinators search;
     public AdminIngestionController(IngestionCoordinator coordinator, IngestionAdminService admin,
                                     AggregationConflictService conflicts, SyncRunService runs,
-                                    AdzunaIngestionCoordinator adzuna) {
+                                    SearchIngestionCoordinators search) {
         this.coordinator = coordinator;
         this.admin = admin;
         this.conflicts = conflicts;
         this.runs = runs;
-        this.adzuna = adzuna;
+        this.search = search;
     }
     @GetMapping("/summary")
     public Summary summary() {
@@ -62,7 +63,9 @@ public class AdminIngestionController {
                 throw new BadRequestException(selected.displayName()
                         + " does not support employer-specific synchronization");
             }
-            AdzunaIngestionCoordinator.Result result = adzuna.run(SyncRunService.Trigger.MANUAL);
+            SearchIngestionCoordinator coordinator = search.find(selected.name())
+                    .orElseThrow(() -> new BadRequestException("Unsupported provider"));
+            SearchIngestionCoordinator.Result result = coordinator.run(SyncRunService.Trigger.MANUAL);
             if (result.locked()) return operationalFailure(HttpStatus.CONFLICT, "LOCKED", result.runId());
             if (result.leaseLost()) {
                 return operationalFailure(HttpStatus.SERVICE_UNAVAILABLE, "LEASE_LOST", result.runId());

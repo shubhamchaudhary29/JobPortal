@@ -12,6 +12,7 @@ Configuration defaults (all can be overridden through the matching environment v
 - `ADZUNA_RETRY_MAX_ATTEMPTS=3` (bounded to 1–5) and `ADZUNA_RETRY_INITIAL_BACKOFF_MS=200`
 - `ADZUNA_CIRCUIT_FAILURE_THRESHOLD=3`, `ADZUNA_CIRCUIT_OPEN_MS=60000`
 - `ADZUNA_PAGES_PER_KEYWORD=2` (1–10), `ADZUNA_RESULTS_PER_PAGE=20` (1–50), and `ADZUNA_KEYWORDS`
+- `ADZUNA_MONTHLY_REQUEST_BUDGET=2000` (1–1,000,000): requests per UTC calendar month across all instances, counting retries. The default 8 keywords × 2 pages every 12 hours uses about 960. When the budget is spent the run stops before the next request and is recorded as `PARTIAL` with reason `BUDGET_EXHAUSTED`; lifecycle does not advance. Counters live in `provider_request_budgets` (`<provider>:<yyyy-MM>`, removed by TTL 13 months later). To inspect usage: `db.provider_request_budgets.find({provider: "adzuna"})`.
 
 Network failures, 429s, and 5xx responses receive bounded exponential backoff with jitter. 4xx authentication/validation responses and malformed provider payloads are not retried. Repeated failed batches open a small in-process circuit; after its open interval one successful probe closes it. Completion logs contain sanitized event names, counts, and latency only; the lightweight counters report cumulative successful runs, failed batches, and total latency.
 

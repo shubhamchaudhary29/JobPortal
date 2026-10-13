@@ -69,6 +69,11 @@ public class SyncRunService {
     }
 
     public void finish(Handle handle, Outcome outcome, Counts counts, Throwable failure) {
+        finish(handle, outcome, counts, failure, null);
+    }
+
+    /** {@code reason} explains a non-failure stop, such as a provider's exhausted monthly request budget. */
+    public void finish(Handle handle, Outcome outcome, Counts counts, Throwable failure, Reason reason) {
         Instant completedAt = clock.instant();
         Failure safeFailure = sanitize(failure);
         Update update = new Update()
@@ -86,6 +91,8 @@ public class SyncRunService {
                 .set("lifecycleMatched", counts.lifecycleMatched())
                 .set("lifecycleModified", counts.lifecycleModified())
                 .set("retries", counts.retries());
+        if (reason == null) update.unset("reason");
+        else update.set("reason", reason.name());
         if (safeFailure == null) {
             update.unset("failureType").unset("failureDetail");
         } else {
@@ -190,7 +197,8 @@ public class SyncRunService {
                 run.getStartedAt(), run.getCompletedAt(), run.getOutcome(), run.getInserted(), run.getUpdated(),
                 run.getUnchanged(), run.getRejected(), run.getFailedItems(), run.getFailedBatches(),
                 run.getFailedEmployers(), run.getAttemptedBatches(), run.getAttemptedEmployers(),
-                run.getLifecycleMatched(), run.getLifecycleModified(), run.getRetries(), failureType, failureDetail);
+                run.getLifecycleMatched(), run.getLifecycleModified(), run.getRetries(), failureType, failureDetail,
+                reason(run.getReason()));
     }
 
     Failure sanitize(Throwable failure) {
@@ -204,12 +212,19 @@ public class SyncRunService {
         return new Failure(failure.getClass().getSimpleName(), detail);
     }
 
+    private String reason(String stored) {
+        if (stored == null) return null;
+        try { return Reason.valueOf(stored).name(); }
+        catch (IllegalArgumentException unknown) { return null; }
+    }
+
     private String blankToNull(String value) {
         return value == null || value.isBlank() ? null : value;
     }
 
     public enum Trigger { SCHEDULED, MANUAL }
     public enum Outcome { RUNNING, COMPLETED, PARTIAL, FAILED, LOCKED, LEASE_LOST }
+    public enum Reason { BUDGET_EXHAUSTED }
     public record Handle(String runId, Instant startedAt, String provider, Trigger trigger) {
         public Handle(String runId, Instant startedAt) { this(runId, startedAt, "other", null); }
     }
@@ -226,5 +241,17 @@ public class SyncRunService {
                           int failedItems, int failedBatches, int failedEmployers,
                           int attemptedBatches, int attemptedEmployers,
                           long lifecycleMatched, long lifecycleModified, int retries,
-                          String failureType, String failureDetail) { }
+                          String failureType, String failureDetail, String reason) {
+        public RunView(String runId, String provider, String employer, Trigger trigger,
+                       Instant startedAt, Instant completedAt, Outcome outcome,
+                       int inserted, int updated, int unchanged, int rejected,
+                       int failedItems, int failedBatches, int failedEmployers,
+                       int attemptedBatches, int attemptedEmployers,
+                       long lifecycleMatched, long lifecycleModified, int retries,
+                       String failureType, String failureDetail) {
+            this(runId, provider, employer, trigger, startedAt, completedAt, outcome, inserted, updated, unchanged,
+                    rejected, failedItems, failedBatches, failedEmployers, attemptedBatches, attemptedEmployers,
+                    lifecycleMatched, lifecycleModified, retries, failureType, failureDetail, null);
+        }
+    }
 }

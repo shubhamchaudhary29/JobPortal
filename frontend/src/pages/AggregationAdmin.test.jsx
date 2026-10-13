@@ -42,7 +42,7 @@ function successfulLoad(history = page([run()]), conflicts = page([conflict])) {
   api.getAggregationStatus.mockResolvedValue(status);
   api.getSyncHistory.mockResolvedValue(history);
   api.getAggregationConflicts.mockResolvedValue(conflicts);
-  api.getSyncRun.mockResolvedValue({ ...run(), failureDetail: "bounded failure" });
+  api.getSyncRun.mockResolvedValue({ ...run("PARTIAL"), failureDetail: "bounded failure", reason: "BUDGET_EXHAUSTED" });
   api.getAggregationProviders.mockResolvedValue(providers);
 }
 
@@ -67,6 +67,7 @@ describe("aggregation ADMIN page", () => {
 
     fireEvent.click(screen.getAllByRole("button", { name: "View detail" })[0]);
     expect(await screen.findByText("bounded failure")).toBeInTheDocument();
+    expect(screen.getByText("BUDGET_EXHAUSTED")).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "Next" }));
     await waitFor(() => expect(api.getSyncHistory).toHaveBeenCalledWith({ page: 1, size: 20 }));
   });

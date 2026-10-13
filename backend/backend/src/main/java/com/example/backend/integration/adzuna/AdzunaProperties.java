@@ -16,7 +16,9 @@ public class AdzunaProperties {
     private final int pagesPerKeyword;
     private final int resultsPerPage;
     private final String[] keywords;
+    private final int monthlyRequestBudget;
 
+    @org.springframework.beans.factory.annotation.Autowired
     public AdzunaProperties(@Value("${adzuna.app.id}") String appId,
                             @Value("${adzuna.app.key}") String appKey,
                             @Value("${adzuna.connect-timeout-ms:3000}") int connectTimeoutMs,
@@ -27,7 +29,8 @@ public class AdzunaProperties {
                             @Value("${adzuna.circuit.open-ms:60000}") long circuitOpenMs,
                             @Value("${adzuna.pages-per-keyword:2}") int pagesPerKeyword,
                             @Value("${adzuna.results-per-page:20}") int resultsPerPage,
-                            @Value("${adzuna.keywords:java developer,python developer,react developer,data analyst,backend engineer,frontend developer,full stack developer,machine learning engineer}") String keywords) {
+                            @Value("${adzuna.keywords:java developer,python developer,react developer,data analyst,backend engineer,frontend developer,full stack developer,machine learning engineer}") String keywords,
+                            @Value("${adzuna.monthly-request-budget:2000}") int monthlyRequestBudget) {
         this.appId = required(appId, "ADZUNA_APP_ID");
         this.appKey = required(appKey, "ADZUNA_APP_KEY");
         this.connectTimeoutMs = positive(connectTimeoutMs, "connect timeout");
@@ -39,6 +42,15 @@ public class AdzunaProperties {
         this.pagesPerKeyword = bounded(pagesPerKeyword, 1, 10, "pages per keyword");
         this.resultsPerPage = bounded(resultsPerPage, 1, 50, "results per page");
         this.keywords = keywords.split(",");
+        this.monthlyRequestBudget = bounded(monthlyRequestBudget, 1, 1_000_000, "monthly request budget");
+    }
+
+    /** Test convenience with the default monthly request budget. */
+    public AdzunaProperties(String appId, String appKey, int connectTimeoutMs, int readTimeoutMs, int maxAttempts,
+                            long initialBackoffMs, int circuitFailureThreshold, long circuitOpenMs,
+                            int pagesPerKeyword, int resultsPerPage, String keywords) {
+        this(appId, appKey, connectTimeoutMs, readTimeoutMs, maxAttempts, initialBackoffMs, circuitFailureThreshold,
+                circuitOpenMs, pagesPerKeyword, resultsPerPage, keywords, 2_000);
     }
     public String appId() { return appId; }
     public String appKey() { return appKey; }
@@ -51,6 +63,7 @@ public class AdzunaProperties {
     public int pagesPerKeyword() { return pagesPerKeyword; }
     public int resultsPerPage() { return resultsPerPage; }
     public String[] keywords() { return keywords.clone(); }
+    public int monthlyRequestBudget() { return monthlyRequestBudget; }
     private static String required(String value, String name) { if (value == null || value.isBlank()) throw new IllegalArgumentException(name + " must be configured"); return value; }
     private static int positive(int value, String name) { if (value < 1) throw new IllegalArgumentException(name + " must be positive"); return value; }
     private static long positive(long value, String name) { if (value < 1) throw new IllegalArgumentException(name + " must be positive"); return value; }
