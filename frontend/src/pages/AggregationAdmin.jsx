@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
+import { Link } from "react-router-dom";
 import Header from "../components/Header";
 import Footer from "../components/Footer";
 import {
@@ -161,6 +162,7 @@ export default function AggregationAdmin() {
           <p className="text-xs font-bold uppercase tracking-widest text-indigo-600">Administrator</p>
           <h1 className="text-3xl font-extrabold text-slate-900">Aggregation operations</h1>
           <p className="mt-1 text-slate-600">Monitor provider health, run bounded synchronization, and reconcile retained conflicts.</p>
+          <Link to="/admin/aggregation/registry" className="mt-2 inline-block font-bold text-indigo-700">Manage employer registry →</Link>
         </div>
 
         {loading && <div role="status" className="rounded-2xl border bg-white p-6 text-slate-600">Loading aggregation operations…</div>}

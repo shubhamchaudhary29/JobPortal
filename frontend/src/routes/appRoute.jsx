@@ -16,6 +16,7 @@ import ApplicationWorkspace from "../pages/ApplicationWorkspace";
 import ChatList from "../pages/ChatList";
 import ChatRoom from "../pages/ChatRoom";
 import AggregationAdmin from "../pages/AggregationAdmin";
+import EmployerRegistryAdmin from "../pages/EmployerRegistryAdmin";
 import ProtectedRoute from "../components/ProtectedRoute";
 
 export default function AppRoutes() {
@@ -103,6 +104,14 @@ export default function AppRoutes() {
         element={
           <ProtectedRoute requiredRole="ADMIN">
             <AggregationAdmin />
+          </ProtectedRoute>
+        }
+      />
+      <Route
+        path="/admin/aggregation/registry"
+        element={
+          <ProtectedRoute requiredRole="ADMIN">
+            <EmployerRegistryAdmin />
           </ProtectedRoute>
         }
       />

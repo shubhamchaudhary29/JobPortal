@@ -56,5 +56,9 @@ export const apiRoutes = Object.freeze({
     conflicts: `${API_V1}/admin/ingestion/conflicts`,
     conflictResolution: (id) => `${API_V1}/admin/ingestion/conflicts/${encodeURIComponent(id)}/resolution`,
     sync: (provider) => `${API_V1}/admin/ingestion/${encodeURIComponent(provider)}/sync`,
+    registry: `${API_V1}/admin/ingestion/registry`,
+    registryEntry: (id) => `${API_V1}/admin/ingestion/registry/${encodeURIComponent(id)}`,
+    registryValidation: (id) => `${API_V1}/admin/ingestion/registry/${encodeURIComponent(id)}/validation`,
+    registryAudit: (id) => `${API_V1}/admin/ingestion/registry/${encodeURIComponent(id)}/audit`,
   }),
 });

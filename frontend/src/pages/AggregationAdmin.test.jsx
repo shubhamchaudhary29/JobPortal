@@ -12,6 +12,7 @@ vi.mock("../services/aggregation-admin-service", () => api);
 vi.mock("../components/Header", () => ({ default: () => <div data-testid="header" /> }));
 vi.mock("../components/Footer", () => ({ default: () => <div data-testid="footer" /> }));
 
+import { MemoryRouter } from "react-router-dom";
 import AggregationAdmin from "./AggregationAdmin";
 
 const run = (outcome = "COMPLETED") => ({
@@ -59,7 +60,7 @@ describe("aggregation ADMIN page", () => {
 
   it("renders loading, health/counts/history/conflicts, detail, and pagination", async () => {
     successfulLoad(page([run()], { totalPages: 2, last: false }));
-    render(<AggregationAdmin />);
+    render(<MemoryRouter><AggregationAdmin /></MemoryRouter>);
     expect(screen.getByRole("status")).toHaveTextContent("Loading aggregation operations");
     expect(await screen.findByText("Active imported jobs")).toBeInTheDocument();
     expect(screen.getByText("Acme")).toBeInTheDocument();
@@ -77,14 +78,14 @@ describe("aggregation ADMIN page", () => {
     api.getAggregationStatus.mockResolvedValue({
       activeImportedJobs: 0, inactiveImportedJobs: 0, latestRuns: [], providerCompanyCounts: [],
     });
-    render(<AggregationAdmin />);
+    render(<MemoryRouter><AggregationAdmin /></MemoryRouter>);
     expect(await screen.findByText("No synchronization runs have been recorded.")).toBeInTheDocument();
     expect(screen.getByText("No history matches this page.")).toBeInTheDocument();
     expect(screen.getByText("No open conflicts require review.")).toBeInTheDocument();
     cleanup();
 
     api.getAggregationStatus.mockRejectedValue({ safe: "Administrator access is required." });
-    render(<AggregationAdmin />);
+    render(<MemoryRouter><AggregationAdmin /></MemoryRouter>);
     expect(await screen.findByRole("alert")).toHaveTextContent("Administrator access is required");
     expect(screen.getByRole("button", { name: "Retry" })).toBeInTheDocument();
   });
@@ -95,7 +96,7 @@ describe("aggregation ADMIN page", () => {
   ])("surfaces a %s structured sync outcome", async (outcome, expected) => {
     successfulLoad();
     api.startAggregationSync.mockResolvedValue({ outcome, runId: `run-${outcome}` });
-    render(<AggregationAdmin />);
+    render(<MemoryRouter><AggregationAdmin /></MemoryRouter>);
     await screen.findByText("Manual synchronization");
     await providersReady();
     fireEvent.click(screen.getByRole("button", { name: "Start sync" }));
@@ -108,7 +109,7 @@ describe("aggregation ADMIN page", () => {
   ])("surfaces safe operational failure states", async (safe, expected) => {
     successfulLoad();
     api.startAggregationSync.mockRejectedValue({ safe });
-    render(<AggregationAdmin />);
+    render(<MemoryRouter><AggregationAdmin /></MemoryRouter>);
     await screen.findByText("Manual synchronization");
     await providersReady();
     fireEvent.click(screen.getByRole("button", { name: "Start sync" }));
@@ -119,7 +120,7 @@ describe("aggregation ADMIN page", () => {
     successfulLoad();
     let resolveSync;
     api.startAggregationSync.mockReturnValue(new Promise((resolve) => { resolveSync = resolve; }));
-    render(<AggregationAdmin />);
+    render(<MemoryRouter><AggregationAdmin /></MemoryRouter>);
     await screen.findByText("Manual synchronization");
     await providersReady();
     expect(screen.getByLabelText("Employer board")).toBeDisabled();
@@ -139,7 +140,7 @@ describe("aggregation ADMIN page", () => {
     successfulLoad();
     let finishResolution;
     api.resolveAggregationConflict.mockReturnValue(new Promise((resolve) => { finishResolution = resolve; }));
-    render(<AggregationAdmin />);
+    render(<MemoryRouter><AggregationAdmin /></MemoryRouter>);
     await screen.findByText("IDENTITY_FINGERPRINT");
     fireEvent.click(screen.getByRole("button", { name: "Resolve safely" }));
     expect(await screen.findByText(/Choose two distinct jobs/)).toBeInTheDocument();
@@ -158,7 +159,7 @@ describe("aggregation ADMIN page", () => {
     let finishProviders;
     api.getAggregationProviders.mockReturnValue(new Promise((resolve) => { finishProviders = resolve; }));
     api.startAggregationSync.mockResolvedValue({ outcome: "COMPLETED", runId: "run" });
-    render(<AggregationAdmin />);
+    render(<MemoryRouter><AggregationAdmin /></MemoryRouter>);
     await screen.findByText("Manual synchronization");
     expect(within(screen.getByLabelText("Provider")).getByRole("option", { name: "Loading providers…" })).toBeInTheDocument();
     expect(screen.getByLabelText("Provider")).toBeDisabled();
@@ -174,7 +175,7 @@ describe("aggregation ADMIN page", () => {
   it("shows a provider-list error with retry and keeps sync disabled", async () => {
     successfulLoad();
     api.getAggregationProviders.mockRejectedValueOnce({ safe: "Could not load providers." });
-    render(<AggregationAdmin />);
+    render(<MemoryRouter><AggregationAdmin /></MemoryRouter>);
     expect(await screen.findByText("Could not load providers.")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Start sync" })).toBeDisabled();
     expect(within(screen.getByLabelText("Provider")).queryByRole("option")).not.toBeInTheDocument();
@@ -190,7 +191,7 @@ describe("aggregation ADMIN page", () => {
       { name: "jooble", kind: "SEARCH_API", displayName: "Jooble", employerScoped: false, available: false },
       ...providers,
     ]);
-    render(<AggregationAdmin />);
+    render(<MemoryRouter><AggregationAdmin /></MemoryRouter>);
     const jooble = await within(await screen.findByLabelText("Provider")).findByRole("option", { name: "Jooble (not configured)" });
     expect(jooble).toBeDisabled();
     expect(screen.getByLabelText("Provider")).toHaveValue("adzuna");
