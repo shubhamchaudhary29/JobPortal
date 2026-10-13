@@ -26,6 +26,6 @@ public class AggregationConflictDocument {
     private String resolvedBy;
     private String resolutionFailure;
 
-    public enum Type { IDENTITY_FINGERPRINT }
+    public enum Type { IDENTITY_FINGERPRINT, FINGERPRINT_MIGRATION }
     public enum Status { OPEN, RESOLVED }
 }

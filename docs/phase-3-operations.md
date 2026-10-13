@@ -90,6 +90,38 @@ The daily retention task uses the distributed `maintenance:imported-job-retentio
 
 Identity/fingerprint collisions are retained in `aggregation_conflicts`; ingestion records a bounded conflict reference and leaves both jobs untouched. Administrators can page/filter them with `GET /api/v1/admin/ingestion/conflicts` and submit an explicit canonical/duplicate choice to `POST /api/v1/admin/ingestion/conflicts/{id}/resolution`. Resolution is distributed-lock protected and resumable: it refuses same-candidate application collisions, merges every source listing, rewrites application and conversation job references, and removes the duplicate only after those rewrites. Repeating the same completed resolution is safe; a different choice returns a conflict. Back up `jobs`, `applications`, `chat_rooms`, and `aggregation_conflicts` before production reconciliation.
 
+### Fingerprint version migration (M11B)
+
+Version 2 fingerprints (see above) apply to every new write. Existing imported jobs keep their old value until
+the migration recomputes them. Back up `jobs` and `aggregation_conflicts`, then run the dry-run from the
+repository root with the backend environment set:
+
+```bash
+bash backend/backend/scripts/migrate-fingerprints.sh            # dry-run: no writes
+bash backend/backend/scripts/migrate-fingerprints.sh --apply    # after reviewing the dry-run report
+```
+
+The command starts the backend without a web server or schedules and prints one
+`FINGERPRINT_MIGRATION_REPORT {...}` line with counts (`scanned`, `current`, `planned`, `updated`, `collisions`,
+`collisionGroups`, `conflictPairs`, `conflictsRecorded`, `skippedApplicationReferenced`, `unfingerprintable`,
+`changedConcurrently`) and at most 20 IDs per category. It exits `0` when nothing needs review, `2` when
+collisions or skipped jobs need an operator, and `3` for a usage or prerequisite error. Set
+`FINGERPRINT_MIGRATION_JAR` to reuse a built jar.
+
+Apply updates a stale job only when its new fingerprint is unique, using a conditional write on the old value.
+Jobs whose new fingerprints collide (for example a `Bangalore` and a `Bengaluru` copy of one posting) are left
+unchanged and recorded as pairwise `FINGERPRINT_MIGRATION` conflicts. Resolve them in the ADMIN aggregation page,
+or with `POST /api/v1/admin/ingestion/conflicts/{id}/resolution`, and rerun `--apply` to upgrade the survivor.
+Recruiter jobs and reconciliation-pending jobs are never read for update, jobs referenced by applications are
+skipped and reported, and nothing is deleted or merged automatically. The migration is idempotent. Rollback means
+restoring the backup; older fingerprints are not needed by the running version.
+
+Validate the procedure only against a disposable server, because its harness drops `jobportal_m11b_verify`:
+
+```bash
+MONGODB_URI=mongodb://localhost:27017 bash backend/backend/scripts/verify-fingerprint-migration.sh
+```
+
 ### Final Phase 1 migration audit (M1F)
 
 The read-only index audit also validates the additive source-listing shape, duplicate listing
