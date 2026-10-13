@@ -3,7 +3,7 @@ import com.example.backend.shared.provider.ProviderCatalog;
 import java.util.List;
 import org.springframework.boot.context.properties.ConfigurationProperties;
 @ConfigurationProperties(prefix = "job-aggregation")
-public record EmployerRegistryProperties(List<Employer> employers) {
+public record EmployerRegistryProperties(List<Employer> employers) implements EmployerRegistry {
  public EmployerRegistryProperties { employers = employers == null ? List.of() : List.copyOf(employers); validate(employers); }
  public record Employer(String company, Source source, String boardId, boolean enabled) { }
  /** Registry sources are the ATS providers of {@link ProviderCatalog}; each constant must have a catalog entry. */

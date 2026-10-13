@@ -23,11 +23,11 @@ public class EmployerIngestionService {
     private static final Logger log = LoggerFactory.getLogger(EmployerIngestionService.class);
     private final Map<EmployerRegistryProperties.Source, JobSource> sources;
     private final AdzunaJobStore store;
-    private final EmployerRegistryProperties registry;
+    private final EmployerRegistry registry;
     private final ImportedJobLifecycleService lifecycle;
 
     public EmployerIngestionService(List<JobSource> sources, AdzunaJobStore store,
-            EmployerRegistryProperties registry, ImportedJobLifecycleService lifecycle) {
+            EmployerRegistry registry, ImportedJobLifecycleService lifecycle) {
         this.sources = boardSources(sources);
         this.store = store;
         this.registry = registry;

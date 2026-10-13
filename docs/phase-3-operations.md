@@ -242,6 +242,20 @@ lock contention, and lease loss. Every meter has exactly three bounded tags: `pr
 `greenhouse`, `lever`, or `other`), `outcome`, and `trigger`. Employer/board, run ID, URLs, exception
 text, credentials, and arbitrary failure types are never metric labels.
 
+### Employer registry storage (M16)
+
+The live employer registry is the Mongo `employer_registry` collection, with a unique `source+boardKey` index
+and a unique partial index on `companyKey` for enabled entries. At startup, after the index initializer,
+`EmployerRegistryImporter` copies `job-aggregation.employers[...]` entries from `application.properties` into
+Mongo if their `source+boardKey` is missing. It never changes existing entries, so ADMIN edits survive
+restarts, and it logs and skips properties entries that would break a uniqueness rule. The properties list is
+only the seed (still capped at 1000 entries); disable the import with
+`JOB_AGGREGATION_REGISTRY_IMPORT_ON_STARTUP=false`. Until the collection has entries, ingestion reads the
+properties seed. Afterwards every scheduled and manual run reads enabled Mongo entries in provider/board order,
+at most `JOB_AGGREGATION_REGISTRY_MAX_EMPLOYERS_PER_RUN` (default 2000, 1–100,000) per run. Removing an entry from
+properties does not remove it from Mongo; disable it through ADMIN instead. `validate-employer-registry.sh` still
+validates the properties seed.
+
 ### Employer-registry verification
 
 Run the deterministic classifier test from any working directory:
