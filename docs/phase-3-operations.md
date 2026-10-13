@@ -127,7 +127,12 @@ MONGODB_URI=mongodb://localhost:27017 bash backend/backend/scripts/verify-finger
 The read-only index audit also validates the additive source-listing shape, duplicate listing
 identities within a job, source identities duplicated across imported jobs, compatibility between
 `sourceIdentities`/`applicationUrls` and `sourceListings`, deterministic canonical fields, lifecycle
-state, conflict records, and interrupted reconciliation markers. Diagnostic categories and IDs are
+state, conflict records (`IDENTITY_FINGERPRINT` and `FINGERPRINT_MIGRATION`), interrupted reconciliation
+markers, and fingerprint versions. An imported job whose `fingerprintVersion` is missing or older than the current
+`JobFingerprint` version is a `fingerprintVersionMismatches` anomaly (with a total count); run the fingerprint
+migration and resolve its conflicts until it is empty. Application-referenced jobs with an old version are listed
+under `applicationHeldFingerprintVersions` for information only, because the migration deliberately skips them and
+the next ingestion of their listing upgrades them. Diagnostic categories and IDs are
 bounded, and the audit exits with status `2` when any rollout anomaly is found. Validate the
 audit itself only against a disposable local server because its harness drops
 `jobportal_m1f_verify`:
