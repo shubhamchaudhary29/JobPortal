@@ -329,15 +329,41 @@ Phase 1–3 above are complete. Phase 4 grows job coverage, mainly for India, wi
   - Done when: projected monthly requests stay under budget, all combinations rotate, no rotation-induced deactivations, and all checks pass.
   - Evidence (2026-10-13): Adzuna's plan is now every keyword country-wide plus each `ADZUNA_CITIES` entry (default: the ten cities in the plan) as `where`, with `ADZUNA_PAGES_PER_KEYWORD` pages. The default keyword list grew from 8 to 12 (adding software engineer, devops engineer, product manager, business analyst) in the application default, `.env.example`, and Compose; Compose previously defaulted to only 3 keywords. `RestTemplateAdzunaClient` sends an encoded `where` only for city queries, and country-wide queries keep the previous two-argument call. `ADZUNA_REQUESTS_PER_RUN=0` derives the per-run allowance as budget ÷ scheduled runs in 30 days: 2000 ÷ 60 = 33 at the 12-hour default, so scheduled runs use at most 1,980 of the 2,000 default and leave headroom within Adzuna's 2,500 free requests. When the plan exceeds the allowance, the search engine rotates through `MongoQueryRotation` (`search_query_rotation`: plan hash, cursor, cycle failure flag, cycle seen set). **Chosen lifecycle rule:** seen identities accumulate over a full rotation cycle, and missing state advances once per complete cycle with that union, only when no group in the cycle failed or rejected items. Budget-cut groups carry over without failing the cycle, lease-lost runs are discarded, and a changed plan restarts the cycle. A job is therefore counted missing only when every query in a successful cycle ran without returning it, and rotation alone can never deactivate it. Plans that fit one run (for example with no cities) keep the exact per-run behavior, and all existing Adzuna tests pass unchanged. Tests: `AdzunaQueryPlanTest` (3: budget math, including that the projected monthly total stays within budget for 1/6/12/24-hour schedules; city parsing and bounds; `where=Navi%20Mumbai` and `what=java%20developer` encoding with no `where` country-wide), real-Mongo `AdzunaRotationMongoIntegrationTest` (2: a simulated month of 60 default runs covers all 264 keyword × location × page combinations at least 6 times each, never exhausts the budget, and uses at most 2,000 requests; a job only the Pune query returns stays active with zero misses across 30 rotated runs, while a country-wide job that disappears gets one miss per complete cycle, no miss from a cycle with a failure, and is deactivated only at the threshold), and real-Mongo `MongoQueryRotationIntegrationTest` (2: wrapping slices and failure-free completion; budget carry-over, plan-change restart, and stale-slice rejection). The cities and rotation have not been exercised against live Adzuna because no real key is available here; the `where` values follow Adzuna's free-text location parameter and should be spot-checked once a key is configured. `cd backend/backend && ./mvnw -Dtest='*Adzuna*,*Search*,*Budget*,ImportedJobLifecycle*' test` passed; `./mvnw clean verify` passed 411 tests (0 failures/errors/skips). The registry classifier, frontend lint, 65 tests and build, and `git diff --check` passed.
 
-- [ ] **M16 — Mongo-backed employer registry with ADMIN management**
+- [ ] **M16 — Mongo-backed employer registry with ADMIN management** (split 2026-10-13 into M16A–M16C below; tick when all three are done)
 
   - Required behavior: move the registry from `application.properties` into an `employer_registry` collection (unique `source+boardId`, unique enabled company), with a one-time idempotent import from properties and properties kept as a fallback seed. ADMIN API and page to list/search/add/edit/enable/disable entries and run validation for one entry; changes are audited (who/when). Remove the 1000-entry cap from properties validation only for the Mongo path; keep paging and a sane per-run limit. Schedulers read the collection.
-  - Expected files/components: registry document/repository/service, admin controller, migration/import, frontend page and service, docs.
-  - Tests required: import idempotence, uniqueness, security (`401/403`), validation endpoint, scheduler reads Mongo, frontend component tests.
-  - Verification commands: `cd backend/backend && ./mvnw clean verify`; `cd frontend && npm ci && npm run lint && npm test -- --run && npm run build`; `git diff --check`.
   - Dependencies: M6, M10.
-  - Done when: ADMIN manages the registry without redeploys and all checks pass.
-  - Evidence: _pending_.
+  - Done when: M16A, M16B, and M16C are ticked.
+
+  - [ ] **M16A — Mongo registry store, idempotent import, and ingestion reading Mongo**
+
+    - Required behavior: an `employer_registry` collection (source, board ID and lower-case board key, company and lower-case company key, enabled, optional disabled reason, origin, created/updated by and at) with a unique `source+boardKey` index and a unique partial index on `companyKey` for enabled entries. A startup import from the properties registry inserts only missing `source+boardKey` entries, never overwrites ADMIN edits, and skips (and logs) properties entries that would violate uniqueness; a rerun inserts nothing. Ingestion, ADMIN employer-scoped sync validation, and schedules read the Mongo registry through an `EmployerRegistry` abstraction, falling back to the properties seed while the collection is empty. The 1000-entry cap stays only on properties; the Mongo path has a configurable per-run enabled-employer limit (`JOB_AGGREGATION_REGISTRY_MAX_EMPLOYERS_PER_RUN`, default 2000), applied in stable board-key order.
+    - Expected files/components: `integration/aggregation/{EmployerRegistry,MongoEmployerRegistry,EmployerRegistryDocument,EmployerRegistryImporter}`, `EmployerIngestionService`, `MongoIndexInitializer`, `application.properties`, `.env.example`, Compose, docs.
+    - Tests required: real-Mongo import idempotence (a second import inserts nothing and keeps an ADMIN-disabled entry disabled), uniqueness of `source+boardKey` and enabled company, empty-collection fallback, a scheduled/manual ingestion run reading a Mongo-only entry, per-run limit ordering; existing ingestion tests unchanged.
+    - Verification commands: `cd backend/backend && ./mvnw -Dtest='*EmployerRegistry*,*EmployerIngestion*' test && ./mvnw clean verify`; `git diff --check`.
+    - Dependencies: M6, M10.
+    - Done when: the Mongo collection is the live registry, seeded idempotently from properties, and all checks pass.
+    - Evidence: _pending_.
+
+  - [ ] **M16B — Audited ADMIN registry API with single-entry validation**
+
+    - Required behavior: ADMIN-only `/api/v1/admin/ingestion/registry` endpoints to list (paged, max 100, filter by provider/enabled/text), create, update company/enabled/disabled reason, and validate one entry by fetching its board once through the provider's `JobSource` (classified `ACTIVE`, `EMPTY`, `MALFORMED`, `INVALID`, `UNREACHABLE`; never stored as jobs). Board IDs and companies are validated like the properties registry; uniqueness violations return `409`. Every change writes an append-only `employer_registry_audit` record (action, actor, time, before and after values) and the entry's `updatedBy/updatedAt`.
+    - Expected files/components: `integration/aggregation/{EmployerRegistryAdminService,EmployerRegistryAuditDocument}`, `integration/aggregation/api/AdminEmployerRegistryController`, security/OpenAPI docs.
+    - Tests required: `401/403/200` for every route, create/update/enable/disable with audit records and actor, duplicate board and duplicate enabled company `409`, invalid input `400`, paging bounds and filters, validation classifications with a mock provider, and that validation stores nothing.
+    - Verification commands: `cd backend/backend && ./mvnw -Dtest='*EmployerRegistry*,*Admin*' test && ./mvnw clean verify`; `git diff --check`.
+    - Dependencies: M16A.
+    - Done when: ADMIN can manage and validate registry entries over the API with an audit trail and all checks pass.
+    - Evidence: _pending_.
+
+  - [ ] **M16C — ADMIN registry page**
+
+    - Required behavior: an ADMIN page at `/admin/aggregation/registry`, linked from the aggregation page and protected by the same route guard, to search and filter (provider, enabled), page through, add, edit, enable/disable with a reason, and validate entries. It has accessible loading, empty, error, conflict, and validation-result states and duplicate-submit protection.
+    - Expected files/components: `frontend/src/pages/EmployerRegistryAdmin.jsx`, `frontend/src/services/employer-registry-service.js`, routes/navigation, tests.
+    - Tests required: service route tests, component tests for list/filter/paging, add/edit/toggle with conflict and validation errors, validation results, duplicate-submit protection, and non-admin redirect.
+    - Verification commands: `cd frontend && npm ci && npm run lint && npm test -- --run && npm run build`; `git diff --check`.
+    - Dependencies: M16B.
+    - Done when: ADMIN manages the registry without redeploys from the UI and all checks pass.
+    - Evidence: _pending_.
 
 ### Phase 4 release checklist
 
