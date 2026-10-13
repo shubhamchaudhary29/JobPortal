@@ -9,11 +9,11 @@ import org.junit.jupiter.api.Test;
 class ProviderCatalogTest {
     @Test
     void listsEveryProviderOnceInStableOrderWithKinds() {
-        assertEquals(List.of("adzuna", "greenhouse", "lever", "ashby", "smartrecruiters", "workable"),
+        assertEquals(List.of("adzuna", "jooble", "greenhouse", "lever", "ashby", "smartrecruiters", "workable"),
                 ProviderCatalog.all().stream().map(ProviderCatalog.Provider::name).toList());
-        assertEquals(Set.of("adzuna", "greenhouse", "lever", "ashby", "smartrecruiters", "workable"),
+        assertEquals(Set.of("adzuna", "jooble", "greenhouse", "lever", "ashby", "smartrecruiters", "workable"),
                 ProviderCatalog.names());
-        assertEquals(List.of("adzuna"), ProviderCatalog.ofKind(ProviderCatalog.Kind.SEARCH_API).stream()
+        assertEquals(List.of("adzuna", "jooble"), ProviderCatalog.ofKind(ProviderCatalog.Kind.SEARCH_API).stream()
                 .map(ProviderCatalog.Provider::name).toList());
         assertEquals(List.of("greenhouse", "lever", "ashby", "smartrecruiters", "workable"), ProviderCatalog.ofKind(ProviderCatalog.Kind.ATS_BOARD).stream()
                 .map(ProviderCatalog.Provider::name).toList());
@@ -37,6 +37,10 @@ class ProviderCatalogTest {
         assertFalse(adzuna.employerScoped());
         assertEquals("adzuna.schedule-delay-ms", adzuna.scheduleProperty());
         assertEquals(43_200_000L, adzuna.defaultDelayMs());
+        ProviderCatalog.Provider jooble = ProviderCatalog.find("jooble").orElseThrow();
+        assertFalse(jooble.employerScoped());
+        assertEquals("jooble.schedule-delay-ms", jooble.scheduleProperty());
+        assertEquals(86_400_000L, jooble.defaultDelayMs());
         ProviderCatalog.Provider greenhouse = ProviderCatalog.find("greenhouse").orElseThrow();
         assertTrue(greenhouse.employerScoped());
         assertEquals("job-aggregation.scheduling.greenhouse-delay-ms", greenhouse.scheduleProperty());

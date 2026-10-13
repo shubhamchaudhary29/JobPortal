@@ -1,5 +1,6 @@
 import { Link } from "react-router-dom";
 import MatchBadge from "./MatchBadge";
+import ProviderAttribution from "./ProviderAttribution";
 
 export default function JobCard({ job, match }) {
   const id = job._id || job.id;
@@ -25,6 +26,7 @@ export default function JobCard({ job, match }) {
 
         <h3 className="line-clamp-1 text-xl font-bold text-slate-900 transition-colors group-hover:text-indigo-600">{job.title}</h3>
         <p className="mt-1 font-medium text-slate-500">{job.company}</p>
+        <ProviderAttribution source={job.source} className="mt-1 block" />
 
         <div className="mt-5 flex flex-wrap gap-2">
           <span className="inline-flex rounded-lg bg-slate-100 px-2.5 py-1.5 text-xs font-semibold text-slate-600">📍 {job.location}</span>

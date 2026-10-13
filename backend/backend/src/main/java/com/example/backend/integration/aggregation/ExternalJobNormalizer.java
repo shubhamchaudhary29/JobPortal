@@ -27,6 +27,6 @@ public final class ExternalJobNormalizer {
   try { return SafeExternalUrl.parse(value).orElse(null); } catch (RuntimeException e) { return null; }
  }
  static String sanitize(String html){ return html == null ? null : text(org.jsoup.Jsoup.parse(html).text()); }
- static LocalDateTime parseDate(String value){ if(value==null||value.isBlank())return null; try{return OffsetDateTime.parse(value).toLocalDateTime();}catch(DateTimeParseException e){try{return LocalDate.parse(value).atStartOfDay();}catch(DateTimeParseException ignored){return null;}} }
+ static LocalDateTime parseDate(String value){ if(value==null||value.isBlank())return null; try{return OffsetDateTime.parse(value).toLocalDateTime();}catch(DateTimeParseException e){try{return LocalDateTime.parse(value);}catch(DateTimeParseException local){try{return LocalDate.parse(value).atStartOfDay();}catch(DateTimeParseException ignored){return null;}}} }
  static String fingerprint(String c,String t,String l,String ignoredUrl){ return JobFingerprint.of(c,t,l); }
 }

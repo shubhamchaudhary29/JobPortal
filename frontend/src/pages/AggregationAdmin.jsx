@@ -91,7 +91,8 @@ export default function AggregationAdmin() {
       const list = await getAggregationProviders();
       const available = Array.isArray(list) ? list : [];
       setProviders(available);
-      setProvider((current) => (available.some((item) => item.name === current) ? current : available[0]?.name || ""));
+      const usable = available.filter((item) => item.available !== false);
+      setProvider((current) => (usable.some((item) => item.name === current) ? current : usable[0]?.name || ""));
     } catch (error) {
       setProvidersError(aggregationAdminError(error, "Could not load providers."));
     } finally {
@@ -101,7 +102,7 @@ export default function AggregationAdmin() {
 
   useEffect(() => { loadProviders(); }, [loadProviders]);
 
-  const selectedProvider = providers.find((item) => item.name === provider);
+  const selectedProvider = providers.find((item) => item.name === provider && item.available !== false);
   const employerScoped = Boolean(selectedProvider?.employerScoped);
 
   const startSync = async (event) => {
@@ -186,7 +187,7 @@ export default function AggregationAdmin() {
                 <label className="text-sm font-bold text-slate-700">Provider
                   <select aria-label="Provider" value={provider} disabled={providersLoading || providers.length === 0} onChange={(event) => { setProvider(event.target.value); setEmployer(""); }} className="mt-1 block w-full rounded-lg border p-2.5 disabled:bg-slate-100">
                     {providersLoading && <option value="">Loading providers…</option>}
-                    {providers.map((item) => <option key={item.name} value={item.name}>{item.displayName}</option>)}
+                    {providers.map((item) => <option key={item.name} value={item.name} disabled={item.available === false}>{item.displayName}{item.available === false ? " (not configured)" : ""}</option>)}
                   </select>
                 </label>
                 <label className="text-sm font-bold text-slate-700">Employer board (optional)

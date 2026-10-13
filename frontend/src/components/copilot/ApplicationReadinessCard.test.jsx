@@ -20,7 +20,7 @@ describe("Application readiness card", () => {
     expect(screen.getByRole("link", { name: /edit my profile/i })).toHaveAttribute("href", "/my-profile");
     fireEvent.click(screen.getByRole("button", { name: "Save job" }));
     await waitFor(() => expect(services.updateWorkspaceJob).toHaveBeenCalledWith("job-1", { stage: "SAVED" }));
-    expect(screen.getByRole("button", { name: "Saved" })).toBeDisabled();
+    expect(await screen.findByRole("button", { name: "Saved" })).toBeDisabled();
   });
   it("disables preparation for inactive jobs", async () => {
     services.getApplicationReadiness.mockResolvedValue({ matchScore: 50, readiness: { readinessScore: 0, readinessLevel: "INACTIVE", active: false, recommendations: [] }, keywordAnalysis: { missing: [] } });

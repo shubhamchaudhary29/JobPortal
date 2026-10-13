@@ -165,7 +165,9 @@ public class SearchProviderIngestionService {
                 if (!leaseValid.getAsBoolean()) throw new LeaseLostDuringRun();
                 retries.incrementAndGet();
                 try {
-                    provider.sleep(provider.backoffMs(attempt));
+                    long delay = provider.backoffMs(attempt);
+                    if (ex.retryAfterMs() != null) delay = Math.max(delay, Math.min(ex.retryAfterMs(), provider.maxBackoffMs()));
+                    provider.sleep(delay);
                 } catch (InterruptedException interrupted) {
                     Thread.currentThread().interrupt();
                     throw new SearchProviderException(displayName(provider) + " retry interrupted", false, interrupted);

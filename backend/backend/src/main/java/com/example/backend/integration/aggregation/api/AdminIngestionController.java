@@ -51,7 +51,8 @@ public class AdminIngestionController {
     }
     @GetMapping("/providers")
     public java.util.List<ProviderView> providers() {
-        return ProviderCatalog.all().stream().map(ProviderView::from).toList();
+        return ProviderCatalog.all().stream().map(provider -> ProviderView.from(provider,
+                provider.employerScoped() || search.find(provider.name()).isPresent())).toList();
     }
     @PostMapping("/{provider}/sync")
     public ResponseEntity<?> sync(@PathVariable String provider,
@@ -64,7 +65,7 @@ public class AdminIngestionController {
                         + " does not support employer-specific synchronization");
             }
             SearchIngestionCoordinator coordinator = search.find(selected.name())
-                    .orElseThrow(() -> new BadRequestException("Unsupported provider"));
+                    .orElseThrow(() -> new BadRequestException(selected.displayName() + " is not configured"));
             SearchIngestionCoordinator.Result result = coordinator.run(SyncRunService.Trigger.MANUAL);
             if (result.locked()) return operationalFailure(HttpStatus.CONFLICT, "LOCKED", result.runId());
             if (result.leaseLost()) {
@@ -118,10 +119,12 @@ public class AdminIngestionController {
                 admin.providerCompanyCounts());
     }
     public record Summary(long activeImportedJobs, long inactiveImportedJobs) { }
-    public record ProviderView(String name, ProviderCatalog.Kind kind, String displayName, boolean employerScoped) {
-        static ProviderView from(ProviderCatalog.Provider provider) {
+    /** {@code available} is false for a search provider whose credentials are not configured. */
+    public record ProviderView(String name, ProviderCatalog.Kind kind, String displayName, boolean employerScoped,
+                               boolean available) {
+        static ProviderView from(ProviderCatalog.Provider provider, boolean available) {
             return new ProviderView(provider.name(), provider.kind(), provider.displayName(),
-                    provider.employerScoped());
+                    provider.employerScoped(), available);
         }
     }
     public record Status(java.util.List<SyncRunService.RunView> latestRuns,

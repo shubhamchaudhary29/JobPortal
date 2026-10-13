@@ -29,4 +29,15 @@ describe("JobCard matching presentation", () => {
     expect(screen.getByText("Limited profile data")).toBeInTheDocument();
     expect(screen.queryByText(/95%/)).not.toBeInTheDocument();
   });
+
+  it("credits aggregator listings and leaves direct or ATS listings unbranded", () => {
+    render(<MemoryRouter><JobCard job={{ ...job, source: "jooble" }} /></MemoryRouter>);
+    expect(screen.getByTestId("provider-attribution")).toHaveTextContent("Jobs by Jooble");
+    cleanup();
+    render(<MemoryRouter><JobCard job={{ ...job, source: "greenhouse" }} /></MemoryRouter>);
+    expect(screen.queryByTestId("provider-attribution")).not.toBeInTheDocument();
+    cleanup();
+    render(<MemoryRouter><JobCard job={job} /></MemoryRouter>);
+    expect(screen.queryByTestId("provider-attribution")).not.toBeInTheDocument();
+  });
 });

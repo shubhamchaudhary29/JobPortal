@@ -38,14 +38,16 @@ export default function ApplicationCopilot() {
         getWorkspaceJob(jobId).catch((failure) => failure?.response?.status === 404 ? null : Promise.reject(failure)),
       ]);
       setReadiness(ready); setPlan(tailoring);
-      setResume(resumes.content?.[0] || null); setCover(letters.content?.[0] || null); setWorkspace(workspaceResult);
+      const latestCover = letters.content?.[0] || null;
+      setResume(resumes.content?.[0] || null); setCover(latestCover); setCoverDraft(latestCover?.content || ""); setWorkspace(workspaceResult);
     } catch (failure) { setError(problem(failure, "Application Copilot could not load.")); }
     finally { setLoading(false); }
   };
 
   useEffect(() => { load(); }, [jobId]); // eslint-disable-line react-hooks/exhaustive-deps
   useEffect(() => { if (resume) setResumeDraft(structuredClone(resume)); }, [resume]);
-  useEffect(() => { setCoverDraft(cover?.content || ""); }, [cover]);
+  // The draft is set together with the cover (load, generate, save). A [cover] effect could run after the
+  // user's first keystroke and overwrite the edit.
   useEffect(() => {
     if (workspace) setTracking({ stage: workspace.stage || "SAVED", notes: workspace.notes || "",
       followUpAt: dateTimeLocal(workspace.followUpAt), appliedExternally: Boolean(workspace.appliedExternally) });
@@ -73,7 +75,7 @@ export default function ApplicationCopilot() {
     setNotice("A new cover-letter version was created. Earlier drafts were preserved.");
   });
   const saveCover = () => run("cover-save", () => updateCoverLetter(cover.id, { title: cover.title, content: coverDraft }),
-    (value) => { setCover(value); setNotice("Cover-letter edits saved."); });
+    (value) => { setCover(value); setCoverDraft(value.content || ""); setNotice("Cover-letter edits saved."); });
   const saveTracking = () => run("tracking", () => updateWorkspaceJob(jobId, {
     stage: tracking.stage, notes: tracking.notes, followUpAt: tracking.followUpAt ? new Date(tracking.followUpAt).toISOString() : null,
     appliedExternally: tracking.appliedExternally,

@@ -29,7 +29,7 @@ const status = {
   providerCompanyCounts: [{ provider: "lever", employer: "board", company: "Acme", activeListings: 4, inactiveListings: 1 }],
 };
 const providers = [
-  { name: "adzuna", kind: "SEARCH_API", displayName: "Adzuna", employerScoped: false },
+  { name: "adzuna", kind: "SEARCH_API", displayName: "Adzuna", employerScoped: false, available: true },
   { name: "greenhouse", kind: "ATS_BOARD", displayName: "Greenhouse", employerScoped: true },
   { name: "lever", kind: "ATS_BOARD", displayName: "Lever", employerScoped: true },
 ];
@@ -182,5 +182,17 @@ describe("aggregation ADMIN page", () => {
     await providersReady();
     expect(screen.queryByText("Could not load providers.")).not.toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Start sync" })).toBeEnabled();
+  });
+
+  it("shows unconfigured search providers as disabled and never selects them", async () => {
+    successfulLoad();
+    api.getAggregationProviders.mockResolvedValue([
+      { name: "jooble", kind: "SEARCH_API", displayName: "Jooble", employerScoped: false, available: false },
+      ...providers,
+    ]);
+    render(<AggregationAdmin />);
+    const jooble = await within(await screen.findByLabelText("Provider")).findByRole("option", { name: "Jooble (not configured)" });
+    expect(jooble).toBeDisabled();
+    expect(screen.getByLabelText("Provider")).toHaveValue("adzuna");
   });
 });

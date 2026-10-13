@@ -35,11 +35,13 @@ class ProviderCatalogWiringTest {
     }
 
     @Test
-    void everyCatalogProviderHasExactlyOneJobSourceBeanAndAtsProvidersResolve() {
-        for (ProviderCatalog.Provider provider : ProviderCatalog.all()) {
+    void everyAtsProviderHasExactlyOneJobSourceBeanAndResolves() {
+        for (ProviderCatalog.Provider provider : ProviderCatalog.ofKind(ProviderCatalog.Kind.ATS_BOARD)) {
             assertEquals(1, sources.stream().filter(source -> provider.name().equals(source.sourceName())).count(),
                     provider.name());
         }
+        assertTrue(sources.stream().noneMatch(source -> ProviderCatalog.find(source.sourceName()).isEmpty()),
+                "every JobSource bean must be a catalog provider");
         for (EmployerRegistryProperties.Source source : EmployerRegistryProperties.Source.values()) {
             assertTrue(ingestion.supports(source), source.name());
             assertTrue(reliability.baseUrl(source.provider().name()).startsWith("https://"), source.name());

@@ -16,6 +16,8 @@ public interface SearchProvider {
     List<ExternalJob> fetch(SearchQuery query);
     int maxAttempts();
     long backoffMs(int attempt);
+    /** Upper bound for a provider-requested {@code Retry-After} wait. */
+    default long maxBackoffMs() { return Long.MAX_VALUE; }
     void sleep(long millis) throws InterruptedException;
     boolean allowRequest();
     void recordSuccess();

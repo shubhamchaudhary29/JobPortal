@@ -62,7 +62,7 @@ class AggregationMetricsTest {
         SimpleMeterRegistry registry = new SimpleMeterRegistry();
         AggregationMetrics metrics = new AggregationMetrics(registry);
         java.util.List<String> inputs = new java.util.ArrayList<>(java.util.Arrays.asList(
-                "board-123", "https://x.test", "lever ", "", null, "jooble"));
+                "board-123", "https://x.test", "lever ", "", null, "linkedin"));
         com.example.backend.shared.provider.ProviderCatalog.names()
                 .forEach(name -> inputs.add(name.toUpperCase(java.util.Locale.ROOT)));
         for (String provider : inputs) {

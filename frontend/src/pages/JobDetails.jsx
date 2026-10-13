@@ -7,6 +7,7 @@ import ApplicationReadinessCard from "../components/copilot/ApplicationReadiness
 import { useAuth } from "../auth/auth-context";
 import { getJobById, getJobMatch } from "../services/job-service";
 import { hasUserApplied } from "../services/application-service";
+import ProviderAttribution from "../components/jobs/ProviderAttribution";
 
 const formatDescription = (text) => {
   if (!text) return [];
@@ -132,6 +133,7 @@ export default function JobDetails() {
               <div>
                 <h1 className="text-2xl font-bold text-slate-900">{job.title}</h1>
                 <p className="text-slate-500 font-medium text-lg">{job.company}</p>
+                <ProviderAttribution source={job.source} linked className="mt-1 inline-block" />
                 <div className="flex gap-4 mt-3 text-sm text-slate-500">
                   <span className="flex items-center gap-1">📍 {job.location}</span>
                   <span className="flex items-center gap-1">💼 {job.experience}+ Years</span>

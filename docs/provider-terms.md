@@ -83,3 +83,33 @@ come only from environment variables, are never logged, and a provider stays dis
 - Links: `url` (`https://apply.workable.com/j/{shortcode}`) is the application URL, falling back to
   `application_url`. No URL rewriting.
 - Attribution and caching/retention: not documented. Imported postings follow the shared lifecycle and retention.
+
+## Jooble (search API, `jooble`)
+
+- Status: **disabled by default; terms unverified, needs a human check before enabling in production.** The
+  Jooble API Terms of Use that the help center requires compliance with are served behind a Cloudflare browser
+  challenge (`jooble.org/api/about` and `jooble.org/api/terms` returned HTTP `403` to automated requests on
+  2026-10-13), so their attribution, caching, and display rules could not be read.
+- Checked: 2026-10-13 against the Jooble help-center articles "REST API Documentation"
+  (<https://help.jooble.org/en/support/solutions/articles/60001448238-rest-api-documentation>, modified
+  2026-08-16) and "How to connect to the Jooble REST API" (<https://help.jooble.org/en/support/solutions/articles/60000922689>,
+  modified 2026-08-16). No live request was made because no API key is available.
+- Endpoint: `POST https://{region}.jooble.org/api/{api_key}` with a JSON body (`keywords`, `location`, `page`,
+  optional `ResultOnPage`, `radius`, `salary`, `SearchMode`, `companysearch`). The response is
+  `{totalCount, jobs: [{id, title, location, snippet, salary, source, type, link, company, updated}]}`.
+- Authentication: an API key in the URL path. **Keys are regional**: a `jooble.org` key returns only US listings,
+  so India needs a key registered on `in.jooble.org`; `JOOBLE_BASE_URL` defaults to `https://in.jooble.org/api`.
+  The key comes only from `JOOBLE_API_KEY`; without it Jooble is not registered, scheduled, or available in ADMIN.
+  Because the key is in the path, provider failures carry only `jooble provider request failed: <kind>`, never the
+  URL. `JoobleKeyRedactionTest` proves no failure log contains the key or host, and `JoobleProperties.toString()`
+  omits it.
+- Rate limits: **the free plan allows 500 requests per key in total (a lifetime quota, not monthly).** Defaults are
+  conservative: 3 keywords × 1 page at location `India` every 24 hours (about 90 requests/month), capped by
+  `JOOBLE_MONTHLY_REQUEST_BUDGET=100`, which also counts retries. Set the budget to your plan before enabling; a
+  free key lasts about five months on the defaults.
+- Links and attribution: Jooble's `link` (`https://{region}.jooble.org/...`) is kept as the application URL
+  without rewriting, and every Jooble listing shows "Jobs by Jooble" on job cards and a linked credit on the job
+  detail page.
+- Data handling: postings without a company are skipped, because they cannot be attributed or de-duplicated.
+  Free-text salaries are parsed only for explicit annual rupee amounts. Listings follow the shared lifecycle and
+  retention. Caching/retention limits are unknown until the terms are read.

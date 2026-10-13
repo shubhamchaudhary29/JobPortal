@@ -20,6 +20,8 @@ public final class ProviderCatalog {
     private static final List<Provider> PROVIDERS = List.of(
             new Provider("adzuna", Kind.SEARCH_API, "Adzuna", null,
                     "adzuna.schedule-delay-ms", 43_200_000L, null, null),
+            new Provider("jooble", Kind.SEARCH_API, "Jooble", null,
+                    "jooble.schedule-delay-ms", 86_400_000L, null, null),
             new Provider("greenhouse", Kind.ATS_BOARD, "Greenhouse", "GREENHOUSE",
                     "job-aggregation.scheduling.greenhouse-delay-ms", 21_600_000L,
                     "job-aggregation.providers.greenhouse-base-url", "https://boards-api.greenhouse.io/v1/boards"),
