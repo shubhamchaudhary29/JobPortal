@@ -9,6 +9,47 @@ Phase 4 source policy (see `aggregation-completion-plan.md`): no LinkedIn, Naukr
 JSearch is never scheduled; aggregator jobs keep the provider's redirect link and show attribution; API keys
 come only from environment variables, are never logged, and a provider stays disabled when its key is missing.
 
+## Adzuna (search API, `adzuna`)
+
+- Checked: 2026-10-13 against the Adzuna API terms of service
+  (<https://developer.adzuna.com/docs/terms_of_service>).
+- Endpoint: `GET https://api.adzuna.com/v1/api/jobs/in/search/{page}` with `app_id`, `app_key`, `what`,
+  optional `where`, and `results_per_page`. Credentials come only from `ADZUNA_APP_ID`/`ADZUNA_APP_KEY`. They
+  appear only in the outbound query string and never in logs or errors (`RestTemplateAdzunaClientTest`).
+- Permitted use: publishing Adzuna ad listings is an explicitly permitted use.
+- Rate limits (defaults, may change): 25 requests/minute, 250/day, 1,000/week, 2,500/month. Our defaults stay
+  inside all four: at most 33 requests per 12-hourly run (about 66/day, 462/week, 1,980/month, enforced by
+  `ADZUNA_MONTHLY_REQUEST_BUDGET=2000` including retries), spaced at least `ADZUNA_MIN_REQUEST_INTERVAL_MS=2500`
+  apart (24/minute). Manual ADMIN runs count against the same budget; keep them occasional.
+- Attribution (required): "An API user shall label each displayed advert with the phrase 'Adzuna' at least 116 X 23
+  pixels in size, wherein the word 'Adzuna' shall be hyperlinked to http://www.adzuna.co.uk or the relevant local
+  domain." Every Adzuna listing shows a "Jobs by Adzuna" link to `https://www.adzuna.in` with a minimum box of
+  116 × 23 px on job cards and the job detail page (`ProviderAttribution`). It was added during the Phase 4
+  release check; earlier releases showed no attribution.
+- Links: Adzuna's `redirect_url` is kept as the application URL. All queries go to Adzuna, never to the
+  advertisers behind the listings, as the terms require.
+
+## Greenhouse (ATS board, `greenhouse`)
+
+- Checked: 2026-10-13 against the Job Board API documentation (<https://developers.greenhouse.io/job-board.html>).
+- Endpoint: `GET https://boards-api.greenhouse.io/v1/boards/{board_token}/jobs?content=true`.
+- Authentication and use: "Job Board data is publicly available, so authentication is not required for any GET
+  endpoints." The API is meant for building careers pages from published jobs; we read published jobs only and
+  never use the authenticated application POST.
+- Rate limits, attribution, caching: not documented. We pace each board at
+  `JOB_AGGREGATION_PROVIDER_REQUESTS_PER_SECOND` (default 5), make one request per board per 6-hour run, honor
+  `429`/`Retry-After`, and keep each posting's `absolute_url` as the application link.
+
+## Lever (ATS board, `lever`)
+
+- Checked: 2026-10-13 against the Lever Postings API README (<https://github.com/lever/postings-api>).
+- Endpoint: `GET https://api.lever.co/v0/postings/{site}?mode=json`.
+- Authentication and use: published postings are public and "may be scraped by third parties"; unpublished jobs
+  are never exposed. Only the application POST needs a key and has a documented 2 requests/second limit; we never
+  call it.
+- Rate limits, attribution, caching: not documented for reads. Same pacing, one request per board per run, and
+  `hostedUrl` as the application link.
+
 ## Ashby (ATS board, `ashby`)
 
 - Checked: 2026-10-13 against <https://developers.ashbyhq.com/docs/public-job-posting-api> (page updated

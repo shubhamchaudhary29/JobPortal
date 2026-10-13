@@ -368,10 +368,21 @@ Phase 1–3 above are complete. Phase 4 grows job coverage, mainly for India, wi
 
 ### Phase 4 release checklist
 
-- [ ] `./mvnw clean verify` passes, including real Mongo integration tests.
-- [ ] Frontend clean install, lint, tests, audit, and production build pass.
-- [ ] Fingerprint migration and duplicate/index audit pass against seeded data.
-- [ ] `docs/provider-terms.md` covers every enabled provider; no disallowed source is ingested.
-- [ ] Registry validation evidence for new ATS boards is dated and truthful.
-- [ ] No API key appears in logs, history, metrics, or the repository; secret scanning passes.
+- [x] `./mvnw clean verify` passes, including real Mongo integration tests.
+- [x] Frontend clean install, lint, tests, audit, and production build pass.
+- [x] Fingerprint migration and duplicate/index audit pass against seeded data.
+- [x] `docs/provider-terms.md` covers every enabled provider; no disallowed source is ingested.
+- [x] Registry validation evidence for new ATS boards is dated and truthful.
+- [x] No API key appears in logs, history, metrics, or the repository; secret scanning passes.
 - [ ] GitHub Actions succeeds on the pushed branch.
+
+Release evidence (2026-10-13):
+
+- Backend: `cd backend/backend && ./mvnw clean verify` passed 420 tests (0 failures/errors/skips) against MongoDB 7.0.37 on JDK 17.0.20, including every real-Mongo integration test.
+- Frontend: `cd frontend && npm ci && npm run lint && npm test -- --run && npm run build && npm audit --omit=dev` passed 73 tests across 21 files, a 232-module build, and 0 production vulnerabilities. The audit first failed in CI on every commit of this branch, including the two original documentation commits, because of axios 1.19.0 advisories (GHSA-542g-h47m-68v8 and related); the lockfile now pins axios 1.20.0, within the existing `^1.13.4` range.
+- Seeded data: `MONGODB_URI=mongodb://localhost:27017 bash backend/backend/scripts/verify-fingerprint-migration.sh`, `verify-aggregation-migration.sh` (duplicate, index, fingerprint-version, and conflict audit), and `verify-backfill-source-listings.sh` all passed against disposable databases.
+- Provider terms: `docs/provider-terms.md` now covers Adzuna, Greenhouse, and Lever (added at release), Ashby, SmartRecruiters, Workable (unverified, no boards enabled), Jooble (unverified, disabled without a key), and Careerjet (blocked, not integrated). The release review found two Adzuna terms gaps from before Phase 4 and fixed them: each Adzuna listing now shows a "Jobs by Adzuna" link to `https://www.adzuna.in`, at least 116 × 23 px, on job cards and details (the card was restructured so the credit link is not nested inside the job link); and search requests are spaced by `ADZUNA_MIN_REQUEST_INTERVAL_MS` (default 2,500 ms, 24/minute), because M15's 33-request runs would otherwise exceed Adzuna's 25 requests/minute default. Daily, weekly, and monthly limits are met as documented. New tests cover the pacing and attribution. No LinkedIn, Naukri, Indeed, JSearch, or HTML-scraping source exists in the code or registry; the only LinkedIn references are candidates' own profile-link fields.
+- Registry: a live `validate-employer-registry.sh` run at 2026-10-13T05:47:08Z exited `0` with all 38 enabled boards `ACTIVE` (Greenhouse 23, Lever 10, Ashby 2, SmartRecruiters 3), matching the M10 evidence in `docs/employer-registry-verification.md`.
+- Secrets: `gitleaks detect` (v8.24.3, the tool the Secret scan workflow uses) found no leaks in 100 commits. Tests prove provider keys stay out of logs and errors (`JoobleKeyRedactionTest`, `RestTemplateAdzunaClientTest`), out of history (`SyncRunService` URL/credential sanitization, `SyncHistoryMongoIntegrationTest`), and out of metrics (catalog-only provider tags, `AggregationMetricsTest`). Only `test-only` placeholder values are committed.
+- Docker: with CI's environment values, `docker compose config` (186 lines, all Phase 4 variables forwarded), `docker compose build`, and `bash backend/backend/scripts/compose-smoke-test.sh` passed (MongoDB, backend, frontend proxy, and SPA healthy; disposable project removed).
+- Documentation: `README.md`, `docs/architecture.md`, `docs/phase-3-operations.md`, the new `docs/phase-4-operations.md` (providers, rollout order, budgets, rotation, registry, attribution), and `.env.example` describe the new providers, environment variables, schedules, budgets, and migration steps.

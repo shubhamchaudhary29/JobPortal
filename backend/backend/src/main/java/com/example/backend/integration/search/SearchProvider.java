@@ -29,6 +29,8 @@ public interface SearchProvider {
      * once per complete rotation cycle instead of per run.
      */
     default int requestsPerRun() { return Integer.MAX_VALUE; }
+    /** Minimum spacing between request attempts in one run, for per-minute provider limits. */
+    default long minRequestIntervalMs() { return 0; }
     default void completed(SearchSyncResult result, long elapsedMs) { }
     default void skipped() { }
 }

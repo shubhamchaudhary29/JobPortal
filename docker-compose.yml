@@ -43,6 +43,7 @@ services:
       ADZUNA_KEYWORDS: ${ADZUNA_KEYWORDS:-java developer,python developer,react developer,data analyst,backend engineer,frontend developer,full stack developer,machine learning engineer,software engineer,devops engineer,product manager,business analyst}
       ADZUNA_CITIES: ${ADZUNA_CITIES:-Bengaluru,Delhi,Gurugram,Noida,Mumbai,Pune,Hyderabad,Chennai,Kolkata,Ahmedabad}
       ADZUNA_REQUESTS_PER_RUN: ${ADZUNA_REQUESTS_PER_RUN:-0}
+      ADZUNA_MIN_REQUEST_INTERVAL_MS: ${ADZUNA_MIN_REQUEST_INTERVAL_MS:-2500}
       ADZUNA_MONTHLY_REQUEST_BUDGET: ${ADZUNA_MONTHLY_REQUEST_BUDGET:-2000}
       JOOBLE_API_KEY: ${JOOBLE_API_KEY:-}
       JOOBLE_BASE_URL: ${JOOBLE_BASE_URL:-https://in.jooble.org/api}

@@ -32,6 +32,11 @@ class AdzunaQueryPlanTest {
         assertEquals(0, AdzunaServiceTest.properties(1, "java").cities().length);
         assertThrows(IllegalArgumentException.class, () -> new AdzunaProperties("id", "key", 1, 1, 1, 1, 3, 100, 2, 20,
                 "java", 2_000, "", -1, 43_200_000L));
+        assertEquals(2_500, new AdzunaProperties("id", "key", 1, 1, 1, 1, 3, 100, 2, 20, "java", 2_000, "", 0,
+                43_200_000L, 2_500).minRequestIntervalMs());
+        assertEquals(0, AdzunaServiceTest.properties(1, "java").minRequestIntervalMs());
+        assertThrows(IllegalArgumentException.class, () -> new AdzunaProperties("id", "key", 1, 1, 1, 1, 3, 100, 2, 20,
+                "java", 2_000, "", 0, 43_200_000L, 60_001));
     }
 
     @Test

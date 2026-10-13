@@ -19,6 +19,7 @@ public class AdzunaProperties {
     private final int monthlyRequestBudget;
     private final String[] cities;
     private final int requestsPerRun;
+    private final long minRequestIntervalMs;
 
     @org.springframework.beans.factory.annotation.Autowired
     public AdzunaProperties(@Value("${adzuna.app.id}") String appId,
@@ -35,7 +36,8 @@ public class AdzunaProperties {
                             @Value("${adzuna.monthly-request-budget:2000}") int monthlyRequestBudget,
                             @Value("${adzuna.cities:Bengaluru,Delhi,Gurugram,Noida,Mumbai,Pune,Hyderabad,Chennai,Kolkata,Ahmedabad}") String cities,
                             @Value("${adzuna.requests-per-run:0}") int requestsPerRun,
-                            @Value("${adzuna.schedule-delay-ms:43200000}") long scheduleDelayMs) {
+                            @Value("${adzuna.schedule-delay-ms:43200000}") long scheduleDelayMs,
+                            @Value("${adzuna.min-request-interval-ms:2500}") long minRequestIntervalMs) {
         this.appId = required(appId, "ADZUNA_APP_ID");
         this.appKey = required(appKey, "ADZUNA_APP_KEY");
         this.connectTimeoutMs = positive(connectTimeoutMs, "connect timeout");
@@ -53,6 +55,8 @@ public class AdzunaProperties {
         if (this.cities.length > 50) throw new IllegalArgumentException("at most 50 Adzuna cities can be configured");
         if (requestsPerRun < 0 || requestsPerRun > 10_000) throw new IllegalArgumentException("requests per run must be between 0 and 10000");
         if (scheduleDelayMs < 1) throw new IllegalArgumentException("schedule delay must be positive");
+        if (minRequestIntervalMs < 0 || minRequestIntervalMs > 60_000) throw new IllegalArgumentException("minimum request interval must be between 0 and 60000 ms");
+        this.minRequestIntervalMs = minRequestIntervalMs;
         this.requestsPerRun = requestsPerRun > 0 ? requestsPerRun : automaticRequestsPerRun(monthlyRequestBudget, scheduleDelayMs, pagesPerKeyword);
     }
 
@@ -67,7 +71,17 @@ public class AdzunaProperties {
                             long initialBackoffMs, int circuitFailureThreshold, long circuitOpenMs,
                             int pagesPerKeyword, int resultsPerPage, String keywords) {
         this(appId, appKey, connectTimeoutMs, readTimeoutMs, maxAttempts, initialBackoffMs, circuitFailureThreshold,
-                circuitOpenMs, pagesPerKeyword, resultsPerPage, keywords, 2_000, "", 0, 43_200_000L);
+                circuitOpenMs, pagesPerKeyword, resultsPerPage, keywords, 2_000, "", 0, 43_200_000L, 0);
+    }
+
+    /** Test convenience without request pacing. */
+    public AdzunaProperties(String appId, String appKey, int connectTimeoutMs, int readTimeoutMs, int maxAttempts,
+                            long initialBackoffMs, int circuitFailureThreshold, long circuitOpenMs,
+                            int pagesPerKeyword, int resultsPerPage, String keywords, int monthlyRequestBudget,
+                            String cities, int requestsPerRun, long scheduleDelayMs) {
+        this(appId, appKey, connectTimeoutMs, readTimeoutMs, maxAttempts, initialBackoffMs, circuitFailureThreshold,
+                circuitOpenMs, pagesPerKeyword, resultsPerPage, keywords, monthlyRequestBudget, cities, requestsPerRun,
+                scheduleDelayMs, 0);
     }
     public String appId() { return appId; }
     public String appKey() { return appKey; }
@@ -83,6 +97,7 @@ public class AdzunaProperties {
     public int monthlyRequestBudget() { return monthlyRequestBudget; }
     public String[] cities() { return cities.clone(); }
     public int requestsPerRun() { return requestsPerRun; }
+    public long minRequestIntervalMs() { return minRequestIntervalMs; }
     private static String required(String value, String name) { if (value == null || value.isBlank()) throw new IllegalArgumentException(name + " must be configured"); return value; }
     private static int positive(int value, String name) { if (value < 1) throw new IllegalArgumentException(name + " must be positive"); return value; }
     private static long positive(long value, String name) { if (value < 1) throw new IllegalArgumentException(name + " must be positive"); return value; }

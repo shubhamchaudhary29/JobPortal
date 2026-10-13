@@ -6,7 +6,7 @@
 
 ## Employer aggregation configuration
 
-Public Greenhouse and Lever boards are configured with `job-aggregation.employers[n]` in `backend/backend/src/main/resources/application.properties`. Each entry has a company name, `GREENHOUSE` or `LEVER` source, public board/site ID, and enabled flag. Set `JOB_AGGREGATION_SCHEDULING_ENABLED=false` to disable all ingestion schedules; Greenhouse and Lever delays are independently configured with `GREENHOUSE_SYNC_DELAY_MS` and `LEVER_SYNC_DELAY_MS`. Provider failures and empty boards are isolated and logged; user-facing search remains MongoDB-only.
+Public ATS boards (Greenhouse, Lever, Ashby, SmartRecruiters, Workable) live in the Mongo `employer_registry` collection, which administrators manage at `/admin/aggregation/registry` (audited add/edit/enable/disable/validate). The `job-aggregation.employers[n]` entries in `backend/backend/src/main/resources/application.properties` (company, source, board ID, enabled) are an idempotent seed imported at startup; they include 18 live-verified Indian employers. Search APIs (Adzuna and, when `JOOBLE_API_KEY` is set, Jooble) run keyword × location plans under monthly request budgets. Set `JOB_AGGREGATION_SCHEDULING_ENABLED=false` to disable all ingestion schedules; each provider's delay is configured independently (`GREENHOUSE_SYNC_DELAY_MS`, `LEVER_SYNC_DELAY_MS`, `ASHBY_SYNC_DELAY_MS`, `SMARTRECRUITERS_SYNC_DELAY_MS`, `WORKABLE_SYNC_DELAY_MS`, `ADZUNA_SCHEDULE_DELAY_MS`, `JOOBLE_SCHEDULE_DELAY_MS`). Provider failures and empty boards are isolated and logged; user-facing search remains MongoDB-only. Read [provider terms](docs/provider-terms.md) before enabling a provider, and see [Phase 4 operations](docs/phase-4-operations.md) for rollout steps.
 
 <p align="center">
 Connecting <b>Recruiters</b> and <b>Candidates</b> through a secure, scalable, and modern recruitment platform powered by <b>Spring Boot</b>, <b>React</b>, <b>MongoDB</b>, <b>Docker</b>, and <b>WebSockets</b>.
@@ -44,7 +44,7 @@ See [Job Matching Engine v1.2](docs/job-matching.md) for deterministic scoring, 
 
 See [Application Copilot v1.3](docs/application-copilot.md) for evidence-based readiness, truthful resume/cover-letter versioning, DOCX export, private tracking, and status semantics.
 
-For aggregation reliability, migrations, registry evidence, and local/Docker verification, see [aggregation operations](docs/phase-3-operations.md).
+For aggregation reliability, migrations, registry evidence, and local/Docker verification, see [aggregation operations](docs/phase-3-operations.md), [Phase 4 operations](docs/phase-4-operations.md), and [provider terms](docs/provider-terms.md).
 
 </div>
 
@@ -54,7 +54,7 @@ For aggregation reliability, migrations, registry evidence, and local/Docker ver
 
 **JobPortal** is a modern full-stack recruitment platform that streamlines the hiring process for both **Recruiters** and **Candidates**.
 
-Unlike conventional job portals that only display jobs created within their own application, **JobPortal combines recruiter-posted jobs with cached external opportunities imported from Adzuna and configured public Greenhouse and Lever boards. Public search always reads MongoDB.**
+Unlike conventional job portals that only display jobs created within their own application, **JobPortal combines recruiter-posted jobs with cached external opportunities imported from Adzuna (and optionally Jooble) and configured public Greenhouse, Lever, Ashby, SmartRecruiters, and Workable boards, de-duplicated across providers. Public search always reads MongoDB.**
 
 The platform provides:
 
@@ -90,13 +90,15 @@ The platform provides:
 
 One of the biggest highlights of **JobPortal** is its ability to aggregate jobs from multiple recruitment platforms.
 
-Instead of limiting candidates to jobs posted inside the application, scheduled or ADMIN-triggered coordinators import external listings into MongoDB. Adzuna provides keyword results, while Greenhouse and Lever provide configured employer boards. Provider requests never occur in the candidate search path.
+Instead of limiting candidates to jobs posted inside the application, scheduled or ADMIN-triggered coordinators import external listings into MongoDB. Search APIs provide keyword × city results within monthly request budgets, while ATS providers supply configured employer boards. A versioned fingerprint (normalized company, title, and city, so `Bangalore`/`Bengaluru` or `Razorpay Software Pvt Ltd`/`Razorpay` match) merges copies of one job from different providers. Provider requests never occur in the candidate search path.
 
 ## Supported Providers
 
-- Adzuna
-- Greenhouse
-- Lever
+- Adzuna (search API; country-wide plus ten Indian cities, budgeted and paced; listings show "Jobs by Adzuna")
+- Jooble (search API; disabled until an `in.jooble.org` key is configured; listings show "Jobs by Jooble")
+- Greenhouse, Lever, Ashby, SmartRecruiters (ATS boards)
+- Workable (ATS boards; code ready, no boards enabled until its terms are confirmed)
+- Careerjet is not integrated: its API requires the real end user's IP and user agent on every request
 
 > Available external jobs depend on successful ingestion and the explicitly configured provider registry.
 
@@ -138,7 +140,7 @@ This transforms JobPortal into a **centralized recruitment hub** instead of just
 - Search by Keywords
 - Filter by Location
 - View Job Details
-- Explore cached Adzuna, Greenhouse, and Lever jobs
+- Explore cached Adzuna, Jooble, Greenhouse, Lever, Ashby, SmartRecruiters, and Workable jobs
 - Review candidate-only, explainable profile-to-job compatibility and a ranked Best Matches feed
 - Prepare truthful job-specific resume and cover-letter versions with keyword evidence and Application Readiness
 
@@ -261,7 +263,7 @@ This eliminates the need for third-party communication platforms and keeps the h
 
 ## Third-Party Integrations
 
-- Adzuna, Greenhouse, and Lever APIs
+- Adzuna and Jooble search APIs; Greenhouse, Lever, Ashby, SmartRecruiters, and Workable job-board APIs
 - JWT
 - WebSocket (STOMP)
 

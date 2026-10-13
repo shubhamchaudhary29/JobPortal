@@ -47,6 +47,7 @@ final class AdzunaSearchProvider implements SearchProvider {
         return source.fetch(new JobFetchRequest(query.keyword(), query.page(), null, null, query.location()));
     }
     @Override public int requestsPerRun() { return properties.requestsPerRun(); }
+    @Override public long minRequestIntervalMs() { return properties.minRequestIntervalMs(); }
     @Override public int maxAttempts() { return properties.maxAttempts(); }
     @Override public long backoffMs(int attempt) {
         long base = properties.initialBackoffMs() * (1L << (attempt - 1));

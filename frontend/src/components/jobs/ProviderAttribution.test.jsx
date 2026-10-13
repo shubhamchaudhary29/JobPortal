@@ -7,14 +7,16 @@ import ProviderAttribution from "./ProviderAttribution";
 describe("ProviderAttribution", () => {
   afterEach(cleanup);
 
-  it("links to the aggregator on detail pages and ignores unknown sources", () => {
-    render(<ProviderAttribution source="Jooble" linked />);
-    const link = screen.getByRole("link", { name: "Jobs by Jooble" });
-    expect(link).toHaveAttribute("href", "https://in.jooble.org");
-    expect(link).toHaveAttribute("rel", "noopener noreferrer");
+  it("links aggregator credits to the provider's Indian site and ignores other sources", () => {
+    render(<ProviderAttribution source="Jooble" />);
+    const jooble = screen.getByRole("link", { name: "Jobs by Jooble" });
+    expect(jooble).toHaveAttribute("href", "https://in.jooble.org");
+    expect(jooble).toHaveAttribute("rel", "noopener noreferrer");
     cleanup();
-    render(<ProviderAttribution source="jooble" />);
-    expect(screen.getByTestId("provider-attribution")).toHaveTextContent("Jobs by Jooble");
+    render(<ProviderAttribution source="adzuna" />);
+    const adzuna = screen.getByRole("link", { name: "Jobs by Adzuna" });
+    expect(adzuna).toHaveAttribute("href", "https://www.adzuna.in");
+    expect(adzuna).toHaveClass("min-w-[116px]", "min-h-[23px]");
     cleanup();
     const { container } = render(<ProviderAttribution source="lever" />);
     expect(container).toBeEmptyDOMElement();

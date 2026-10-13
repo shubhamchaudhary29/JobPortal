@@ -81,6 +81,20 @@ class SearchProviderIngestionServiceTest {
         verifyNoInteractions(store, lifecycle);
     }
 
+    @Test
+    void consecutiveRequestsAreSpacedByTheProvidersMinimumInterval() {
+        when(store.upsert(any(), any())).thenReturn(UpsertOutcome.INSERTED);
+        FakeProvider provider = new FakeProvider(1, List.of("java", "python"), 2);
+        provider.intervalMs = 2_500;
+
+        engine(new CountingBudget(10)).sync(provider, () -> true);
+
+        assertEquals(4, provider.requests.size());
+        assertEquals(3, provider.sleeps.size(), "no wait before the first request");
+        assertTrue(provider.sleeps.stream().allMatch(wait -> wait > 2_000 && wait <= 2_500), provider.sleeps.toString());
+        assertTrue(60_000 / provider.intervalMs <= 25, "Adzuna allows 25 requests per minute");
+    }
+
     private SearchProviderIngestionService engine(RequestBudget budget) {
         return new SearchProviderIngestionService(store, lifecycle, budget, Clock.systemUTC());
     }
@@ -104,6 +118,8 @@ class SearchProviderIngestionServiceTest {
         private final int pages;
         private final List<String> requests = new ArrayList<>();
         private int failuresBeforeSuccess;
+        private long intervalMs;
+        private final List<Long> sleeps = new ArrayList<>();
         private SearchSyncResult completed;
         FakeProvider(int attempts, List<String> keywords, int pages) {
             this.attempts = attempts;
@@ -122,7 +138,8 @@ class SearchProviderIngestionServiceTest {
         }
         @Override public int maxAttempts() { return attempts; }
         @Override public long backoffMs(int attempt) { return 0; }
-        @Override public void sleep(long millis) { }
+        @Override public void sleep(long millis) { sleeps.add(millis); }
+        @Override public long minRequestIntervalMs() { return intervalMs; }
         @Override public boolean allowRequest() { return true; }
         @Override public void recordSuccess() { }
         @Override public void recordFailure() { }

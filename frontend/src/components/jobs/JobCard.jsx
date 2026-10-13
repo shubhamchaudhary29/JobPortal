@@ -8,10 +8,8 @@ export default function JobCard({ job, match }) {
   const missing = match?.missingSkills?.[0];
 
   return (
-    <Link
-      to={`/jobs/${id}`}
-      className="group flex flex-col justify-between rounded-3xl border border-slate-100 bg-white p-6 shadow-sm transition-all duration-300 hover:-translate-y-1 hover:border-indigo-100 hover:shadow-xl"
-    >
+    <div className="group flex flex-col justify-between rounded-3xl border border-slate-100 bg-white p-6 shadow-sm transition-all duration-300 hover:-translate-y-1 hover:border-indigo-100 hover:shadow-xl">
+    <Link to={`/jobs/${id}`} className="flex flex-1 flex-col justify-between">
       <div>
         <div className="mb-5 flex items-start justify-between gap-3">
           <div className="flex h-14 w-14 shrink-0 items-center justify-center rounded-2xl bg-gradient-to-br from-indigo-50 to-purple-50 text-2xl font-bold text-indigo-600 shadow-inner">
@@ -26,7 +24,6 @@ export default function JobCard({ job, match }) {
 
         <h3 className="line-clamp-1 text-xl font-bold text-slate-900 transition-colors group-hover:text-indigo-600">{job.title}</h3>
         <p className="mt-1 font-medium text-slate-500">{job.company}</p>
-        <ProviderAttribution source={job.source} className="mt-1 block" />
 
         <div className="mt-5 flex flex-wrap gap-2">
           <span className="inline-flex rounded-lg bg-slate-100 px-2.5 py-1.5 text-xs font-semibold text-slate-600">📍 {job.location}</span>
@@ -49,5 +46,7 @@ export default function JobCard({ job, match }) {
         <span className="flex items-center gap-1 text-sm font-bold text-indigo-600 transition-transform group-hover:translate-x-2">View Role <span className="text-lg">→</span></span>
       </div>
     </Link>
+    <ProviderAttribution source={job.source} className="mt-3" />
+    </div>
   );
 }

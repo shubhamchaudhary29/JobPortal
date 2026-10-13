@@ -71,6 +71,7 @@ public class SearchProviderIngestionService {
         long lifecycleMatched = 0, lifecycleModified = 0;
         boolean budgetExhausted = false;
         AtomicInteger retries = new AtomicInteger();
+        long[] lastRequestAt = {Long.MIN_VALUE};
         Set<String> seenIdentities = new HashSet<>();
         SearchQueryPlan plan = provider.plan();
         QueryRotation.Slice slice = null;
@@ -93,7 +94,7 @@ public class SearchProviderIngestionService {
                 attemptedBatches++;
                 try {
                     BatchResult batch = fetchBatch(provider, new SearchQuery(group.keyword(), group.location(), page),
-                            leaseValid, seenIdentities, retries);
+                            leaseValid, seenIdentities, retries, lastRequestAt);
                     inserted += batch.inserted(); updated += batch.updated(); unchanged += batch.unchanged();
                     rejected += batch.rejected(); failedItems += batch.failed();
                 } catch (CircuitOpen open) {
@@ -156,10 +157,10 @@ public class SearchProviderIngestionService {
     }
 
     private BatchResult fetchBatch(SearchProvider provider, SearchQuery query, BooleanSupplier leaseValid,
-                                   Set<String> seenIdentities, AtomicInteger retries) {
+                                   Set<String> seenIdentities, AtomicInteger retries, long[] lastRequestAt) {
         if (!leaseValid.getAsBoolean()) throw new LeaseLostDuringRun();
         if (!provider.allowRequest()) throw new CircuitOpen();
-        List<ExternalJob> response = fetchWithRetry(provider, query, retries, leaseValid);
+        List<ExternalJob> response = fetchWithRetry(provider, query, retries, leaseValid, lastRequestAt);
         int inserted = 0, updated = 0, unchanged = 0, rejected = 0, failed = 0;
         LocalDateTime now = LocalDateTime.now(clock);
         for (ExternalJob source : response) {
@@ -187,11 +188,13 @@ public class SearchProviderIngestionService {
     }
 
     private List<ExternalJob> fetchWithRetry(SearchProvider provider, SearchQuery query, AtomicInteger retries,
-                                             BooleanSupplier leaseValid) {
+                                             BooleanSupplier leaseValid, long[] lastRequestAt) {
         SearchProviderException last = null;
         for (int attempt = 1; attempt <= provider.maxAttempts(); attempt++) {
             if (!leaseValid.getAsBoolean()) throw new LeaseLostDuringRun();
+            if (pace(provider, lastRequestAt) && !leaseValid.getAsBoolean()) throw new LeaseLostDuringRun();
             if (!budget.tryConsume(provider.name(), provider.monthlyRequestBudget())) throw new BudgetExhausted();
+            lastRequestAt[0] = System.nanoTime();
             try {
                 List<ExternalJob> response = provider.fetch(query);
                 return response == null ? List.of() : response;
@@ -211,6 +214,21 @@ public class SearchProviderIngestionService {
             }
         }
         throw last;
+    }
+
+    /** Waits out the provider's minimum request spacing; true when it actually waited. */
+    private static boolean pace(SearchProvider provider, long[] lastRequestAt) {
+        long interval = provider.minRequestIntervalMs();
+        if (interval <= 0 || lastRequestAt[0] == Long.MIN_VALUE) return false;
+        long waitMs = interval - (System.nanoTime() - lastRequestAt[0]) / 1_000_000;
+        if (waitMs <= 0) return false;
+        try {
+            provider.sleep(waitMs);
+            return true;
+        } catch (InterruptedException interrupted) {
+            Thread.currentThread().interrupt();
+            throw new SearchProviderException(displayName(provider) + " request pacing interrupted", false, interrupted);
+        }
     }
 
     private static JobDocument map(String provider, ExternalJob source) {
