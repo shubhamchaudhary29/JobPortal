@@ -256,6 +256,21 @@ at most `JOB_AGGREGATION_REGISTRY_MAX_EMPLOYERS_PER_RUN` (default 2000, 1–100,
 properties does not remove it from Mongo; disable it through ADMIN instead. `validate-employer-registry.sh` still
 validates the properties seed.
 
+ADMIN manages the registry without redeploys at `/api/v1/admin/ingestion/registry` (and the ADMIN page):
+
+- `GET ?provider=&enabled=&q=&page=&size=` lists entries (size 1–100, ordered by provider and board; `q` is a
+  literal case-insensitive match on company or board).
+- `POST` with `{provider, boardId, company, enabled}` adds an ATS board (`201`); a duplicate board for the provider,
+  or a second enabled board for the same company, returns `409`.
+- `PATCH /{id}` with any of `{company, enabled, disabledReason}` edits an entry. Provider and board ID are its
+  identity; to move a company to another board, add the new entry and disable the old one.
+- `POST /{id}/validation` fetches the board once through its provider's job source (shared timeouts, retries,
+  circuit, and rate limit) and returns `ACTIVE`, `EMPTY`, `MALFORMED`, `INVALID`, or `UNREACHABLE` with the
+  listing count. Nothing is stored as a job (SmartRecruiters may cache posting details as usual).
+- `GET /{id}/audit` pages the append-only `employer_registry_audit` history: `CREATE`, `UPDATE`, `ENABLE`,
+  `DISABLE`, and `VALIDATE` with the acting administrator, time, and before/after values. Each entry also carries
+  `createdBy/At` and `updatedBy/At`.
+
 ### Employer-registry verification
 
 Run the deterministic classifier test from any working directory:

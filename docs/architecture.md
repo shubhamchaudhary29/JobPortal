@@ -55,7 +55,7 @@ cookie paths would increase risk. Requests to old paths are unsupported.
 | `GET /chat/rooms/{id}/messages` | `GET /api/v1/conversations/{id}/messages` |
 | `GET /chat/unread` | `GET /api/v1/conversations/unread-count` |
 
-Aggregation administration is exposed only below `/api/v1/admin/ingestion`: summaries and manual provider runs are joined by bounded sync history/detail/latest-status queries, provider/company counts, paginated conflict listing, and explicit conflict resolution. Reconciliation requests name both the retained canonical job ID and duplicate job ID; the backend preserves and rewrites application/conversation references before any duplicate removal.
+Aggregation administration is exposed only below `/api/v1/admin/ingestion` (including the audited employer registry at `/registry`): summaries and manual provider runs are joined by bounded sync history/detail/latest-status queries, provider/company counts, paginated conflict listing, and explicit conflict resolution. Reconciliation requests name both the retained canonical job ID and duplicate job ID; the backend preserves and rewrites application/conversation references before any duplicate removal.
 
 Supported providers are listed once in `shared/provider/ProviderCatalog` (name, `ATS_BOARD` or `SEARCH_API` kind, display name, registry source, schedule property, and base URL). Provider validation, history filters, metric tags, ATS schedules, base URLs, `JobSource` resolution, and the ADMIN provider list (`GET /api/v1/admin/ingestion/providers`) all read it, so adding an ATS provider needs a `JobSource` bean, a catalog entry with its registry source constant, and configuration. The catalog lives in `shared` because both `integration` and `matching` read it.
 
