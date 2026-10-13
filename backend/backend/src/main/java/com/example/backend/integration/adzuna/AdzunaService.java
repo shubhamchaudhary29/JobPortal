@@ -2,7 +2,9 @@ package com.example.backend.integration.adzuna;
 
 import com.example.backend.integration.aggregation.ImportedJobLifecycleService;
 import com.example.backend.integration.jobs.JobSource;
+import com.example.backend.integration.search.MongoQueryRotation;
 import com.example.backend.integration.search.ProviderRequestBudget;
+import com.example.backend.integration.search.QueryRotation;
 import com.example.backend.integration.search.RequestBudget;
 import com.example.backend.integration.search.SearchProviderIngestionService;
 import com.example.backend.integration.search.SearchSyncResult;
@@ -22,9 +24,10 @@ public class AdzunaService {
     @Autowired
     public AdzunaService(@Qualifier("adzunaJobSource") JobSource source, AdzunaJobStore jobs, AdzunaProperties properties,
                          AdzunaCircuitBreaker circuit, AdzunaSyncMetrics metrics,
-                         ImportedJobLifecycleService lifecycle, ProviderRequestBudget budget) {
+                         ImportedJobLifecycleService lifecycle, ProviderRequestBudget budget,
+                         MongoQueryRotation rotation) {
         this(source, jobs, properties, circuit, metrics, lifecycle, Clock.systemUTC(), Thread::sleep,
-                bound -> ThreadLocalRandom.current().nextLong(Math.max(1, bound)), budget);
+                bound -> ThreadLocalRandom.current().nextLong(Math.max(1, bound)), budget, rotation);
     }
     AdzunaService(JobSource source, AdzunaJobStore jobs, AdzunaProperties properties,
                   AdzunaCircuitBreaker circuit, AdzunaSyncMetrics metrics, ImportedJobLifecycleService lifecycle,
@@ -34,7 +37,12 @@ public class AdzunaService {
     AdzunaService(JobSource source, AdzunaJobStore jobs, AdzunaProperties properties,
                   AdzunaCircuitBreaker circuit, AdzunaSyncMetrics metrics, ImportedJobLifecycleService lifecycle,
                   Clock clock, Sleeper sleeper, LongUnaryOperator jitter, RequestBudget budget) {
-        this.engine = new SearchProviderIngestionService(jobs, lifecycle, budget, clock);
+        this(source, jobs, properties, circuit, metrics, lifecycle, clock, sleeper, jitter, budget, null);
+    }
+    AdzunaService(JobSource source, AdzunaJobStore jobs, AdzunaProperties properties,
+                  AdzunaCircuitBreaker circuit, AdzunaSyncMetrics metrics, ImportedJobLifecycleService lifecycle,
+                  Clock clock, Sleeper sleeper, LongUnaryOperator jitter, RequestBudget budget, QueryRotation rotation) {
+        this.engine = new SearchProviderIngestionService(jobs, lifecycle, budget, clock, rotation);
         this.provider = new AdzunaSearchProvider(source, properties, circuit, metrics, sleeper, jitter);
     }
 

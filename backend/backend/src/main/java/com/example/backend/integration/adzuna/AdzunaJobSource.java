@@ -13,7 +13,8 @@ public class AdzunaJobSource implements JobSource {
     public AdzunaJobSource(AdzunaClient client) { this.client = client; }
     @Override public String sourceName() { return "adzuna"; }
     @Override public List<ExternalJob> fetch(JobFetchRequest request) {
-        AdzunaResponse response = client.fetchPage(request.keyword(), request.page());
+        AdzunaResponse response = request.location() == null ? client.fetchPage(request.keyword(), request.page())
+                : client.fetchPage(request.keyword(), request.location(), request.page());
         if (response.results() == null) return List.of();
         return response.results().stream().map(this::external).toList();
     }

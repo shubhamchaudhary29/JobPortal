@@ -22,7 +22,10 @@ import org.slf4j.LoggerFactory;
  * ends its group. Every request attempt first reserves one unit of the provider's monthly budget, and an
  * exhausted budget stops the whole run as a partial result. Items go through the shared fingerprint/source-listing
  * store, and lifecycle missing state advances only after a complete, lease-valid run with no failures, rejected
- * items, or budget stop. One instance guards one provider against overlapping runs in this JVM.
+ * items, or budget stop. A plan larger than the provider's per-run allowance is rotated through
+ * {@link QueryRotation}; lifecycle then uses the union of identities seen across a complete, failure-free rotation
+ * cycle, so rotation alone can never make a listing look missing. One instance guards one provider against
+ * overlapping runs in this JVM.
  */
 public class SearchProviderIngestionService {
     private static final Logger log = LoggerFactory.getLogger(SearchProviderIngestionService.class);
@@ -30,14 +33,22 @@ public class SearchProviderIngestionService {
     private final ImportedJobLifecycleService lifecycle;
     private final RequestBudget budget;
     private final Clock clock;
+    private final QueryRotation rotation;
     private final AtomicBoolean running = new AtomicBoolean();
 
     public SearchProviderIngestionService(AdzunaJobStore jobs, ImportedJobLifecycleService lifecycle,
                                           RequestBudget budget, Clock clock) {
+        this(jobs, lifecycle, budget, clock, null);
+    }
+
+    /** {@code rotation} may be null when every plan is expected to fit one run. */
+    public SearchProviderIngestionService(AdzunaJobStore jobs, ImportedJobLifecycleService lifecycle,
+                                          RequestBudget budget, Clock clock, QueryRotation rotation) {
         this.jobs = jobs;
         this.lifecycle = lifecycle;
         this.budget = budget;
         this.clock = clock;
+        this.rotation = rotation;
     }
 
     public SearchSyncResult sync(SearchProvider provider, BooleanSupplier leaseValid) {
@@ -61,11 +72,24 @@ public class SearchProviderIngestionService {
         boolean budgetExhausted = false;
         AtomicInteger retries = new AtomicInteger();
         Set<String> seenIdentities = new HashSet<>();
+        SearchQueryPlan plan = provider.plan();
+        QueryRotation.Slice slice = null;
+        List<SearchQueryPlan.Group> groups = plan.groups();
+        if (rotation != null && plan.requestCount() > provider.requestsPerRun()) {
+            int largestGroup = groups.stream().mapToInt(SearchQueryPlan.Group::pages).max().orElse(1);
+            slice = rotation.next(name, plan, Math.max(1, provider.requestsPerRun() / largestGroup));
+            groups = slice.groups();
+        }
+        int processedGroups = 0;
         ingestionLoop:
-        for (SearchQueryPlan.Group group : provider.plan().groups()) {
+        for (SearchQueryPlan.Group group : groups) {
             if (!leaseValid.getAsBoolean()) break;
+            boolean groupDone = true;
             for (int page = 1; page <= group.pages(); page++) {
-                if (!leaseValid.getAsBoolean()) break;
+                if (!leaseValid.getAsBoolean()) {
+                    groupDone = false;
+                    break;
+                }
                 attemptedBatches++;
                 try {
                     BatchResult batch = fetchBatch(provider, new SearchQuery(group.keyword(), group.location(), page),
@@ -89,13 +113,25 @@ public class SearchProviderIngestionService {
                     break ingestionLoop;
                 }
             }
+            if (groupDone && leaseValid.getAsBoolean()) processedGroups++;
         }
         boolean leaseStillValid = leaseValid.getAsBoolean();
-        if (leaseStillValid && !budgetExhausted && attemptedBatches > 0 && failedBatches == 0 && failedItems == 0
-                && rejected == 0) {
+        boolean runFailed = failedBatches > 0 || failedItems > 0 || rejected > 0;
+        Set<String> lifecycleSeen = seenIdentities;
+        boolean lifecycleAllowed = slice == null && !budgetExhausted && attemptedBatches > 0 && !runFailed;
+        if (slice != null && leaseStillValid) {
+            QueryRotation.CycleResult cycle = rotation.record(name, slice, processedGroups, seenIdentities, runFailed);
+            if (cycle != null) {
+                log.info("event={}_rotation_cycle_completed provider={} complete={} seen={}", name, name,
+                        cycle.complete(), cycle.seenIdentities().size());
+                lifecycleAllowed = cycle.complete();
+                lifecycleSeen = cycle.seenIdentities();
+            }
+        }
+        if (leaseStillValid && lifecycleAllowed) {
             try {
                 ImportedJobLifecycleService.Result lifecycleResult = lifecycle.completeSuccessfulRun(
-                        name, null, seenIdentities, LocalDateTime.now(clock));
+                        name, null, lifecycleSeen, LocalDateTime.now(clock));
                 if (lifecycleResult != null) {
                     lifecycleMatched += lifecycleResult.matchedJobs();
                     lifecycleModified += lifecycleResult.modifiedJobs();

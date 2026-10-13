@@ -24,6 +24,11 @@ public interface SearchProvider {
     void recordFailure();
     /** Maximum provider requests per UTC calendar month, counted across all instances. */
     int monthlyRequestBudget();
+    /**
+     * First-attempt requests one run may plan. A larger plan is rotated across runs and lifecycle then advances
+     * once per complete rotation cycle instead of per run.
+     */
+    default int requestsPerRun() { return Integer.MAX_VALUE; }
     default void completed(SearchSyncResult result, long elapsedMs) { }
     default void skipped() { }
 }

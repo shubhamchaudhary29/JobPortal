@@ -16,12 +16,14 @@ class RestTemplateAdzunaClient implements AdzunaClient {
     private final AdzunaProperties properties;
     RestTemplateAdzunaClient(@Qualifier("restTemplate") RestTemplate adzunaRestTemplate,
                              AdzunaProperties properties) { this.http = adzunaRestTemplate; this.properties = properties; }
-    @Override public AdzunaResponse fetchPage(String keyword, int page) {
+    @Override public AdzunaResponse fetchPage(String keyword, int page) { return fetchPage(keyword, null, page); }
+    @Override public AdzunaResponse fetchPage(String keyword, String location, int page) {
         try {
-            URI uri = UriComponentsBuilder.fromUriString("https://api.adzuna.com/v1/api/jobs/in/search/{page}")
+            UriComponentsBuilder builder = UriComponentsBuilder.fromUriString("https://api.adzuna.com/v1/api/jobs/in/search/{page}")
                     .queryParam("app_id", properties.appId()).queryParam("app_key", properties.appKey())
-                    .queryParam("results_per_page", properties.resultsPerPage()).queryParam("what", keyword)
-                    .queryParam("content-type", "application/json").buildAndExpand(page).encode().toUri();
+                    .queryParam("results_per_page", properties.resultsPerPage()).queryParam("what", keyword);
+            if (location != null && !location.isBlank()) builder.queryParam("where", location);
+            URI uri = builder.queryParam("content-type", "application/json").buildAndExpand(page).encode().toUri();
             AdzunaResponse response = http.getForObject(uri, AdzunaResponse.class);
             if (response == null) throw new AdzunaProviderException("Adzuna returned an empty response", true, null);
             return response;

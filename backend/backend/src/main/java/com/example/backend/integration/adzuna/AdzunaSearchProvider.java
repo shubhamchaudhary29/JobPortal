@@ -30,12 +30,23 @@ final class AdzunaSearchProvider implements SearchProvider {
     }
 
     @Override public String name() { return source.sourceName(); }
+    /** Every keyword country-wide, then in each configured city. */
     @Override public SearchQueryPlan plan() {
-        return SearchQueryPlan.keywords(properties.keywords(), null, properties.pagesPerKeyword());
+        List<SearchQueryPlan.Group> groups = new java.util.ArrayList<>();
+        for (String raw : properties.keywords()) {
+            String keyword = raw.trim();
+            if (keyword.isEmpty()) continue;
+            groups.add(new SearchQueryPlan.Group(keyword, null, properties.pagesPerKeyword()));
+            for (String city : properties.cities()) {
+                groups.add(new SearchQueryPlan.Group(keyword, city, properties.pagesPerKeyword()));
+            }
+        }
+        return new SearchQueryPlan(groups);
     }
     @Override public List<ExternalJob> fetch(SearchQuery query) {
-        return source.fetch(new JobFetchRequest(query.keyword(), query.page()));
+        return source.fetch(new JobFetchRequest(query.keyword(), query.page(), null, null, query.location()));
     }
+    @Override public int requestsPerRun() { return properties.requestsPerRun(); }
     @Override public int maxAttempts() { return properties.maxAttempts(); }
     @Override public long backoffMs(int attempt) {
         long base = properties.initialBackoffMs() * (1L << (attempt - 1));
