@@ -3,10 +3,16 @@ import json
 from urllib.parse import urlparse
 
 
+PREFIXED_PROVIDERS = {"ashby", "smartrecruiters", "workable"}
+
+
 class Handler(BaseHTTPRequestHandler):
     def do_GET(self):
         path = urlparse(self.path).path
-        board = path.split("/")[1] if len(path.split("/")) > 1 else ""
+        segments = path.split("/")
+        # Greenhouse and Lever boards are served at the root; newer providers under /<provider>/<board>.
+        provider = segments[1] if len(segments) > 2 and segments[1] in PREFIXED_PROVIDERS else None
+        board = segments[2] if provider else (segments[1] if len(segments) > 1 else "")
         if board == "invalid":
             self.send_response(404)
             self.end_headers()
@@ -21,7 +27,17 @@ class Handler(BaseHTTPRequestHandler):
         if board == "malformed":
             self.wfile.write(b"{not-json")
             return
-        if board == "empty":
+        if provider == "ashby":
+            payload = {"apiVersion": "1", "jobs": [] if board == "empty" else [
+                {"id": "one", "isListed": True, "jobUrl": "https://jobs.test/one"},
+                {"id": "hidden", "isListed": False, "jobUrl": "https://jobs.test/hidden"}]}
+        elif provider == "smartrecruiters":
+            content = [] if board == "empty" else [{"id": "744000000000001", "name": "Engineer"}]
+            payload = {"offset": 0, "limit": 100, "totalFound": len(content), "content": content}
+        elif provider == "workable":
+            payload = {"name": "Acme", "jobs": [] if board == "empty" else [
+                {"shortcode": "ABC123", "url": "https://apply.workable.com/j/ABC123"}]}
+        elif board == "empty":
             payload = {"jobs": []} if "/jobs" in path else []
         elif "/jobs" in path:
             payload = {"jobs": [{"id": 1, "absolute_url": "https://jobs.test/one"}]}

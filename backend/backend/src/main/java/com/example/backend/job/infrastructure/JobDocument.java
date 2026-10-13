@@ -42,6 +42,7 @@ public class JobDocument {
     /** Null is deliberately treated as active for pre-Phase-1 documents. */
     private Boolean active = true;
     private String fingerprint;
+    private Integer fingerprintVersion;
     private Set<String> sourceIdentities = new LinkedHashSet<>();
     /** Every original provider deep link associated with the canonical job. */
     private Set<String> applicationUrls = new LinkedHashSet<>();

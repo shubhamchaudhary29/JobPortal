@@ -1,13 +1,11 @@
 package com.example.backend.integration.adzuna;
 
+import com.example.backend.integration.aggregation.JobFingerprint;
 import com.example.backend.job.infrastructure.JobDocument;
 import com.example.backend.shared.validation.SafeExternalUrl;
 import java.time.LocalDateTime;
 import java.time.OffsetDateTime;
 import java.time.format.DateTimeParseException;
-import java.security.MessageDigest;
-import java.nio.charset.StandardCharsets;
-import java.util.Locale;
 import java.util.Optional;
 
 public final class AdzunaJobMapper {
@@ -36,7 +34,8 @@ public final class AdzunaJobMapper {
         job.setFetchedAt(now);
         job.setLastSeenAt(now);
         job.setFirstSeenAt(now); job.setActive(true);
-        job.setFingerprint(fingerprint(job.getCompany(), job.getTitle(), job.getLocation()));
+        job.setFingerprint(JobFingerprint.of(job.getCompany(), job.getTitle(), job.getLocation()));
+        job.setFingerprintVersion(JobFingerprint.VERSION);
         return Optional.of(job);
     }
 
@@ -54,10 +53,5 @@ public final class AdzunaJobMapper {
         if (value == null || value.isBlank()) return null;
         try { return OffsetDateTime.parse(value.trim()).toLocalDateTime(); }
         catch (DateTimeParseException ignored) { return null; }
-    }
-    private static String fingerprint(String company, String title, String location) {
-        String input = String.join("|", company, title, location).toLowerCase(Locale.ROOT);
-        try { return java.util.HexFormat.of().formatHex(MessageDigest.getInstance("SHA-256").digest(input.getBytes(StandardCharsets.UTF_8))); }
-        catch (Exception ex) { throw new IllegalStateException("SHA-256 unavailable", ex); }
     }
 }

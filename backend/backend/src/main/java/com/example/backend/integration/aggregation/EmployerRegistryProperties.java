@@ -1,11 +1,18 @@
 package com.example.backend.integration.aggregation;
+import com.example.backend.shared.provider.ProviderCatalog;
 import java.util.List;
 import org.springframework.boot.context.properties.ConfigurationProperties;
 @ConfigurationProperties(prefix = "job-aggregation")
-public record EmployerRegistryProperties(List<Employer> employers) {
+public record EmployerRegistryProperties(List<Employer> employers) implements EmployerRegistry {
  public EmployerRegistryProperties { employers = employers == null ? List.of() : List.copyOf(employers); validate(employers); }
  public record Employer(String company, Source source, String boardId, boolean enabled) { }
- public enum Source { GREENHOUSE, LEVER }
+ /** Registry sources are the ATS providers of {@link ProviderCatalog}; each constant must have a catalog entry. */
+ public enum Source {
+  GREENHOUSE, LEVER, ASHBY, SMARTRECRUITERS, WORKABLE;
+  public ProviderCatalog.Provider provider() {
+   return ProviderCatalog.byRegistrySource(name()).orElseThrow(() -> new IllegalStateException("Registry source missing from provider catalog: " + name()));
+  }
+ }
  private static void validate(List<Employer> employers) {
   if(employers.size()>1000) throw new IllegalArgumentException("Job-aggregation employer registry exceeds 1000 entries");
   java.util.Set<String> boards = new java.util.HashSet<>(); java.util.Set<String> companies = new java.util.HashSet<>();

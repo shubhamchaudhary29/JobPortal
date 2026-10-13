@@ -117,7 +117,7 @@ class ProviderReliabilityMockServerTest {
             serverAttempts.incrementAndGet();
             respond(exchange, 502, "bad gateway");
         });
-        Fixture fixture = fixture(3, 1_000, 10, new ArrayList<>());
+        Fixture fixture = fixture(3, 1_000, 200, new ArrayList<>());
         LeverJobSource source = fixture.lever();
 
         ProviderFailureException client = assertThrows(ProviderFailureException.class,

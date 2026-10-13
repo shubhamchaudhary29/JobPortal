@@ -40,6 +40,28 @@ describe("ADMIN route and navigation", () => {
     expect(screen.getByText("Admin operations")).toBeInTheDocument();
   });
 
+  it("guards the employer registry page with the same ADMIN route guard", () => {
+    const renderRegistry = (value) => render(
+      <AuthContext.Provider value={value}>
+        <MemoryRouter initialEntries={["/admin/aggregation/registry"]}>
+          <Routes>
+            <Route path="/admin/aggregation/registry" element={<ProtectedRoute requiredRole="ADMIN"><p>Registry page</p></ProtectedRoute>} />
+            <Route path="/login" element={<p>Login destination</p>} />
+            <Route path="/profile" element={<p>Recruiter destination</p>} />
+          </Routes>
+        </MemoryRouter>
+      </AuthContext.Provider>,
+    );
+    renderRegistry(session(null, null));
+    expect(screen.getByText("Login destination")).toBeInTheDocument();
+    cleanup();
+    renderRegistry(session("RECRUITER"));
+    expect(screen.getByText("Recruiter destination")).toBeInTheDocument();
+    cleanup();
+    renderRegistry(session("ADMIN"));
+    expect(screen.getByText("Registry page")).toBeInTheDocument();
+  });
+
   it("shows aggregation navigation only to ADMIN", () => {
     const renderHeader = (value) => render(<AuthContext.Provider value={value}><MemoryRouter><Header /></MemoryRouter></AuthContext.Provider>);
     renderHeader(session("USER"));

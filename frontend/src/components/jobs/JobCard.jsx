@@ -1,5 +1,6 @@
 import { Link } from "react-router-dom";
 import MatchBadge from "./MatchBadge";
+import ProviderAttribution from "./ProviderAttribution";
 
 export default function JobCard({ job, match }) {
   const id = job._id || job.id;
@@ -7,10 +8,8 @@ export default function JobCard({ job, match }) {
   const missing = match?.missingSkills?.[0];
 
   return (
-    <Link
-      to={`/jobs/${id}`}
-      className="group flex flex-col justify-between rounded-3xl border border-slate-100 bg-white p-6 shadow-sm transition-all duration-300 hover:-translate-y-1 hover:border-indigo-100 hover:shadow-xl"
-    >
+    <div className="group flex flex-col justify-between rounded-3xl border border-slate-100 bg-white p-6 shadow-sm transition-all duration-300 hover:-translate-y-1 hover:border-indigo-100 hover:shadow-xl">
+    <Link to={`/jobs/${id}`} className="flex flex-1 flex-col justify-between">
       <div>
         <div className="mb-5 flex items-start justify-between gap-3">
           <div className="flex h-14 w-14 shrink-0 items-center justify-center rounded-2xl bg-gradient-to-br from-indigo-50 to-purple-50 text-2xl font-bold text-indigo-600 shadow-inner">
@@ -47,5 +46,7 @@ export default function JobCard({ job, match }) {
         <span className="flex items-center gap-1 text-sm font-bold text-indigo-600 transition-transform group-hover:translate-x-2">View Role <span className="text-lg">→</span></span>
       </div>
     </Link>
+    <ProviderAttribution source={job.source} className="mt-3" />
+    </div>
   );
 }

@@ -28,6 +28,7 @@ public class SyncRunDocument {
     private int retries;
     private String failureType;
     private String failureDetail;
+    private String reason;
     private Instant expiresAt;
 
     public String getId() { return id; }
@@ -73,6 +74,8 @@ public class SyncRunDocument {
     public String getFailureType() { return failureType; }
     public void setFailureType(String failureType) { this.failureType = failureType; }
     public String getFailureDetail() { return failureDetail; }
+    public String getReason() { return reason; }
+    public void setReason(String reason) { this.reason = reason; }
     public void setFailureDetail(String failureDetail) { this.failureDetail = failureDetail; }
     public Instant getExpiresAt() { return expiresAt; }
     public void setExpiresAt(Instant expiresAt) { this.expiresAt = expiresAt; }

@@ -1,9 +1,11 @@
 import { useCallback, useEffect, useState } from "react";
+import { Link } from "react-router-dom";
 import Header from "../components/Header";
 import Footer from "../components/Footer";
 import {
   aggregationAdminError,
   getAggregationConflicts,
+  getAggregationProviders,
   getAggregationStatus,
   getSyncHistory,
   getSyncRun,
@@ -53,7 +55,10 @@ export default function AggregationAdmin() {
   const [notice, setNotice] = useState("");
   const [selectedRun, setSelectedRun] = useState(null);
   const [detailLoading, setDetailLoading] = useState(false);
-  const [provider, setProvider] = useState("adzuna");
+  const [providers, setProviders] = useState([]);
+  const [providersLoading, setProvidersLoading] = useState(true);
+  const [providersError, setProvidersError] = useState("");
+  const [provider, setProvider] = useState("");
   const [employer, setEmployer] = useState("");
   const [syncing, setSyncing] = useState(false);
   const [resolving, setResolving] = useState(null);
@@ -80,13 +85,34 @@ export default function AggregationAdmin() {
 
   useEffect(() => { load(); }, [load]);
 
+  const loadProviders = useCallback(async () => {
+    setProvidersLoading(true);
+    setProvidersError("");
+    try {
+      const list = await getAggregationProviders();
+      const available = Array.isArray(list) ? list : [];
+      setProviders(available);
+      const usable = available.filter((item) => item.available !== false);
+      setProvider((current) => (usable.some((item) => item.name === current) ? current : usable[0]?.name || ""));
+    } catch (error) {
+      setProvidersError(aggregationAdminError(error, "Could not load providers."));
+    } finally {
+      setProvidersLoading(false);
+    }
+  }, []);
+
+  useEffect(() => { loadProviders(); }, [loadProviders]);
+
+  const selectedProvider = providers.find((item) => item.name === provider && item.available !== false);
+  const employerScoped = Boolean(selectedProvider?.employerScoped);
+
   const startSync = async (event) => {
     event.preventDefault();
-    if (syncing) return;
+    if (syncing || !selectedProvider) return;
     setSyncing(true);
     setNotice("");
     try {
-      const result = await startAggregationSync(provider, provider === "adzuna" ? null : employer);
+      const result = await startAggregationSync(provider, employerScoped ? employer : null);
       setNotice(`Synchronization ${result.outcome || "COMPLETED"}${result.runId ? ` · run ${result.runId}` : ""}`);
       await load();
     } catch (error) {
@@ -136,6 +162,7 @@ export default function AggregationAdmin() {
           <p className="text-xs font-bold uppercase tracking-widest text-indigo-600">Administrator</p>
           <h1 className="text-3xl font-extrabold text-slate-900">Aggregation operations</h1>
           <p className="mt-1 text-slate-600">Monitor provider health, run bounded synchronization, and reconcile retained conflicts.</p>
+          <Link to="/admin/aggregation/registry" className="mt-2 inline-block font-bold text-indigo-700">Manage employer registry →</Link>
         </div>
 
         {loading && <div role="status" className="rounded-2xl border bg-white p-6 text-slate-600">Loading aggregation operations…</div>}
@@ -160,15 +187,22 @@ export default function AggregationAdmin() {
               <h2 id="sync-heading" className="text-xl font-extrabold">Manual synchronization</h2>
               <form onSubmit={startSync} className="mt-4 grid gap-4 md:grid-cols-[1fr_2fr_auto] md:items-end">
                 <label className="text-sm font-bold text-slate-700">Provider
-                  <select aria-label="Provider" value={provider} onChange={(event) => { setProvider(event.target.value); setEmployer(""); }} className="mt-1 block w-full rounded-lg border p-2.5">
-                    <option value="adzuna">Adzuna</option><option value="greenhouse">Greenhouse</option><option value="lever">Lever</option>
+                  <select aria-label="Provider" value={provider} disabled={providersLoading || providers.length === 0} onChange={(event) => { setProvider(event.target.value); setEmployer(""); }} className="mt-1 block w-full rounded-lg border p-2.5 disabled:bg-slate-100">
+                    {providersLoading && <option value="">Loading providers…</option>}
+                    {providers.map((item) => <option key={item.name} value={item.name} disabled={item.available === false}>{item.displayName}{item.available === false ? " (not configured)" : ""}</option>)}
                   </select>
                 </label>
                 <label className="text-sm font-bold text-slate-700">Employer board (optional)
-                  <input aria-label="Employer board" value={employer} onChange={(event) => setEmployer(event.target.value)} disabled={provider === "adzuna"} maxLength={100} className="mt-1 block w-full rounded-lg border p-2.5 disabled:bg-slate-100" placeholder="Provider-wide when empty" />
+                  <input aria-label="Employer board" value={employer} onChange={(event) => setEmployer(event.target.value)} disabled={!employerScoped} maxLength={100} className="mt-1 block w-full rounded-lg border p-2.5 disabled:bg-slate-100" placeholder="Provider-wide when empty" />
                 </label>
-                <button disabled={syncing} className="rounded-lg bg-indigo-600 px-5 py-2.5 font-bold text-white disabled:opacity-50">{syncing ? "Synchronizing…" : "Start sync"}</button>
+                <button disabled={syncing || !selectedProvider} className="rounded-lg bg-indigo-600 px-5 py-2.5 font-bold text-white disabled:opacity-50">{syncing ? "Synchronizing…" : "Start sync"}</button>
               </form>
+              {providersError && (
+                <div role="alert" className="mt-4 rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-800">
+                  <p>{providersError}</p>
+                  <button type="button" onClick={loadProviders} className="mt-2 rounded-lg bg-red-700 px-3 py-1.5 font-bold text-white">Retry providers</button>
+                </div>
+              )}
             </section>
 
             <section aria-labelledby="counts-heading" className="rounded-2xl border bg-white p-6 overflow-x-auto">
@@ -197,7 +231,7 @@ export default function AggregationAdmin() {
               <PageButtons page={history} label="History" onChange={setHistoryPage} />
             </section>
 
-            {(detailLoading || selectedRun) && <section aria-labelledby="detail-heading" className="rounded-2xl border border-indigo-200 bg-indigo-50 p-6"><h2 id="detail-heading" className="text-xl font-extrabold">Run detail</h2>{detailLoading ? <p role="status">Loading run detail…</p> : <div className="mt-3 grid gap-2 text-sm md:grid-cols-3"><p><strong>Run:</strong> {selectedRun.runId}</p><p><strong>Outcome:</strong> {selectedRun.outcome}</p><p><strong>Retries:</strong> {selectedRun.retries}</p><p><strong>Failures:</strong> {selectedRun.failedItems + selectedRun.failedBatches + selectedRun.failedEmployers}</p><p className="md:col-span-2"><strong>Failure:</strong> {selectedRun.failureDetail || "None"}</p></div>}</section>}
+            {(detailLoading || selectedRun) && <section aria-labelledby="detail-heading" className="rounded-2xl border border-indigo-200 bg-indigo-50 p-6"><h2 id="detail-heading" className="text-xl font-extrabold">Run detail</h2>{detailLoading ? <p role="status">Loading run detail…</p> : <div className="mt-3 grid gap-2 text-sm md:grid-cols-3"><p><strong>Run:</strong> {selectedRun.runId}</p><p><strong>Outcome:</strong> {selectedRun.outcome}</p><p><strong>Retries:</strong> {selectedRun.retries}</p>{selectedRun.reason && <p><strong>Reason:</strong> {selectedRun.reason}</p>}<p><strong>Failures:</strong> {selectedRun.failedItems + selectedRun.failedBatches + selectedRun.failedEmployers}</p><p className="md:col-span-2"><strong>Failure:</strong> {selectedRun.failureDetail || "None"}</p></div>}</section>}
 
             <section aria-labelledby="conflicts-heading" className="rounded-2xl border bg-white p-6">
               <h2 id="conflicts-heading" className="text-xl font-extrabold">Open identity conflicts</h2>

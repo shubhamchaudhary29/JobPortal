@@ -6,9 +6,11 @@ import com.example.backend.integration.aggregation.IngestionAdminService;
 import com.example.backend.integration.aggregation.IngestionCoordinator;
 import com.example.backend.integration.aggregation.AggregationConflictService;
 import com.example.backend.integration.aggregation.SyncRunService;
-import com.example.backend.integration.adzuna.AdzunaIngestionCoordinator;
+import com.example.backend.integration.search.SearchIngestionCoordinator;
+import com.example.backend.integration.search.SearchIngestionCoordinators;
 import com.example.backend.shared.error.BadRequestException;
 import com.example.backend.shared.pagination.PageResponse;
+import com.example.backend.shared.provider.ProviderCatalog;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.NotBlank;
 import io.swagger.v3.oas.annotations.security.SecurityRequirement;
@@ -32,41 +34,47 @@ public class AdminIngestionController {
     private final IngestionAdminService admin;
     private final AggregationConflictService conflicts;
     private final SyncRunService runs;
-    private final AdzunaIngestionCoordinator adzuna;
+    private final SearchIngestionCoordinators search;
     public AdminIngestionController(IngestionCoordinator coordinator, IngestionAdminService admin,
                                     AggregationConflictService conflicts, SyncRunService runs,
-                                    AdzunaIngestionCoordinator adzuna) {
+                                    SearchIngestionCoordinators search) {
         this.coordinator = coordinator;
         this.admin = admin;
         this.conflicts = conflicts;
         this.runs = runs;
-        this.adzuna = adzuna;
+        this.search = search;
     }
     @GetMapping("/summary")
     public Summary summary() {
         IngestionAdminService.Counts counts = admin.counts();
         return new Summary(counts.active(), counts.inactive());
     }
+    @GetMapping("/providers")
+    public java.util.List<ProviderView> providers() {
+        return ProviderCatalog.all().stream().map(provider -> ProviderView.from(provider,
+                provider.employerScoped() || search.find(provider.name()).isPresent())).toList();
+    }
     @PostMapping("/{provider}/sync")
     public ResponseEntity<?> sync(@PathVariable String provider,
             @org.springframework.web.bind.annotation.RequestParam(required = false) String employer) {
-        if ("adzuna".equalsIgnoreCase(provider)) {
+        ProviderCatalog.Provider selected = ProviderCatalog.find(provider)
+                .orElseThrow(() -> new BadRequestException("Unsupported provider"));
+        if (!selected.employerScoped()) {
             if (employer != null && !employer.isBlank()) {
-                throw new BadRequestException("Adzuna does not support employer-specific synchronization");
+                throw new BadRequestException(selected.displayName()
+                        + " does not support employer-specific synchronization");
             }
-            AdzunaIngestionCoordinator.Result result = adzuna.run(SyncRunService.Trigger.MANUAL);
+            SearchIngestionCoordinator coordinator = search.find(selected.name())
+                    .orElseThrow(() -> new BadRequestException(selected.displayName() + " is not configured"));
+            SearchIngestionCoordinator.Result result = coordinator.run(SyncRunService.Trigger.MANUAL);
             if (result.locked()) return operationalFailure(HttpStatus.CONFLICT, "LOCKED", result.runId());
             if (result.leaseLost()) {
                 return operationalFailure(HttpStatus.SERVICE_UNAVAILABLE, "LEASE_LOST", result.runId());
             }
             return ResponseEntity.ok(result);
         }
-        EmployerRegistryProperties.Source source;
-        try {
-            source = EmployerRegistryProperties.Source.valueOf(provider.toUpperCase(java.util.Locale.ROOT));
-        } catch (IllegalArgumentException badProvider) {
-            throw new BadRequestException("Unsupported provider");
-        }
+        EmployerRegistryProperties.Source source =
+                EmployerRegistryProperties.Source.valueOf(selected.registrySource());
         IngestionCoordinator.Result result = coordinator.run(source, employer, SyncRunService.Trigger.MANUAL);
         if (result.locked()) return operationalFailure(HttpStatus.CONFLICT, "LOCKED", result.runId());
         if (result.leaseLost()) {
@@ -111,6 +119,14 @@ public class AdminIngestionController {
                 admin.providerCompanyCounts());
     }
     public record Summary(long activeImportedJobs, long inactiveImportedJobs) { }
+    /** {@code available} is false for a search provider whose credentials are not configured. */
+    public record ProviderView(String name, ProviderCatalog.Kind kind, String displayName, boolean employerScoped,
+                               boolean available) {
+        static ProviderView from(ProviderCatalog.Provider provider, boolean available) {
+            return new ProviderView(provider.name(), provider.kind(), provider.displayName(),
+                    provider.employerScoped(), available);
+        }
+    }
     public record Status(java.util.List<SyncRunService.RunView> latestRuns,
                          long activeImportedJobs, long inactiveImportedJobs,
                          java.util.List<IngestionAdminService.ProviderCompanyCount> providerCompanyCounts) { }

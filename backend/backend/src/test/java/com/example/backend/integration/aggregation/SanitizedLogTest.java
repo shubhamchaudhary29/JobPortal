@@ -27,7 +27,7 @@ class SanitizedLogTest {
                 new EmployerRegistryProperties.Employer(sensitive, EmployerRegistryProperties.Source.GREENHOUSE,
                         "safe-board", true)));
 
-        var result = new EmployerIngestionService(greenhouse, lever, mock(AdzunaJobStore.class), registry,
+        var result = new EmployerIngestionService(List.of(greenhouse, lever), mock(AdzunaJobStore.class), registry,
                 mock(ImportedJobLifecycleService.class)).sync(EmployerRegistryProperties.Source.GREENHOUSE);
 
         assertEquals(1, result.failedEmployers());

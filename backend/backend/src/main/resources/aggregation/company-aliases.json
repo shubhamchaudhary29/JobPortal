@@ -1,0 +1,31 @@
+{
+  "_comment": "Fingerprint-only company normalization (version 2). Suffixes are stripped from the end, then aliases map former or legal names to one key. Only unambiguous names belong here.",
+  "suffixes": [
+    "pvt ltd",
+    "private limited",
+    "pvt",
+    "private",
+    "ltd",
+    "limited",
+    "inc",
+    "llc",
+    "technologies",
+    "software",
+    "india"
+  ],
+  "aliases": {
+    "bundl": "swiggy",
+    "one97 communications": "paytm",
+    "fsn e commerce ventures": "nykaa",
+    "ani": "ola",
+    "urbanclap": "urban company",
+    "dreamplug": "cred",
+    "sorting hat": "unacademy",
+    "mohalla tech": "sharechat",
+    "kiranakart": "zepto",
+    "grofers": "blinkit",
+    "flipkart internet": "flipkart",
+    "pocket fm": "pocketfm",
+    "nextbillion technology": "groww"
+  }
+}

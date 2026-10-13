@@ -1,6 +1,8 @@
 // Run with placeholders only: mongosh "$MONGODB_URI" backend/backend/scripts/audit-mongo-indexes.js
 // Never paste production credentials into this file or shell history.
 const DIAGNOSTIC_LIMIT = 20;
+// Must match JobFingerprint.VERSION; older or missing versions need scripts/migrate-fingerprints.sh.
+const CURRENT_FINGERPRINT_VERSION = 2;
 function addDiagnostic(target, value) {
   if (target.length < DIAGNOSTIC_LIMIT) target.push(value);
 }
@@ -39,6 +41,11 @@ const crossDocumentSourceIdentityDuplicates = db.jobs.aggregate([
 const importedJobs = db.jobs.find({recruiterId: null, $or: [
   {source: {$type: "string"}}, {sourceIdentities: {$type: "array"}}, {sourceListings: {$type: "array"}}
 ]}).toArray();
+const applicationReferencedJobIds = new Set(db.applications.distinct("jobId").map(id => String(id)));
+const fingerprintVersionMismatches = [];
+const applicationHeldFingerprintVersions = [];
+let fingerprintVersionMismatchCount = 0;
+let applicationHeldFingerprintVersionCount = 0;
 const malformedSourceListings = [];
 const duplicateListingIdentities = [];
 const sourceIdentityCompatibilityMismatches = [];
@@ -46,6 +53,16 @@ const applicationUrlCompatibilityMismatches = [];
 const canonicalMismatches = [];
 const lifecycleMismatches = [];
 for (const job of importedJobs) {
+  if (job.reconciliationTargetId == null && job.fingerprintVersion !== CURRENT_FINGERPRINT_VERSION) {
+    const diagnostic = {_id: job._id, fingerprintVersion: job.fingerprintVersion === undefined ? null : job.fingerprintVersion};
+    if (applicationReferencedJobIds.has(String(job._id))) {
+      applicationHeldFingerprintVersionCount++;
+      addDiagnostic(applicationHeldFingerprintVersions, diagnostic);
+    } else {
+      fingerprintVersionMismatchCount++;
+      addDiagnostic(fingerprintVersionMismatches, diagnostic);
+    }
+  }
   const listings = Array.isArray(job.sourceListings) ? job.sourceListings : [];
   if (!listings.length) {
     addDiagnostic(malformedSourceListings, {_id: job._id, reason: "missing_source_listings"});
@@ -93,7 +110,7 @@ for (const job of importedJobs) {
   }
 }
 const malformedConflicts = db.getCollection("aggregation_conflicts").find({$or: [
-  {type: {$ne: "IDENTITY_FINGERPRINT"}},
+  {type: {$nin: ["IDENTITY_FINGERPRINT", "FINGERPRINT_MIGRATION"]}},
   {status: {$nin: ["OPEN", "RESOLVED"]}},
   {jobIds: {$not: {$type: "array"}}}
 ]}).limit(DIAGNOSTIC_LIMIT).toArray();
@@ -110,6 +127,10 @@ printjson({sourceIdentityCompatibilityMismatches});
 printjson({applicationUrlCompatibilityMismatches});
 printjson({canonicalMismatches});
 printjson({lifecycleMismatches});
+printjson({fingerprintVersionMismatches, fingerprintVersionMismatchCount,
+  currentFingerprintVersion: CURRENT_FINGERPRINT_VERSION});
+// Informational: application-referenced jobs are skipped by the migration and upgraded by later ingestion.
+printjson({applicationHeldFingerprintVersions, applicationHeldFingerprintVersionCount});
 printjson({malformedConflicts});
 printjson({orphanedReconciliations});
 printjson({jobIndexes: db.jobs.getIndexes()});
@@ -117,4 +138,5 @@ if (duplicates.length || fingerprintDuplicates.length || crossDocumentSourceIden
     || malformedSourceListings.length || duplicateListingIdentities.length
     || sourceIdentityCompatibilityMismatches.length || applicationUrlCompatibilityMismatches.length
     || canonicalMismatches.length || lifecycleMismatches.length
-    || malformedConflicts.length || orphanedReconciliations.length) quit(2);
+    || malformedConflicts.length || orphanedReconciliations.length
+    || fingerprintVersionMismatches.length) quit(2);

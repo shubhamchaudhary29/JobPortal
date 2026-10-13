@@ -1,5 +1,6 @@
 package com.example.backend.integration.aggregation;
 
+import com.example.backend.shared.provider.ProviderCatalog;
 import io.micrometer.core.instrument.Counter;
 import io.micrometer.core.instrument.MeterRegistry;
 import io.micrometer.core.instrument.Tags;
@@ -46,11 +47,7 @@ public class AggregationMetrics {
     }
 
     private String provider(String value) {
-        if (value == null) return "other";
-        return switch (value.toLowerCase(Locale.ROOT)) {
-            case "adzuna", "greenhouse", "lever" -> value.toLowerCase(Locale.ROOT);
-            default -> "other";
-        };
+        return ProviderCatalog.metricTag(value);
     }
     private String outcome(SyncRunService.Outcome value) {
         return value == null ? "failed" : value.name().toLowerCase(Locale.ROOT);

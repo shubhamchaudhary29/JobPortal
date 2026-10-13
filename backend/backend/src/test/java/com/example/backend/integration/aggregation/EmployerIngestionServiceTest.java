@@ -30,7 +30,7 @@ class EmployerIngestionServiceTest {
                 new EmployerRegistryProperties.Employer("Healthy", EmployerRegistryProperties.Source.LEVER, "healthy", true),
                 new EmployerRegistryProperties.Employer("Disabled", EmployerRegistryProperties.Source.LEVER, "disabled", false)));
 
-        var result = new EmployerIngestionService(greenhouse, lever, store, registry, lifecycle).sync();
+        var result = new EmployerIngestionService(List.of(greenhouse, lever), store, registry, lifecycle).sync();
 
         assertEquals(1, result.failedEmployers());
         assertEquals(1, result.inserted());
@@ -62,7 +62,7 @@ class EmployerIngestionServiceTest {
                 new EmployerRegistryProperties.Employer("Empty", EmployerRegistryProperties.Source.GREENHOUSE, "empty", true),
                 new EmployerRegistryProperties.Employer("Malformed", EmployerRegistryProperties.Source.LEVER, "malformed", true)));
 
-        var result = new EmployerIngestionService(greenhouse, lever, store, registry, lifecycle).sync();
+        var result = new EmployerIngestionService(List.of(greenhouse, lever), store, registry, lifecycle).sync();
 
         assertEquals(1, result.rejected());
         verify(lifecycle).completeSuccessfulRun(eq("greenhouse"), eq("empty"), eq(java.util.Set.of()), any());
@@ -83,7 +83,7 @@ class EmployerIngestionServiceTest {
                 new EmployerRegistryProperties.Employer("Board", EmployerRegistryProperties.Source.GREENHOUSE, "board", true)));
         java.util.concurrent.atomic.AtomicInteger checks = new java.util.concurrent.atomic.AtomicInteger();
 
-        new EmployerIngestionService(greenhouse, lever, store, registry, lifecycle)
+        new EmployerIngestionService(List.of(greenhouse, lever), store, registry, lifecycle)
                 .sync(EmployerRegistryProperties.Source.GREENHOUSE, () -> checks.incrementAndGet() < 3);
 
         verify(store).upsert(any(), any(), eq("board"));
@@ -103,7 +103,7 @@ class EmployerIngestionServiceTest {
                 new EmployerRegistryProperties.Employer("Two", EmployerRegistryProperties.Source.GREENHOUSE, "two", true),
                 new EmployerRegistryProperties.Employer("Disabled", EmployerRegistryProperties.Source.GREENHOUSE, "disabled", false)));
         EmployerIngestionService service = new EmployerIngestionService(
-                greenhouse, lever, store, registry, lifecycle);
+                List.of(greenhouse, lever), store, registry, lifecycle);
 
         EmployerIngestionService.Result result = service.sync(
                 EmployerRegistryProperties.Source.GREENHOUSE, "TWO", () -> true);
@@ -130,7 +130,7 @@ class EmployerIngestionServiceTest {
                         "board", true)));
 
         EmployerIngestionService.Result result = new EmployerIngestionService(
-                greenhouse, lever, store, registry, lifecycle).sync(EmployerRegistryProperties.Source.GREENHOUSE);
+                List.of(greenhouse, lever), store, registry, lifecycle).sync(EmployerRegistryProperties.Source.GREENHOUSE);
 
         assertEquals(2, result.retries());
         assertEquals(1, result.attemptedEmployers());
@@ -152,7 +152,7 @@ class EmployerIngestionServiceTest {
                 new EmployerRegistryProperties.Employer("Board", EmployerRegistryProperties.Source.GREENHOUSE,
                         "board", true)));
 
-        var result = new EmployerIngestionService(greenhouse, lever, store, registry, lifecycle)
+        var result = new EmployerIngestionService(List.of(greenhouse, lever), store, registry, lifecycle)
                 .sync(EmployerRegistryProperties.Source.GREENHOUSE);
 
         assertEquals(1, result.inserted());
@@ -169,7 +169,7 @@ class EmployerIngestionServiceTest {
         when(greenhouse.sourceName()).thenReturn("greenhouse");
         when(greenhouse.fetchWithMetadata(any(), any())).thenThrow(new ProviderFailureException(
                 "greenhouse", ProviderFailureException.Kind.MALFORMED_RESPONSE, false, null, null));
-        EmployerIngestionService service = new EmployerIngestionService(greenhouse, lever, store,
+        EmployerIngestionService service = new EmployerIngestionService(List.of(greenhouse, lever), store,
                 new EmployerRegistryProperties(List.of(new EmployerRegistryProperties.Employer(
                         "Board", EmployerRegistryProperties.Source.GREENHOUSE, "board", true))), lifecycle);
 
@@ -200,7 +200,7 @@ class EmployerIngestionServiceTest {
             valid.set(false);
             return UpsertOutcome.INSERTED;
         });
-        EmployerIngestionService service = new EmployerIngestionService(greenhouse, lever, store,
+        EmployerIngestionService service = new EmployerIngestionService(List.of(greenhouse, lever), store,
                 new EmployerRegistryProperties(List.of(new EmployerRegistryProperties.Employer(
                         "Board", EmployerRegistryProperties.Source.GREENHOUSE, "board", true))), lifecycle);
 
@@ -209,6 +209,31 @@ class EmployerIngestionServiceTest {
 
         assertEquals(1, result.inserted());
         verify(store, times(1)).upsert(any(), any(), any());
+        verifyNoInteractions(lifecycle);
+    }
+
+    @Test
+    void incompleteFetchStoresItemsButCountsTheBoardAsFailedAndNeverAdvancesLifecycle() {
+        JobSource smartRecruiters = mock(JobSource.class);
+        AdzunaJobStore store = mock(AdzunaJobStore.class);
+        ImportedJobLifecycleService lifecycle = mock(ImportedJobLifecycleService.class);
+        when(smartRecruiters.sourceName()).thenReturn("smartrecruiters");
+        when(smartRecruiters.fetchWithMetadata(any(), any())).thenReturn(new JobSource.FetchResult(List.of(
+                new ExternalJob("1", "Engineer", null, "Acme", null, null, null, null,
+                        "https://jobs.example.test/1", null, null, "fingerprint")), 2, 0, false));
+        when(store.upsert(any(), any(), any())).thenReturn(UpsertOutcome.INSERTED);
+        EmployerRegistryProperties registry = new EmployerRegistryProperties(List.of(
+                new EmployerRegistryProperties.Employer("Acme", EmployerRegistryProperties.Source.SMARTRECRUITERS,
+                        "acme", true)));
+
+        var result = new EmployerIngestionService(List.of(smartRecruiters), store, registry, lifecycle).sync();
+
+        assertAll(
+                () -> assertEquals(1, result.inserted()),
+                () -> assertEquals(1, result.failedEmployers()),
+                () -> assertEquals(2, result.retries()),
+                () -> assertEquals(0, result.rejected()));
+        verify(store).upsert(any(), any(), eq("acme"));
         verifyNoInteractions(lifecycle);
     }
 }

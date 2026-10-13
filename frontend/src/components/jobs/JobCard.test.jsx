@@ -29,4 +29,20 @@ describe("JobCard matching presentation", () => {
     expect(screen.getByText("Limited profile data")).toBeInTheDocument();
     expect(screen.queryByText(/95%/)).not.toBeInTheDocument();
   });
+
+  it("credits aggregator listings and leaves direct or ATS listings unbranded", () => {
+    render(<MemoryRouter><JobCard job={{ ...job, source: "jooble" }} /></MemoryRouter>);
+    expect(screen.getByTestId("provider-attribution")).toHaveTextContent("Jobs by Jooble");
+    cleanup();
+    const { container } = render(<MemoryRouter><JobCard job={{ ...job, source: "adzuna" }} /></MemoryRouter>);
+    expect(screen.getByRole("link", { name: "Jobs by Adzuna" })).toHaveAttribute("href", "https://www.adzuna.in");
+    expect(container.querySelector("a a")).toBeNull();
+    expect(screen.getByRole("link", { name: /Backend Engineer/ })).toHaveAttribute("href", "/jobs/job-1");
+    cleanup();
+    render(<MemoryRouter><JobCard job={{ ...job, source: "greenhouse" }} /></MemoryRouter>);
+    expect(screen.queryByTestId("provider-attribution")).not.toBeInTheDocument();
+    cleanup();
+    render(<MemoryRouter><JobCard job={job} /></MemoryRouter>);
+    expect(screen.queryByTestId("provider-attribution")).not.toBeInTheDocument();
+  });
 });

@@ -62,6 +62,24 @@ public class AggregationConflictService {
                 FindAndModifyOptions.options().upsert(true).returnNew(true), AggregationConflictDocument.class);
     }
 
+    /** Two imported jobs whose recomputed fingerprints collide; both stay unchanged until an ADMIN resolves it. */
+    public void recordFingerprintMigration(String fingerprint, String firstJobId, String secondJobId,
+                                           LocalDateTime observedAt) {
+        List<String> jobIds = new ArrayList<>(List.of(firstJobId, secondJobId));
+        jobIds.sort(String::compareTo);
+        String id = digest(String.join("|", "FINGERPRINT_MIGRATION", fingerprint, String.join(",", jobIds)));
+        Update update = new Update()
+                .setOnInsert("type", AggregationConflictDocument.Type.FINGERPRINT_MIGRATION)
+                .setOnInsert("status", AggregationConflictDocument.Status.OPEN)
+                .setOnInsert("fingerprint", fingerprint)
+                .setOnInsert("jobIds", new LinkedHashSet<>(jobIds))
+                .setOnInsert("firstObservedAt", observedAt)
+                .set("lastObservedAt", observedAt)
+                .inc("occurrences", 1);
+        mongo.findAndModify(Query.query(Criteria.where("_id").is(id)), update,
+                FindAndModifyOptions.options().upsert(true).returnNew(true), AggregationConflictDocument.class);
+    }
+
     public PageResponse<ConflictView> list(String rawStatus, int page, int size) {
         if (page < 0) throw new BadRequestException("Page must not be negative");
         if (size < 1 || size > 100) throw new BadRequestException("Size must be between 1 and 100");

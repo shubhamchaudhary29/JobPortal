@@ -16,6 +16,7 @@ import java.time.Duration;
 
 /** Fails deployment before imported identity indexes are attempted against legacy duplicates. */
 @Component
+@org.springframework.core.annotation.Order(org.springframework.core.Ordered.HIGHEST_PRECEDENCE)
 @ConditionalOnProperty(name = "app.mongo.indexes.verify-on-startup", havingValue = "true", matchIfMissing = true)
 public class MongoIndexInitializer implements ApplicationRunner {
     private final MongoTemplate mongo;
@@ -66,6 +67,20 @@ public class MongoIndexInitializer implements ApplicationRunner {
                 .named("sync_run_outcome_started_idx"));
         syncRuns.ensureIndex(new Index().on("expiresAt", Sort.Direction.ASC)
                 .expire(Duration.ZERO).named("sync_run_retention_ttl"));
+        mongo.indexOps("smartrecruiters_posting_details").ensureIndex(new Index().on("expiresAt", Sort.Direction.ASC)
+                .expire(Duration.ZERO).named("smartrecruiters_detail_retention_ttl"));
+        mongo.indexOps("provider_request_budgets").ensureIndex(new Index().on("expiresAt", Sort.Direction.ASC)
+                .expire(Duration.ZERO).named("provider_request_budget_retention_ttl"));
+        IndexOperations registry = mongo.indexOps("employer_registry");
+        registry.ensureIndex(new Index().on("source", Sort.Direction.ASC).on("boardKey", Sort.Direction.ASC)
+                .unique().named("employer_registry_source_board_unique"));
+        registry.ensureIndex(new Index().on("companyKey", Sort.Direction.ASC).unique()
+                .partial(PartialIndexFilter.of(org.springframework.data.mongodb.core.query.Criteria.where("enabled").is(true)))
+                .named("employer_registry_enabled_company_unique"));
+        registry.ensureIndex(new Index().on("enabled", Sort.Direction.ASC).on("source", Sort.Direction.ASC)
+                .on("boardKey", Sort.Direction.ASC).named("employer_registry_enabled_order_idx"));
+        mongo.indexOps("employer_registry_audit").ensureIndex(new Index().on("entryId", Sort.Direction.ASC)
+                .on("at", Sort.Direction.DESC).named("employer_registry_audit_entry_at_idx"));
         mongo.indexOps("candidate_profiles").ensureIndex(new Index().on("userId", Sort.Direction.ASC)
                 .unique().named("candidate_profile_user_unique"));
         IndexOperations resumes = mongo.indexOps("tailored_resume_versions");

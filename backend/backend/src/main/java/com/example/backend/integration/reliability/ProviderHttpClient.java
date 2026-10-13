@@ -36,6 +36,13 @@ public class ProviderHttpClient {
             throw classify(provider, failure);
         }
     }
+    public <T> T post(String provider, String url, Object body, Class<T> responseType) {
+        try {
+            return http.postForObject(url, body, responseType);
+        } catch (RuntimeException failure) {
+            throw classify(provider, failure);
+        }
+    }
     private ProviderFailureException classify(String provider, RuntimeException failure) {
         if (failure instanceof ProviderFailureException providerFailure) return providerFailure;
         if (ProviderPayloadLimitInterceptor.causedByLimit(failure)) {

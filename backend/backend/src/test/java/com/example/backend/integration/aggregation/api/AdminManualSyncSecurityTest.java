@@ -1,12 +1,14 @@
 package com.example.backend.integration.aggregation.api;
 
 import static org.mockito.Mockito.when;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
-import com.example.backend.integration.adzuna.AdzunaIngestionCoordinator;
-import com.example.backend.integration.adzuna.AdzunaService;
+import com.example.backend.integration.search.SearchIngestionCoordinator;
+import com.example.backend.integration.search.SearchIngestionCoordinators;
+import com.example.backend.integration.search.SearchSyncResult;
 import com.example.backend.integration.aggregation.AggregationConflictService;
 import com.example.backend.integration.aggregation.EmployerIngestionService;
 import com.example.backend.integration.aggregation.EmployerRegistryProperties;
@@ -28,7 +30,7 @@ class AdminManualSyncSecurityTest {
     @Autowired MockMvc mvc;
     @Autowired JwtUtil jwt;
     @MockitoBean IngestionCoordinator coordinator;
-    @MockitoBean AdzunaIngestionCoordinator adzuna;
+    @MockitoBean SearchIngestionCoordinators search;
     @MockitoBean IngestionAdminService admin;
     @MockitoBean AggregationConflictService conflicts;
     @MockitoBean SyncRunService runs;
@@ -54,9 +56,11 @@ class AdminManualSyncSecurityTest {
 
     @Test
     void adzunaProviderWideSyncUsesItsSharedCoordinator() throws Exception {
-        when(adzuna.run(SyncRunService.Trigger.MANUAL)).thenReturn(new AdzunaIngestionCoordinator.Result(
-                new AdzunaService.SyncResult(1, 0, 0, 0, 0, 0, AdzunaService.Outcome.FULL_SUCCESS),
-                false, false, "run-adzuna"));
+        SearchIngestionCoordinator adzuna = org.mockito.Mockito.mock(SearchIngestionCoordinator.class);
+        when(search.find("adzuna")).thenReturn(java.util.Optional.of(adzuna));
+        when(adzuna.run(SyncRunService.Trigger.MANUAL)).thenReturn(new SearchIngestionCoordinator.Result(
+                new SearchSyncResult(1, 0, 0, 0, 0, 0, 0, 0, 0, 1, SearchSyncResult.Outcome.FULL_SUCCESS, false),
+                false, false, "run-adzuna", SyncRunService.Outcome.COMPLETED));
 
         mvc.perform(post("/api/v1/admin/ingestion/adzuna/sync")
                         .header(HttpHeaders.AUTHORIZATION, bearer("ADMIN")))
@@ -92,6 +96,69 @@ class AdminManualSyncSecurityTest {
                 .andExpect(status().isServiceUnavailable())
                 .andExpect(jsonPath("$.status").value("LEASE_LOST"))
                 .andExpect(jsonPath("$.runId").value("run-lost"));
+    }
+
+    @Test
+    void providerCatalogIsAdminOnlyAndListsEveryProviderInCatalogOrder() throws Exception {
+        mvc.perform(get("/api/v1/admin/ingestion/providers")).andExpect(status().isUnauthorized());
+        mvc.perform(get("/api/v1/admin/ingestion/providers")
+                        .header(HttpHeaders.AUTHORIZATION, bearer("USER")))
+                .andExpect(status().isForbidden());
+        mvc.perform(get("/api/v1/admin/ingestion/providers")
+                        .header(HttpHeaders.AUTHORIZATION, bearer("RECRUITER")))
+                .andExpect(status().isForbidden());
+        mvc.perform(get("/api/v1/admin/ingestion/providers")
+                        .header(HttpHeaders.AUTHORIZATION, bearer("ADMIN")))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.length()").value(7))
+                .andExpect(jsonPath("$[0].name").value("adzuna"))
+                .andExpect(jsonPath("$[0].kind").value("SEARCH_API"))
+                .andExpect(jsonPath("$[0].displayName").value("Adzuna"))
+                .andExpect(jsonPath("$[0].employerScoped").value(false))
+                .andExpect(jsonPath("$[1].name").value("jooble"))
+                .andExpect(jsonPath("$[1].kind").value("SEARCH_API"))
+                .andExpect(jsonPath("$[2].name").value("greenhouse"))
+                .andExpect(jsonPath("$[2].kind").value("ATS_BOARD"))
+                .andExpect(jsonPath("$[2].employerScoped").value(true))
+                .andExpect(jsonPath("$[2].available").value(true))
+                .andExpect(jsonPath("$[3].name").value("lever"))
+                .andExpect(jsonPath("$[4].name").value("ashby"))
+                .andExpect(jsonPath("$[4].kind").value("ATS_BOARD"))
+                .andExpect(jsonPath("$[4].employerScoped").value(true))
+                .andExpect(jsonPath("$[5].name").value("smartrecruiters"))
+                .andExpect(jsonPath("$[5].displayName").value("SmartRecruiters"))
+                .andExpect(jsonPath("$[6].name").value("workable"))
+                .andExpect(jsonPath("$[0].scheduleProperty").doesNotExist())
+                .andExpect(jsonPath("$[2].defaultBaseUrl").doesNotExist());
+    }
+
+    @Test
+    void unknownProvidersAreStillRejectedBeforeAnyCoordinatorRuns() throws Exception {
+        mvc.perform(post("/api/v1/admin/ingestion/%20lever/sync")
+                        .header(HttpHeaders.AUTHORIZATION, bearer("ADMIN")))
+                .andExpect(status().isBadRequest());
+        for (String provider : new String[] {"unknown", "other", "linkedin", "GREENHOUSE2"}) {
+            mvc.perform(post("/api/v1/admin/ingestion/" + provider + "/sync")
+                            .header(HttpHeaders.AUTHORIZATION, bearer("ADMIN")))
+                    .andExpect(status().isBadRequest())
+                    .andExpect(jsonPath("$.code").value("BAD_REQUEST"));
+        }
+        org.mockito.Mockito.verifyNoInteractions(coordinator, search);
+        when(coordinator.run(EmployerRegistryProperties.Source.LEVER, null, SyncRunService.Trigger.MANUAL))
+                .thenReturn(new IngestionCoordinator.Result(new EmployerIngestionService.Result(0, 0, 1, 0, 0),
+                        false, false, "run-lever"));
+        mvc.perform(post("/api/v1/admin/ingestion/LeVeR/sync")
+                        .header(HttpHeaders.AUTHORIZATION, bearer("ADMIN")))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.runId").value("run-lever"));
+        when(coordinator.run(EmployerRegistryProperties.Source.ASHBY, "acme", SyncRunService.Trigger.MANUAL))
+                .thenReturn(new IngestionCoordinator.Result(new EmployerIngestionService.Result(2, 0, 0, 0, 0),
+                        false, false, "run-ashby"));
+        mvc.perform(post("/api/v1/admin/ingestion/ashby/sync?employer=acme")
+                        .header(HttpHeaders.AUTHORIZATION, bearer("ADMIN")))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.runId").value("run-ashby"))
+                .andExpect(jsonPath("$.sync.inserted").value(2));
     }
 
     private String bearer(String role) {

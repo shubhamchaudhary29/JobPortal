@@ -56,4 +56,27 @@ class AggregationMetricsTest {
             assertNull(meter.getId().getTag("exception"));
         }
     }
+
+    @Test
+    void providerTagsAreDerivedFromTheCatalogAndRejectArbitraryValues() {
+        SimpleMeterRegistry registry = new SimpleMeterRegistry();
+        AggregationMetrics metrics = new AggregationMetrics(registry);
+        java.util.List<String> inputs = new java.util.ArrayList<>(java.util.Arrays.asList(
+                "board-123", "https://x.test", "lever ", "", null, "linkedin"));
+        com.example.backend.shared.provider.ProviderCatalog.names()
+                .forEach(name -> inputs.add(name.toUpperCase(java.util.Locale.ROOT)));
+        for (String provider : inputs) {
+            metrics.record(provider, SyncRunService.Outcome.COMPLETED, SyncRunService.Trigger.MANUAL,
+                    SyncRunService.Counts.empty(), Duration.ZERO, false);
+        }
+        Set<String> expected = new java.util.HashSet<>(
+                com.example.backend.shared.provider.ProviderCatalog.names());
+        expected.add("other");
+        Set<String> tagged = registry.find("jobportal.aggregation.runs").counters().stream()
+                .map(counter -> counter.getId().getTag("provider"))
+                .collect(java.util.stream.Collectors.toSet());
+        assertEquals(expected, tagged);
+        assertEquals(6, registry.get("jobportal.aggregation.runs").tags("provider", "other")
+                .counter().count());
+    }
 }

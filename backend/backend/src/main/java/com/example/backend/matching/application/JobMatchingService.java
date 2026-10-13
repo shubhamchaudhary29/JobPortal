@@ -20,6 +20,7 @@ import com.example.backend.shared.error.ForbiddenException;
 import com.example.backend.shared.error.ResourceNotFoundException;
 import com.example.backend.shared.pagination.PageResponse;
 import com.example.backend.shared.pagination.SortResponse;
+import com.example.backend.shared.provider.ProviderCatalog;
 import com.example.backend.shared.security.CurrentUserProvider;
 import com.example.backend.user.domain.UserRole;
 import com.example.backend.user.infrastructure.UserDocument;
@@ -148,7 +149,7 @@ public class JobMatchingService {
         if (location != null && location.length() > 100) throw new BadRequestException("location filter is too long");
         if (source != null && source.length() > 30) throw new BadRequestException("source filter is too long");
         if (source != null && !source.isBlank()
-                && !List.of("manual", "adzuna", "greenhouse", "lever").contains(source.trim().toLowerCase(Locale.ROOT)))
+                && !"manual".equals(source.trim().toLowerCase(Locale.ROOT)) && ProviderCatalog.find(source.trim()).isEmpty())
             throw new BadRequestException("Unsupported source filter");
     }
 

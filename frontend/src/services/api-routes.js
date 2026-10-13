@@ -50,10 +50,15 @@ export const apiRoutes = Object.freeze({
   }),
   adminAggregation: Object.freeze({
     status: `${API_V1}/admin/ingestion/status`,
+    providers: `${API_V1}/admin/ingestion/providers`,
     history: `${API_V1}/admin/ingestion/history`,
     historyById: (id) => `${API_V1}/admin/ingestion/history/${encodeURIComponent(id)}`,
     conflicts: `${API_V1}/admin/ingestion/conflicts`,
     conflictResolution: (id) => `${API_V1}/admin/ingestion/conflicts/${encodeURIComponent(id)}/resolution`,
     sync: (provider) => `${API_V1}/admin/ingestion/${encodeURIComponent(provider)}/sync`,
+    registry: `${API_V1}/admin/ingestion/registry`,
+    registryEntry: (id) => `${API_V1}/admin/ingestion/registry/${encodeURIComponent(id)}`,
+    registryValidation: (id) => `${API_V1}/admin/ingestion/registry/${encodeURIComponent(id)}/validation`,
+    registryAudit: (id) => `${API_V1}/admin/ingestion/registry/${encodeURIComponent(id)}/audit`,
   }),
 });

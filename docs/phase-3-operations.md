@@ -12,6 +12,10 @@ Configuration defaults (all can be overridden through the matching environment v
 - `ADZUNA_RETRY_MAX_ATTEMPTS=3` (bounded to 1–5) and `ADZUNA_RETRY_INITIAL_BACKOFF_MS=200`
 - `ADZUNA_CIRCUIT_FAILURE_THRESHOLD=3`, `ADZUNA_CIRCUIT_OPEN_MS=60000`
 - `ADZUNA_PAGES_PER_KEYWORD=2` (1–10), `ADZUNA_RESULTS_PER_PAGE=20` (1–50), and `ADZUNA_KEYWORDS`
+- `ADZUNA_CITIES` (default `Bengaluru,Delhi,Gurugram,Noida,Mumbai,Pune,Hyderabad,Chennai,Kolkata,Ahmedabad`, at most 50) and `ADZUNA_REQUESTS_PER_RUN` (default `0` = automatic). Every keyword is queried country-wide and with each city as Adzuna's `where`, `ADZUNA_PAGES_PER_KEYWORD` pages each; the default 12 keywords × 11 locations × 2 pages is 264 requests. The automatic per-run allowance is `ADZUNA_MONTHLY_REQUEST_BUDGET` ÷ scheduled runs in 30 days (2000 ÷ 60 = 33 at the 12-hour default), so scheduled runs use at most 1,980 of the 2,000 budget, leaving headroom for manual runs within Adzuna's 2,500 free requests. A plan larger than the allowance rotates: each run takes the next slice of keyword × location groups from `search_query_rotation`, and the default plan completes a cycle about every 4 days (about 7 per month).
+- Rotation lifecycle rule: with rotation, a single run sees only some queries, so per-run missing detection could deactivate jobs whose queries were not run. Instead, seen identities accumulate across one full rotation cycle, and missing state advances once per complete cycle, only when no group in the cycle failed or rejected items. Groups cut off by a budget stop carry over to the next run without failing the cycle, and a lease-lost run is discarded and its slice retried. With `JOB_AGGREGATION_MISSING_THRESHOLD=3`, a vanished Adzuna job is hidden after three complete cycles (about 12 days). Changing keywords, cities, or pages starts a new cycle. When the whole plan fits in one run (for example with `ADZUNA_CITIES=`), every run is a full cycle and the previous per-run behavior applies.
+- Jooble (disabled unless `JOOBLE_API_KEY` is set; read [`provider-terms.md`](provider-terms.md) first): `JOOBLE_BASE_URL=https://in.jooble.org/api` (keys are regional), `JOOBLE_KEYWORDS`, `JOOBLE_LOCATION=India`, `JOOBLE_PAGES_PER_KEYWORD=1` (1–10), `JOOBLE_RESULTS_PER_PAGE=20` (1–100), `JOOBLE_MONTHLY_REQUEST_BUDGET=100` (Jooble's free plan is 500 requests per key in total), and `JOOBLE_SCHEDULE_DELAY_MS=86400000`. It uses the shared provider timeouts, retries, circuit, rate limit, and payload limits; the key is in the request path and is never logged.
+- `ADZUNA_MONTHLY_REQUEST_BUDGET=2000` (1–1,000,000): requests per UTC calendar month across all instances, counting retries. The default 8 keywords × 2 pages every 12 hours uses about 960. When the budget is spent the run stops before the next request and is recorded as `PARTIAL` with reason `BUDGET_EXHAUSTED`; lifecycle does not advance. Counters live in `provider_request_budgets` (`<provider>:<yyyy-MM>`, removed by TTL 13 months later). To inspect usage: `db.provider_request_budgets.find({provider: "adzuna"})`.
 
 Network failures, 429s, and 5xx responses receive bounded exponential backoff with jitter. 4xx authentication/validation responses and malformed provider payloads are not retried. Repeated failed batches open a small in-process circuit; after its open interval one successful probe closes it. Completion logs contain sanitized event names, counts, and latency only; the lightweight counters report cumulative successful runs, failed batches, and total latency.
 
@@ -70,9 +74,9 @@ BACKFILL_APPLY=true mongosh "$MONGODB_URI" backend/backend/scripts/backfill-sour
 The script is idempotent and does not delete, merge, or guess ambiguous documents. Back up the `jobs` collection before applying; rollback consists of restoring that backup or manually removing only the reviewed additive `sourceListings` fields. Recruiter-created jobs are excluded.
 
 Public job search reads MongoDB only; it never invokes Greenhouse, Lever, or Adzuna.
-Greenhouse and Lever are independently scheduled every six hours by default and can be globally disabled with `JOB_AGGREGATION_SCHEDULING_ENABLED=false` (the test profile does this).
+Greenhouse, Lever, Ashby, SmartRecruiters, and Workable are independently scheduled every six hours by default and can be globally disabled with `JOB_AGGREGATION_SCHEDULING_ENABLED=false` (the test profile does this).
 
-Imported records use a provider-independent SHA-256 fingerprint of normalized company, title, and location. The original provider identity and each original application deep link are retained on the canonical record. Apply the `imported_fingerprint_unique` index only after running the read-only audit:
+Imported records use a provider-independent SHA-256 fingerprint of normalized company, title, and location (`JobFingerprint`, version 2, stored as `fingerprintVersion`). Every provider, Adzuna included, uses it; version 1 Adzuna fingerprints also hashed the redirect URL and so never matched another listing. Matching-only normalization collapses Indian city renames and spellings (`Bangalore`/`Bengaluru`, `Gurgaon`/`Gurugram`, `Bombay`/`Mumbai`, `New Delhi`/`Delhi NCR`/`Delhi`, …), drops trailing `India`/`IN`/state segments and work-mode words, maps remote variants to `remote`, strips trailing company suffixes (`Pvt Ltd`, `Private Limited`, `Ltd`, `Limited`, `Inc`, `LLC`, `Technologies`, `Software`, `India`), and applies explicit company aliases. The tables are `backend/backend/src/main/resources/aggregation/{city,company}-aliases.json`; changing a rule requires a new version and the fingerprint migration. Displayed company, title, and location values are never rewritten. The original provider identity and each original application deep link are retained on the canonical record. Apply the `imported_fingerprint_unique` index only after running the read-only audit:
 
 ```bash
 mongosh "$MONGODB_URI" backend/backend/scripts/audit-mongo-indexes.js
@@ -90,12 +94,49 @@ The daily retention task uses the distributed `maintenance:imported-job-retentio
 
 Identity/fingerprint collisions are retained in `aggregation_conflicts`; ingestion records a bounded conflict reference and leaves both jobs untouched. Administrators can page/filter them with `GET /api/v1/admin/ingestion/conflicts` and submit an explicit canonical/duplicate choice to `POST /api/v1/admin/ingestion/conflicts/{id}/resolution`. Resolution is distributed-lock protected and resumable: it refuses same-candidate application collisions, merges every source listing, rewrites application and conversation job references, and removes the duplicate only after those rewrites. Repeating the same completed resolution is safe; a different choice returns a conflict. Back up `jobs`, `applications`, `chat_rooms`, and `aggregation_conflicts` before production reconciliation.
 
+### Fingerprint version migration (M11B)
+
+Version 2 fingerprints (see above) apply to every new write. Existing imported jobs keep their old value until
+the migration recomputes them. Back up `jobs` and `aggregation_conflicts`, then run the dry-run from the
+repository root with the backend environment set:
+
+```bash
+bash backend/backend/scripts/migrate-fingerprints.sh            # dry-run: no writes
+bash backend/backend/scripts/migrate-fingerprints.sh --apply    # after reviewing the dry-run report
+```
+
+The command starts the backend without a web server or schedules and prints one
+`FINGERPRINT_MIGRATION_REPORT {...}` line with counts (`scanned`, `current`, `planned`, `updated`, `collisions`,
+`collisionGroups`, `conflictPairs`, `conflictsRecorded`, `skippedApplicationReferenced`, `unfingerprintable`,
+`changedConcurrently`) and at most 20 IDs per category. It exits `0` when nothing needs review, `2` when
+collisions or skipped jobs need an operator, and `3` for a usage or prerequisite error. Set
+`FINGERPRINT_MIGRATION_JAR` to reuse a built jar.
+
+Apply updates a stale job only when its new fingerprint is unique, using a conditional write on the old value.
+Jobs whose new fingerprints collide (for example a `Bangalore` and a `Bengaluru` copy of one posting) are left
+unchanged and recorded as pairwise `FINGERPRINT_MIGRATION` conflicts. Resolve them in the ADMIN aggregation page,
+or with `POST /api/v1/admin/ingestion/conflicts/{id}/resolution`, and rerun `--apply` to upgrade the survivor.
+Recruiter jobs and reconciliation-pending jobs are never read for update, jobs referenced by applications are
+skipped and reported, and nothing is deleted or merged automatically. The migration is idempotent. Rollback means
+restoring the backup; older fingerprints are not needed by the running version.
+
+Validate the procedure only against a disposable server, because its harness drops `jobportal_m11b_verify`:
+
+```bash
+MONGODB_URI=mongodb://localhost:27017 bash backend/backend/scripts/verify-fingerprint-migration.sh
+```
+
 ### Final Phase 1 migration audit (M1F)
 
 The read-only index audit also validates the additive source-listing shape, duplicate listing
 identities within a job, source identities duplicated across imported jobs, compatibility between
 `sourceIdentities`/`applicationUrls` and `sourceListings`, deterministic canonical fields, lifecycle
-state, conflict records, and interrupted reconciliation markers. Diagnostic categories and IDs are
+state, conflict records (`IDENTITY_FINGERPRINT` and `FINGERPRINT_MIGRATION`), interrupted reconciliation
+markers, and fingerprint versions. An imported job whose `fingerprintVersion` is missing or older than the current
+`JobFingerprint` version is a `fingerprintVersionMismatches` anomaly (with a total count); run the fingerprint
+migration and resolve its conflicts until it is empty. Application-referenced jobs with an old version are listed
+under `applicationHeldFingerprintVersions` for information only, because the migration deliberately skips them and
+the next ingestion of their listing upgrades them. Diagnostic categories and IDs are
 bounded, and the audit exits with status `2` when any rollout anomaly is found. Validate the
 audit itself only against a disposable local server because its harness drops
 `jobportal_m1f_verify`:
@@ -128,8 +169,10 @@ History is ordered by start time descending and run ID ascending. Unsupported fi
 identifiers, negative pages, and sizes outside 1–100 are rejected; retention metadata and exception
 stacks are never returned.
 
+`GET /api/v1/admin/ingestion/providers` returns the provider catalog (name, kind, display name, and
+whether employer-scoped runs are supported); the ADMIN page builds its provider selector from it.
 An administrator starts a provider-wide run with `POST /api/v1/admin/ingestion/{provider}/sync` for
-`adzuna`, `greenhouse`, or `lever`. Greenhouse and Lever also accept an optional configured board,
+any catalog provider, currently `adzuna`, `greenhouse`, or `lever`. Greenhouse and Lever also accept an optional configured board,
 for example `?employer=airbnb`; unknown or disabled boards are rejected and Adzuna does not accept
 an employer. Manual and scheduled requests call the same coordinator. Employer-specific runs retain
 the provider-wide lease key deliberately, so they cannot overlap that provider's scheduled or broad
@@ -145,7 +188,7 @@ lock acquisition failures are recorded as failed runs.
 
 ### Greenhouse and Lever transport reliability
 
-Greenhouse and Lever use one provider-neutral HTTP failure and retry policy. Timeouts, HTTP `429`,
+Greenhouse, Lever, Ashby, SmartRecruiters, and Workable use one provider-neutral HTTP failure and retry policy. Timeouts, HTTP `429`,
 and HTTP `5xx` are transient; other `4xx` responses and malformed JSON are permanent for that run.
 Retries are bounded, use exponential backoff with jitter, and honor both delta-seconds and HTTP-date
 `Retry-After` values without exceeding the configured maximum delay. An interrupted backoff stops
@@ -167,6 +210,16 @@ The supported settings and safe defaults are:
 | `JOB_AGGREGATION_PROVIDER_CIRCUIT_OPEN_MS` | `60000` | `100`–`600000` ms before one half-open probe |
 | `GREENHOUSE_BASE_URL` | official boards API | HTTP(S) endpoint; override only for controlled testing/proxying |
 | `LEVER_BASE_URL` | official postings API | HTTP(S) endpoint; override only for controlled testing/proxying |
+| `ASHBY_BASE_URL` | official job-posting API | HTTP(S) endpoint; override only for controlled testing/proxying |
+| `ASHBY_SYNC_DELAY_MS` | `21600000` | fixed delay between scheduled Ashby runs |
+| `SMARTRECRUITERS_BASE_URL` | official Posting API | HTTP(S) endpoint; override only for controlled testing/proxying |
+| `SMARTRECRUITERS_SYNC_DELAY_MS` | `21600000` | fixed delay between scheduled SmartRecruiters runs |
+| `SMARTRECRUITERS_PAGE_SIZE` | `100` | `1`–`100` postings per list page |
+| `SMARTRECRUITERS_MAX_PAGES` | `20` | `1`–`100` list pages per board run; more pages make the run incomplete |
+| `SMARTRECRUITERS_MAX_DETAIL_REQUESTS` | `100` | `0`–`1000` uncached posting details fetched per board run |
+| `SMARTRECRUITERS_DETAIL_RETENTION_DAYS` | `30` | `1`–`365`; TTL of cached posting details |
+| `WORKABLE_BASE_URL` | public jobs-widget API | HTTP(S) endpoint; override only for controlled testing/proxying |
+| `WORKABLE_SYNC_DELAY_MS` | `21600000` | fixed delay between scheduled Workable runs |
 
 Automated reliability tests point these base URLs at an in-process mock HTTP server and never call
 live providers. Keep credentials and query-bearing upstream URLs out of logs and support output.
@@ -188,6 +241,35 @@ duration, inserted/updated/unchanged/rejected counts, retries, provider failures
 lock contention, and lease loss. Every meter has exactly three bounded tags: `provider` (`adzuna`,
 `greenhouse`, `lever`, or `other`), `outcome`, and `trigger`. Employer/board, run ID, URLs, exception
 text, credentials, and arbitrary failure types are never metric labels.
+
+### Employer registry storage (M16)
+
+The live employer registry is the Mongo `employer_registry` collection, with a unique `source+boardKey` index
+and a unique partial index on `companyKey` for enabled entries. At startup, after the index initializer,
+`EmployerRegistryImporter` copies `job-aggregation.employers[...]` entries from `application.properties` into
+Mongo if their `source+boardKey` is missing. It never changes existing entries, so ADMIN edits survive
+restarts, and it logs and skips properties entries that would break a uniqueness rule. The properties list is
+only the seed (still capped at 1000 entries); disable the import with
+`JOB_AGGREGATION_REGISTRY_IMPORT_ON_STARTUP=false`. Until the collection has entries, ingestion reads the
+properties seed. Afterwards every scheduled and manual run reads enabled Mongo entries in provider/board order,
+at most `JOB_AGGREGATION_REGISTRY_MAX_EMPLOYERS_PER_RUN` (default 2000, 1–100,000) per run. Removing an entry from
+properties does not remove it from Mongo; disable it through ADMIN instead. `validate-employer-registry.sh` still
+validates the properties seed.
+
+ADMIN manages the registry without redeploys at `/api/v1/admin/ingestion/registry` (and the ADMIN page):
+
+- `GET ?provider=&enabled=&q=&page=&size=` lists entries (size 1–100, ordered by provider and board; `q` is a
+  literal case-insensitive match on company or board).
+- `POST` with `{provider, boardId, company, enabled}` adds an ATS board (`201`); a duplicate board for the provider,
+  or a second enabled board for the same company, returns `409`.
+- `PATCH /{id}` with any of `{company, enabled, disabledReason}` edits an entry. Provider and board ID are its
+  identity; to move a company to another board, add the new entry and disable the old one.
+- `POST /{id}/validation` fetches the board once through its provider's job source (shared timeouts, retries,
+  circuit, and rate limit) and returns `ACTIVE`, `EMPTY`, `MALFORMED`, `INVALID`, or `UNREACHABLE` with the
+  listing count. Nothing is stored as a job (SmartRecruiters may cache posting details as usual).
+- `GET /{id}/audit` pages the append-only `employer_registry_audit` history: `CREATE`, `UPDATE`, `ENABLE`,
+  `DISABLE`, and `VALIDATE` with the acting administrator, time, and before/after values. Each entry also carries
+  `createdBy/At` and `updatedBy/At`.
 
 ### Employer-registry verification
 
