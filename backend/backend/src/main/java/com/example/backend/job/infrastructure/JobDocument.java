@@ -60,5 +60,10 @@ public class JobDocument {
     private LocalDateTime cleanupClaimedAt;
     /** Provider-neutral, versioned invariant features; candidate-specific scores are never stored here. */
     private JobMatchFeatures matchFeatures;
+    /** Place resolution for jobs without source listings (manual and legacy); imported jobs resolve per listing. */
+    private com.example.backend.job.domain.GeoResolution geo;
+    /** Provider location hint carried into the import store; never persisted. */
+    @org.springframework.data.annotation.Transient
+    private com.example.backend.job.domain.LocationHint locationHint;
 
 }

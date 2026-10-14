@@ -15,4 +15,9 @@ public class ImportedSourceListing {
     private LocalDateTime lastSeenAt;
     private boolean active = true;
     private int consecutiveMissingRuns;
+    /** This provider's own location string (GEO-1); canonical {@code location} stays last-writer-wins. */
+    private String rawLocation;
+    /** True when {@code rawLocation} was seeded from the canonical location by re-resolution, not the provider. */
+    private boolean rawLocationInferred;
+    private com.example.backend.job.domain.GeoResolution geo;
 }

@@ -1,6 +1,7 @@
 package com.example.backend.integration.adzuna;
 
 import com.example.backend.integration.aggregation.JobFingerprint;
+import com.example.backend.job.domain.LocationHint;
 import com.example.backend.job.infrastructure.JobDocument;
 import com.example.backend.shared.validation.SafeExternalUrl;
 import java.time.LocalDateTime;
@@ -34,6 +35,8 @@ public final class AdzunaJobMapper {
         job.setFetchedAt(now);
         job.setLastSeenAt(now);
         job.setFirstSeenAt(now); job.setActive(true);
+        job.setLocationHint(new LocationHint(source.location() == null ? null : source.location().area(),
+                source.latitude(), source.longitude()));
         job.setFingerprint(JobFingerprint.of(job.getCompany(), job.getTitle(), job.getLocation()));
         job.setFingerprintVersion(JobFingerprint.VERSION);
         return Optional.of(job);
