@@ -41,7 +41,7 @@ Attribution required: © OpenStreetMap contributors, GeoNames (CC-BY 4.0).
 ## Status
 
 - [x] GEO-0 — merged (PR #14)
-- [ ] GEO-1 — in progress (branch `geo1`)
+- [x] GEO-1 — offline GeoNames place resolution per listing, re-resolution job, admin coverage report (PR #TBD)
 - [ ] GEO-2 … GEO-7
 
 ---
