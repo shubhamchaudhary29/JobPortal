@@ -41,8 +41,9 @@ Attribution required: © OpenStreetMap contributors, GeoNames (CC-BY 4.0).
 ## Status
 
 - [x] GEO-0 — merged (PR #14)
-- [x] GEO-1 — offline GeoNames place resolution per listing, re-resolution job, admin coverage report (PR #TBD)
-- [ ] GEO-2 … GEO-7
+- [x] GEO-1 — offline GeoNames place resolution per listing, re-resolution job, admin coverage report (PR #16)
+- [x] GEO-2 — in-memory map snapshot endpoint with ETag/304 and pregzipped bodies (PR #17)
+- [ ] GEO-3 … GEO-7
 
 ---
 
@@ -112,6 +113,7 @@ Required test cases:
 - One aggregation: active jobs → unwind active `sourceListings.placeIds` (plus top-level `placeIds` for listing-less jobs) → group by `placeId` → count distinct jobs.
 - Join coordinates/names from the gazetteer in memory.
 - Hash the result; swap the in-memory snapshot and ETag only when the hash changes.
+- Refresh runs on its own executor, independent of `JOB_AGGREGATION_SCHEDULING_ENABLED`.
 - `GET /api/v1/jobs/map/snapshot` → snapshot with `ETag` and `Cache-Control: public, max-age=300`.
 - Browser loads it once; MapLibre clusters client-side; panning causes no server calls.
 

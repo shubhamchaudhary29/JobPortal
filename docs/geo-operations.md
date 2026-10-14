@@ -66,6 +66,42 @@ event=geo_reresolution_completed scanned=… updated=… remaining_estimate=… 
 - `topUnresolved`: the 50 most frequent strings the resolver could not place (from `unresolved_locations`,
   kept 90 days after last sighting). These are the best candidates for new aliases.
 
+## Map snapshot
+
+`GET /api/v1/jobs/map/snapshot` (public) returns every place with visible jobs and its count, plus
+`unplaced` counts by status (REMOTE, COUNTRY, …, UNPROCESSED) and `placedJobs` (distinct jobs with at least
+one place). A job's places are the union over its **active** listings, the same definition the coverage
+report uses; each job counts once per place. Reconciliation duplicates and inactive jobs are excluded.
+
+It is built by one aggregation and served from memory; requests never reach MongoDB.
+
+| Header | Value |
+|---|---|
+| `ETag` | `"<version>"`: a hash of the content, unchanged while the data is unchanged |
+| `Cache-Control` | `public, max-age=60, stale-while-revalidate=240` |
+| `Vary` | `Accept-Encoding` |
+| `Content-Encoding` | `gzip` when the client accepts it (precomputed once per change) |
+
+Send `If-None-Match` with the last ETag to get `304 Not Modified`.
+
+| Variable | Default | Meaning |
+|---|---|---|
+| `GEO_SNAPSHOT_ENABLED` | `true` | Build and refresh the snapshot |
+| `GEO_SNAPSHOT_REFRESH_MS` | `300000` | Delay between rebuilds (first build at startup) |
+
+The refresh runs on its own executor, so it keeps running when `JOB_AGGREGATION_SCHEDULING_ENABLED=false`.
+
+- **Force a rebuild:** restart the backend; the first build runs as soon as it is ready.
+- **503 with `Retry-After: 10`:** no snapshot has been built yet (just after startup, or every build since
+  startup failed). After one good build, a failed rebuild keeps serving the previous snapshot and logs
+  `event=geo_snapshot_build_failed`.
+- **`event=geo_snapshot_unknown_places dropped_jobs=N`:** N jobs only had place ids that are no longer in the
+  gazetteer (usually after a data refresh). They disappear from the map until re-resolution catches up.
+
+Metrics: `jobportal.geo.snapshot.places`, `jobportal.geo.snapshot.placed.jobs`,
+`jobportal.geo.snapshot.age.seconds` (gauges), `jobportal.geo.snapshot.build` (timer),
+`jobportal.geo.snapshot.build.failures` (counter).
+
 ## Attribution
 
 GeoNames data is CC BY 4.0 (see `src/main/resources/geo/ATTRIBUTION.md`). Any page that shows resolved

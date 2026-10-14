@@ -69,6 +69,7 @@ public class SecurityConfig {
                                 "/api/v1/resume-versions/**", "/api/v1/cover-letters/**",
                                 "/api/v1/jobs/*/application-readiness", "/api/v1/jobs/*/tailoring-plan",
                                 "/api/v1/jobs/*/resume-versions", "/api/v1/jobs/*/cover-letters").hasRole("USER")
+                        .requestMatchers(HttpMethod.GET, "/api/v1/jobs/map/snapshot").permitAll()
                         .requestMatchers(HttpMethod.GET, "/api/v1/jobs/matched", "/api/v1/jobs/*/match").hasRole("USER")
                         .requestMatchers(new RegexRequestMatcher("^/api/v1/jobs/(?!mine$)[^/]+$", "GET")).permitAll()
                         .requestMatchers("/ws/**").permitAll()

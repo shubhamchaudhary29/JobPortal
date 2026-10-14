@@ -114,6 +114,7 @@ public class Gazetteer {
     public List<Place> alternateMatches(String key) { return alternate.getOrDefault(key, List.of()); }
     public Optional<String> stateCode(String key) { return Optional.ofNullable(states.get(key)); }
     public boolean admin1Exists(String code) { return admin1Names.containsKey(code); }
+    public Optional<String> admin1Name(String code) { return Optional.ofNullable(code == null ? null : admin1Names.get(code)); }
     public boolean isForeign(String key) { return foreign.contains(key); }
     public boolean isIndia(String key) { return india.contains(key); }
 
