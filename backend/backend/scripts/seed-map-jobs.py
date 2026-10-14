@@ -1,0 +1,73 @@
+#!/usr/bin/env python3
+"""Seed ~2,000 map-ready jobs for LOCAL load tests only (GEO-3). Never run against production.
+
+Usage (from the repo root, with the Compose stack running):
+    python3 backend/backend/scripts/seed-map-jobs.py | docker compose exec -T mongodb mongosh --quiet jobportal
+
+Prints a mongosh script that removes earlier seed jobs (seedBatch "geo-load") and inserts jobs across the 30 most
+populous gazetteer places, with a few remote and India-wide jobs. Place ids come from in-places.tsv, so they
+are real gazetteer ids. Restart the backend (or wait for the snapshot refresh) afterwards.
+"""
+import argparse
+import json
+import os
+import random
+
+PLACES = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "src", "main", "resources", "geo", "in-places.tsv")
+ROLES = ["Java Engineer", "Python Developer", "Data Analyst", "Product Manager", "DevOps Engineer", "React Developer",
+         "QA Engineer", "Business Analyst", "Sales Executive", "Support Specialist"]
+LEVELS = ["Junior", "Senior", "Lead", "Staff", "Associate"]
+COMPANIES = ["Acme", "Globex", "Initech", "Umbrella", "Hooli", "Stark", "Wayne", "Wonka"]
+
+
+def top_places(count):
+    with open(PLACES, encoding="utf-8") as tsv:
+        rows = [line.rstrip("\n").split("\t") for line in tsv][1:]
+    rows.sort(key=lambda row: -int(row[6]))
+    seen, places = set(), []
+    for row in rows:
+        if row[2] in seen:
+            continue
+        seen.add(row[2])
+        places.append((row[0], row[2]))
+        if len(places) == count:
+            break
+    return places
+
+
+def main():
+    parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
+    parser.add_argument("--jobs", type=int, default=2000)
+    parser.add_argument("--places", type=int, default=30)
+    args = parser.parse_args()
+    random.seed(42)
+    places = top_places(args.places)
+    jobs = []
+    for index in range(args.jobs):
+        title = f"{random.choice(LEVELS)} {random.choice(ROLES)}"
+        roll = random.random()
+        if roll < 0.05:
+            geo, location = {"status": "REMOTE", "placeIds": [], "remote": True, "version": "seed"}, "Remote"
+        elif roll < 0.10:
+            geo, location = {"status": "COUNTRY", "placeIds": [], "remote": False, "version": "seed"}, "India"
+        else:
+            # Weight towards the biggest cities, like real listings.
+            place_id, name = places[min(int(random.expovariate(0.15)), len(places) - 1)]
+            geo, location = {"status": "PLACE", "placeIds": [place_id], "remote": False, "version": "seed"}, name
+        jobs.append({
+            "title": title, "description": f"{title} role. Seeded for local load tests.",
+            "company": random.choice(COMPANIES), "location": location, "source": "seed", "active": True,
+            "seedBatch": "geo-load", "createdAtOffsetMinutes": index,
+            "sourceListings": [{"identity": f"seed:{index}", "provider": "seed", "active": True, "geo": geo}],
+        })
+    print("db.jobs.deleteMany({seedBatch: 'geo-load'});")
+    print("const now = Date.now();")
+    print(f"const jobs = {json.dumps(jobs)};")
+    print("jobs.forEach(j => { j.createdAt = new Date(now - j.createdAtOffsetMinutes * 60000); "
+          "delete j.createdAtOffsetMinutes; });")
+    print("const result = db.jobs.insertMany(jobs);")
+    print("print('seeded ' + Object.keys(result.insertedIds).length + ' jobs');")
+
+
+if __name__ == "__main__":
+    main()

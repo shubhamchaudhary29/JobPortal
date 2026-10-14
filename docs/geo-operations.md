@@ -102,6 +102,48 @@ Metrics: `jobportal.geo.snapshot.places`, `jobportal.geo.snapshot.placed.jobs`,
 `jobportal.geo.snapshot.age.seconds` (gauges), `jobportal.geo.snapshot.build` (timer),
 `jobportal.geo.snapshot.build.failures` (counter).
 
+## Map job lists
+
+All anonymous `GET`s; responses never include descriptions, application URLs or internal ids.
+
+| Endpoint | Returns | `Cache-Control` |
+|---|---|---|
+| `/api/v1/jobs/map/places/{placeId}/jobs` | Jobs at one place (404 if the place is not in the gazetteer) | `public, max-age=60` |
+| `/api/v1/jobs/map/nearby?lat&lng&radiusKm` | Nearest 50 places within the radius + their jobs | `private, max-age=60` |
+| `/api/v1/jobs/map/unplaced?kind=remote\|india` | Jobs with no place: REMOTE, or STATE/COUNTRY | `public, max-age=60` |
+
+Common parameters: `q` (optional phrase search, max 100 chars; quotes are ignored), `page` 0–49 (default 0),
+`size` 1–20 (default 20). Paging is slice-based (`hasNext`, no count query). Jobs are newest first.
+`totalHint` is the snapshot's count when `q` is absent, otherwise `null` (always `null` for nearby).
+
+- **Job definition:** the same as the snapshot (`GeoPipelines`): visible jobs; places from active listings, or
+  the top-level geo of jobs without listings.
+- **Nearby:** `lat`/`lng` are rounded to a 0.05° grid (≈5 km) before any use; the raw values are never stored,
+  cached or logged. Candidate places come from the in-memory snapshot (at most 200 are queried, 50 returned).
+  Each job lists its in-radius places with `distanceKm`.
+- **Limits:** `radiusKm` 1–100 (default 25); every query has `maxTimeMS` 3000.
+- **503 `Retry-After: 10`:** no snapshot yet (same as the snapshot endpoint).
+  **503 `Retry-After: 5`:** a query exceeded 3 s.
+- **Cache:** results are cached by endpoint + snapshot version + places/kind + normalized `q` + page + size, so a
+  new snapshot starts fresh. Concurrent misses for one key share a single query.
+
+| Variable | Default | Meaning |
+|---|---|---|
+| `GEO_MAP_JOBS_CACHE_TTL_MS` | `120000` | How long a result is reused |
+| `GEO_MAP_JOBS_CACHE_MAX_ENTRIES` | `2000` | Expired entries go first, then the oldest |
+
+Metrics: `jobportal.geo.mapjobs.cache` (counter, `result=hit|miss`), `jobportal.geo.mapjobs.query` (timer,
+`endpoint=place|nearby|unplaced`), `jobportal.geo.mapjobs.timeouts` (counter).
+
+**nginx:** `/api/` is proxied through an upstream with `keepalive 64` over HTTP/1.1 (GEO-3A). Without it,
+every request opened a new backend connection and load tests failed with 502 (`99: Address not available`).
+
+**Known limitation:** REMOTE includes foreign-remote listings such as "Remote - United States"; the resolver
+does not yet tell them apart from India-remote ones.
+
+**Load tests (local only):** seed with `python3 backend/backend/scripts/seed-map-jobs.py | docker compose exec
+-T mongodb mongosh --quiet jobportal`, restart the backend, then run `scripts/k6/map-jobs.js`.
+
 ## Attribution
 
 GeoNames data is CC BY 4.0 (see `src/main/resources/geo/ATTRIBUTION.md`). Any page that shows resolved

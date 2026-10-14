@@ -17,6 +17,16 @@ final class GeoPipelines {
 
     private GeoPipelines() { }
 
+    /**
+     * Jobs a reader may see: active (or legacy null) and not a reconciliation duplicate. A job pending
+     * reconciliation still exists beside its canonical job, so including it would show the same posting twice.
+     */
+    static Document visibleJobs() {
+        return new Document("$and", List.of(
+                new Document("$or", List.of(new Document("active", true), new Document("active", null))),
+                new Document("reconciliationTargetId", null), new Document("reconciliationConflictId", null)));
+    }
+
     static Document listings() {
         return new Document("$ifNull", List.of("$sourceListings", List.of()));
     }

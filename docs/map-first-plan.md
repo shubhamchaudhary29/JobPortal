@@ -43,7 +43,8 @@ Attribution required: © OpenStreetMap contributors, GeoNames (CC-BY 4.0).
 - [x] GEO-0 — merged (PR #14)
 - [x] GEO-1 — offline GeoNames place resolution per listing, re-resolution job, admin coverage report (PR #16)
 - [x] GEO-2 — in-memory map snapshot endpoint with ETag/304 and pregzipped bodies (PR #17)
-- [ ] GEO-3 … GEO-7
+- [x] GEO-3 — map job lists (place, nearby, unplaced) with a snapshot-versioned cache, plus nginx upstream keepalive (PR #18)
+- [ ] GEO-4 … GEO-7
 
 ---
 
@@ -123,13 +124,16 @@ Required test cases:
 
 ## GEO-3 — Place-based job list
 
-- `GET /api/v1/jobs/nearby?lat&lng&radiusKm&q&page`: find places within radius from the in-memory snapshot → query `placeIds $in` (both listing-level with `active: true` and top-level) + existing text filter → sort by recency.
-- `GET /api/v1/jobs/map/place/{placeId}?page` for marker clicks.
+- `GET /api/v1/jobs/map/nearby?lat&lng&radiusKm&q&page&size`: find places within radius from the in-memory snapshot → query `placeIds $in` (both listing-level with `active: true` and top-level) + existing text filter → sort by recency.
+- `GET /api/v1/jobs/map/places/{placeId}/jobs?q&page&size` for marker clicks.
+- `GET /api/v1/jobs/map/unplaced?kind=remote|india&q&page&size` for jobs without a place.
 - Round incoming lat/lng to ~0.05° before use; never log precise coordinates.
 - Short-TTL cache keyed by sorted place set + query + page.
 - Caps: `radiusKm ≤ 100`, page size ≤ 20, `maxTimeMS`, projection without `description`. Invalid input → existing `BadRequestException`.
 
 No geo query and no distance sort yet — with city-centre places they add nothing.
+
+- nginx upstream keepalive (GEO-3A) fixes 502s under load.
 
 ---
 
@@ -175,6 +179,11 @@ No geo query and no distance sort yet — with city-centre places they add nothi
 1. Move Mongo to its own instance.
 2. Multiple backend instances — requires sticky sessions or an external STOMP broker for chat. The aggregation lease lock is already distributed.
 3. Publish the snapshot as a static file to the CDN after each rebuild.
+
+## Follow-ups
+
+- Distinguish foreign-remote from India-remote in the resolver (version bump → automatic re-resolution).
+- Investigate Adzuna `"India"`-only listings (31% COUNTRY in the GEO-1 local preview).
 
 ## Optional later
 
