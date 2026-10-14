@@ -162,10 +162,7 @@ public class MapSnapshotService {
     }
 
     private List<Document> pipeline() {
-        Document notDuplicate = new Document("$and", List.of(
-                new Document("reconciliationTargetId", null), new Document("reconciliationConflictId", null)));
-        Document visible = new Document("$and", List.of(
-                new Document("$or", List.of(new Document("active", true), new Document("active", null))), notDuplicate));
+        Document visible = GeoPipelines.visibleJobs();
         Document hasPlace = new Document("placeIds.0", new Document("$exists", true));
         Document noPlace = new Document("placeIds.0", new Document("$exists", false));
         return List.of(
