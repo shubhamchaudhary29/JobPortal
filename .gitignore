@@ -10,3 +10,6 @@
 **/uploads/
 uploads/
 secrets/
+
+# Self-hosted map tiles volume (GEO-4); runtime data, never committed
+/tiles/

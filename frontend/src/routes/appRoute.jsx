@@ -1,3 +1,4 @@
+import { lazy, Suspense } from "react";
 import { Routes, Route } from "react-router-dom";
 
 import Home from "../pages/Home";
@@ -19,6 +20,9 @@ import AggregationAdmin from "../pages/AggregationAdmin";
 import EmployerRegistryAdmin from "../pages/EmployerRegistryAdmin";
 import ProtectedRoute from "../components/ProtectedRoute";
 
+// Temporary GEO-4 preview; replaced by the GEO-5 map page. Lazy so MapLibre stays out of the entry bundle.
+const MapPreview = lazy(() => import("../pages/MapPreview"));
+
 export default function AppRoutes() {
   return (
     <Routes>
@@ -29,6 +33,14 @@ export default function AppRoutes() {
       <Route path="/login" element={<Login />} />
       <Route path="/register" element={<Register />} />
       <Route path="/recruiter-login" element={<RecruiterLogin />} />
+      <Route
+        path="/map-preview"
+        element={
+          <Suspense fallback={<p className="p-6 text-sm text-slate-500">Loading map…</p>}>
+            <MapPreview />
+          </Suspense>
+        }
+      />
 
       {/* Recruiter-only routes */}
       <Route

@@ -44,7 +44,8 @@ Attribution required: © OpenStreetMap contributors, GeoNames (CC-BY 4.0).
 - [x] GEO-1 — offline GeoNames place resolution per listing, re-resolution job, admin coverage report (PR #16)
 - [x] GEO-2 — in-memory map snapshot endpoint with ETag/304 and pregzipped bodies (PR #17)
 - [x] GEO-3 — map job lists (place, nearby, unplaced) with a snapshot-versioned cache, plus nginx upstream keepalive (PR #18)
-- [ ] GEO-4 … GEO-7
+- [x] GEO-4 — self-hosted India basemap (.pmtiles + fonts/sprites in a volume, served by nginx) and a MapLibre base map with no borders or country/state labels (PR #19)
+- [ ] GEO-5 … GEO-7
 
 ---
 
@@ -143,6 +144,13 @@ No geo query and no distance sort yet — with city-centre places they add nothi
 - Mount the file as a volume into the nginx container (not baked into the image); serve with range requests and long cache headers.
 - Style: **drop country and disputed boundary layers, and filter disputed-region place labels** (separate layer). Keep city labels and roads.
 - Never use `tile.openstreetmap.org` in production.
+- Volume layout (`TILES_DIR`, default `./tiles`, mounted read-only at `/usr/share/nginx/tiles`): `manifest.json`
+  (written last), `india-<YYYYMMDD>-z<maxzoom>.pmtiles` (current + previous), and
+  `assets/<basemaps-assets commit>/{fonts,sprites}`. Built by `frontend/scripts/build-tiles.sh`.
+- Size budget: 600 MB at z11 (the 2026-10-14 build is 276 MiB); the script warns above it and suggests `--maxzoom 10`.
+- No boundary lines of any kind and no country or region/state labels; city labels, water, land use and roads stay.
+- nginx serves `/tiles/` as static files with byte ranges (`.pmtiles` is not gzipped), immutable caching, and
+  `no-cache` on `manifest.json`; missing files are 404, never the SPA's `index.html`.
 
 ---
 
