@@ -1,0 +1,46 @@
+# alias	target name (as in in-places.tsv)	admin1 (optional)
+# Both the old and the current spelling are listed so either resolves to the same single place.
+Bangalore	Bengaluru	19
+Bengaluru	Bengaluru	19
+Gurgaon	Gurugram	10
+Gurugram	Gurugram	10
+Bombay	Mumbai	16
+Mumbai	Mumbai	16
+Madras	Chennai	25
+Chennai	Chennai	25
+Calcutta	Kolkata	28
+Kolkata	Kolkata	28
+Poona	Pune	16
+Pune	Pune	16
+Trivandrum	Thiruvananthapuram	13
+Thiruvananthapuram	Thiruvananthapuram	13
+Cochin	Kochi	13
+Kochi	Kochi	13
+Baroda	Vadodara	09
+Vadodara	Vadodara	09
+Mysore	Mysuru	19
+Mysuru	Mysuru	19
+Mangalore	Mangaluru	19
+Mangaluru	Mangaluru	19
+Vizag	Visakhapatnam	02
+Vishakhapatnam	Visakhapatnam	02
+Visakhapatnam	Visakhapatnam	02
+Pondicherry	Puducherry	22
+Puducherry	Puducherry	22
+Delhi	Delhi	07
+Delhi NCR	Delhi	07
+NCR	Delhi	07
+New Delhi	Delhi	07
+Navi Mumbai	Navi Mumbai	16
+Greater Noida	Greater Noida	36
+Noida	Noida	36
+Calicut	Kozhikode	13
+Allahabad	Prayagraj	36
+Belgaum	Belagavi	19
+Hubli	Hubballi	19
+Gulbarga	Kalaburagi	19
+Trichy	Tiruchirappalli	25
+Trichur	Thrissur	13
+Gauhati	Guwahati	03
+Simla	Shimla	11
+Chandigarh	Chandigarh	05

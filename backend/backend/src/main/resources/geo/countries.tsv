@@ -1,0 +1,79 @@
+# name	kind (india = marks India itself; foreign = any other country or region)
+India	india
+IN	india
+IND	india
+Bharat	india
+Republic of India	india
+United States	foreign
+United States of America	foreign
+USA	foreign
+US	foreign
+U.S.	foreign
+United Kingdom	foreign
+UK	foreign
+England	foreign
+Scotland	foreign
+Wales	foreign
+Canada	foreign
+Germany	foreign
+France	foreign
+Netherlands	foreign
+Ireland	foreign
+Singapore	foreign
+UAE	foreign
+United Arab Emirates	foreign
+Australia	foreign
+New Zealand	foreign
+Japan	foreign
+Spain	foreign
+Portugal	foreign
+Italy	foreign
+Belgium	foreign
+Austria	foreign
+Denmark	foreign
+Norway	foreign
+Finland	foreign
+Sweden	foreign
+Switzerland	foreign
+Poland	foreign
+Czech Republic	foreign
+Czechia	foreign
+Romania	foreign
+Hungary	foreign
+Ukraine	foreign
+Turkey	foreign
+Israel	foreign
+Saudi Arabia	foreign
+Qatar	foreign
+Kuwait	foreign
+Bahrain	foreign
+Oman	foreign
+Egypt	foreign
+South Africa	foreign
+Nigeria	foreign
+Kenya	foreign
+China	foreign
+Hong Kong	foreign
+Taiwan	foreign
+South Korea	foreign
+Korea	foreign
+Malaysia	foreign
+Indonesia	foreign
+Thailand	foreign
+Vietnam	foreign
+Philippines	foreign
+Pakistan	foreign
+Bangladesh	foreign
+Sri Lanka	foreign
+Nepal	foreign
+Brazil	foreign
+Mexico	foreign
+Argentina	foreign
+Chile	foreign
+Colombia	foreign
+Peru	foreign
+Costa Rica	foreign
+Europe	foreign
+EMEA	foreign
+North America	foreign
+LATAM	foreign

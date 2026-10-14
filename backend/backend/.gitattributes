@@ -1,2 +1,4 @@
 /mvnw text eol=lf
 *.cmd text eol=crlf
+# Empty trailing TSV columns (e.g. no altNames) are data, not whitespace errors.
+src/main/resources/geo/*.tsv -whitespace

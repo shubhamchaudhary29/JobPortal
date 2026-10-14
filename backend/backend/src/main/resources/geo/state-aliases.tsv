@@ -1,0 +1,72 @@
+# alias	admin1 code (from in-admin1.tsv)
+# Deliberately excluded 2-letter codes that collide with foreign codes in job posts: OR (Oregon), GA (Georgia),
+# UK (United Kingdom; Uttarakhand), CH (Switzerland; Chandigarh), AS, BR (Brazil); never CA, NY, WA, PA.
+Andaman and Nicobar	01
+Andhra Pradesh	02
+Assam	03
+Chandigarh	05
+Delhi	07
+Gujarat	09
+Haryana	10
+Himachal Pradesh	11
+Jammu and Kashmir	12
+Kerala	13
+Lakshadweep	14
+Maharashtra	16
+Manipur	17
+Meghalaya	18
+Karnataka	19
+Nagaland	20
+Odisha	21
+Puducherry	22
+Punjab	23
+Rajasthan	24
+Tamil Nadu	25
+Tripura	26
+West Bengal	28
+Sikkim	29
+Arunachal Pradesh	30
+Mizoram	31
+Goa	33
+Bihar	34
+Madhya Pradesh	35
+Uttar Pradesh	36
+Chhattisgarh	37
+Jharkhand	38
+Uttarakhand	39
+Telangana	40
+Ladakh	41
+Dadra and Nagar Haveli and Daman and Diu	52
+Andaman and Nicobar Islands	01
+Andaman & Nicobar	01
+NCT of Delhi	07
+National Capital Territory of Delhi	07
+J&K	12
+Orissa	21
+Pondicherry	22
+Uttaranchal	39
+Telengana	40
+Daman and Diu	52
+Dadra and Nagar Haveli	52
+Chattisgarh	37
+AP	02
+CG	37
+DL	07
+GJ	09
+HP	11
+HR	10
+JH	38
+JK	12
+KA	19
+KL	13
+MH	16
+MP	35
+OD	21
+PB	23
+PY	22
+RJ	24
+TG	40
+TN	25
+TS	40
+UP	36
+WB	28
