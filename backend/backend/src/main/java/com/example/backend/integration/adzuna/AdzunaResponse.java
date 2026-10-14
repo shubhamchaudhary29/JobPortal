@@ -13,14 +13,21 @@ public record AdzunaResponse(List<AdzunaJob> results) {
                             @JsonProperty("salary_max") Double salaryMax,
                             @JsonProperty("contract_time") String employmentType,
                             @JsonProperty("created") String publishedAt,
-                            Company company, Location location) {
+                            Company company, Location location, Double latitude, Double longitude) {
+        public AdzunaJob(String id, String title, String description, String redirectUrl, Double salaryMin,
+                         Double salaryMax, String employmentType, String publishedAt, Company company, Location location) {
+            this(id, title, description, redirectUrl, salaryMin, salaryMax, employmentType, publishedAt, company, location,
+                    null, null);
+        }
         public AdzunaJob(String id, String title, String description, String redirectUrl, Double salaryMin,
                          Company company, Location location) {
-            this(id, title, description, redirectUrl, salaryMin, null, null, null, company, location);
+            this(id, title, description, redirectUrl, salaryMin, null, null, null, company, location, null, null);
         }
     }
     @JsonIgnoreProperties(ignoreUnknown = true)
     public record Company(@JsonProperty("display_name") String displayName) { }
     @JsonIgnoreProperties(ignoreUnknown = true)
-    public record Location(@JsonProperty("display_name") String displayName) { }
+    public record Location(@JsonProperty("display_name") String displayName, List<String> area) {
+        public Location(String displayName) { this(displayName, null); }
+    }
 }

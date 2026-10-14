@@ -252,6 +252,8 @@ public class AggregationConflictService {
         copy.setApplicationUrl(source.getApplicationUrl()); copy.setFirstSeenAt(source.getFirstSeenAt());
         copy.setLastSeenAt(source.getLastSeenAt()); copy.setActive(source.isActive());
         copy.setConsecutiveMissingRuns(source.getConsecutiveMissingRuns());
+        copy.setRawLocation(source.getRawLocation()); copy.setRawLocationInferred(source.isRawLocationInferred());
+        copy.setGeo(source.getGeo());
         return copy;
     }
 

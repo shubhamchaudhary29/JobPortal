@@ -19,19 +19,31 @@ import java.util.Date;
 import java.util.List;
 import com.example.backend.job.infrastructure.ImportedSourceListing;
 import com.example.backend.matching.application.JobFeatureService;
+import com.example.backend.geo.application.GeoResolver;
+import com.example.backend.geo.infrastructure.UnresolvedLocationRecorder;
+import com.example.backend.job.domain.GeoStatus;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 @Repository
 public class AdzunaJobStore {
+    private static final Logger log = LoggerFactory.getLogger(AdzunaJobStore.class);
+    private static final int MAX_RAW_LOCATION = 300;
     private final MongoTemplate mongo;
     private final AggregationConflictService conflicts;
     private final JobFeatureService jobFeatures;
+    private final GeoResolver geoResolver;
+    private final UnresolvedLocationRecorder unresolvedLocations;
     @Autowired
-    public AdzunaJobStore(MongoTemplate mongo, AggregationConflictService conflicts, JobFeatureService jobFeatures) {
+    public AdzunaJobStore(MongoTemplate mongo, AggregationConflictService conflicts, JobFeatureService jobFeatures,
+                          GeoResolver geoResolver, UnresolvedLocationRecorder unresolvedLocations) {
         this.mongo = mongo;
         this.conflicts = conflicts;
         this.jobFeatures = jobFeatures;
+        this.geoResolver = geoResolver;
+        this.unresolvedLocations = unresolvedLocations;
     }
-    AdzunaJobStore(MongoTemplate mongo) { this(mongo, null, null); }
+    AdzunaJobStore(MongoTemplate mongo) { this(mongo, null, null, null, null); }
     public UpsertOutcome upsert(JobDocument job, LocalDateTime now) {
         return upsert(job, now, null);
     }
@@ -65,6 +77,7 @@ public class AdzunaJobStore {
         listing.setIdentity(identity); listing.setProvider(job.getSource()); listing.setExternalId(job.getExternalId());
         listing.setEmployer(employer);
         listing.setApplicationUrl(job.getApplicationUrl()); listing.setFirstSeenAt(now); listing.setLastSeenAt(now); listing.setActive(true);
+        resolveLocation(job, listing);
         UpdateDefinition update = canonicalUpsertUpdate(job, now, identity, listing);
         try {
             UpsertOutcome result = outcome(mongo.findAndModify(query, update,
@@ -181,7 +194,24 @@ public class AdzunaJobStore {
                 .append("consecutiveMissingRuns", listing.getConsecutiveMissingRuns());
         if (listing.getEmployer() != null) document.append("employer", listing.getEmployer());
         if (listing.getApplicationUrl() != null) document.append("applicationUrl", listing.getApplicationUrl());
+        // Pipeline update: provider strings starting with '$' would otherwise be read as field paths.
+        if (listing.getRawLocation() != null) document.append("rawLocation", literal(listing.getRawLocation()));
+        if (listing.getGeo() != null) document.append("geo", literal(mongo.getConverter().convertToMongoType(listing.getGeo())));
         return document;
+    }
+    private void resolveLocation(JobDocument job, ImportedSourceListing listing) {
+        if (geoResolver == null) return;
+        String location = job.getLocation();
+        listing.setRawLocation(location == null || location.length() <= MAX_RAW_LOCATION ? location
+                : location.substring(0, MAX_RAW_LOCATION));
+        listing.setGeo(geoResolver.resolve(location, job.getLocationHint()));
+        if (listing.getGeo().status() != GeoStatus.UNRESOLVED || unresolvedLocations == null) return;
+        try {
+            unresolvedLocations.record(location, job.getSource());
+        } catch (RuntimeException failure) {
+            // Visibility only; an unresolved-location counter must never fail an import.
+            log.debug("event=geo_unresolved_record_failed type={}", failure.getClass().getSimpleName());
+        }
     }
     private Document literal(Object value) {
         return new Document("$literal", value);

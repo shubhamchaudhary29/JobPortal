@@ -53,6 +53,12 @@ public class MongoIndexInitializer implements ApplicationRunner {
         jobs.ensureIndex(new Index().on("active", Sort.Direction.ASC)
                 .on("createdAt", Sort.Direction.DESC).on("_id", Sort.Direction.ASC)
                 .named("jobs_matching_window_v2_idx"));
+        jobs.ensureIndex(new Index().on("sourceListings.geo.placeIds", Sort.Direction.ASC)
+                .named("jobs_listing_geo_place_idx"));
+        jobs.ensureIndex(new Index().on("geo.placeIds", Sort.Direction.ASC).named("jobs_geo_place_idx"));
+        jobs.ensureIndex(new Index().on("sourceListings.geo.version", Sort.Direction.ASC)
+                .named("jobs_listing_geo_version_idx"));
+        jobs.ensureIndex(new Index().on("geo.version", Sort.Direction.ASC).named("jobs_geo_version_idx"));
         jobs.ensureIndex(new TextIndexDefinition.TextIndexDefinitionBuilder().onField("title").onField("description")
                 .onField("company").named("jobs_search_text_idx").build());
         mongo.indexOps("aggregation_conflicts").ensureIndex(new Index()
@@ -69,6 +75,8 @@ public class MongoIndexInitializer implements ApplicationRunner {
                 .expire(Duration.ZERO).named("sync_run_retention_ttl"));
         mongo.indexOps("smartrecruiters_posting_details").ensureIndex(new Index().on("expiresAt", Sort.Direction.ASC)
                 .expire(Duration.ZERO).named("smartrecruiters_detail_retention_ttl"));
+        mongo.indexOps("unresolved_locations").ensureIndex(new Index().on("lastSeenAt", Sort.Direction.ASC)
+                .expire(Duration.ofDays(90)).named("unresolved_location_retention_ttl"));
         mongo.indexOps("provider_request_budgets").ensureIndex(new Index().on("expiresAt", Sort.Direction.ASC)
                 .expire(Duration.ZERO).named("provider_request_budget_retention_ttl"));
         IndexOperations registry = mongo.indexOps("employer_registry");
