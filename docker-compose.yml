@@ -137,6 +137,7 @@ services:
 
     volumes:
       - /etc/letsencrypt:/etc/letsencrypt:ro
+      - ${TILES_DIR:-./tiles}:/usr/share/nginx/tiles:ro
     depends_on:
       backend:
         condition: service_healthy
