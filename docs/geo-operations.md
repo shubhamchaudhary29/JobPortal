@@ -144,6 +144,46 @@ does not yet tell them apart from India-remote ones.
 **Load tests (local only):** seed with `python3 backend/backend/scripts/seed-map-jobs.py | docker compose exec
 -T mongodb mongosh --quiet jobportal`, restart the backend, then run `scripts/k6/map-jobs.js`.
 
+## Map tiles
+
+The base map is an India extract of the Protomaps OpenStreetMap basemap (one `.pmtiles` file) plus the fonts and
+sprites its style uses, served by our own nginx from a host directory. No map API, no keys, no per-view cost.
+
+### Build or refresh (on the EC2 host, in the repo directory)
+
+1. Check disk space: `df -h .` — a refresh needs about **2×** the archive size free while the old and new files
+   coexist (≈600 MB at z11 today).
+2. Install the `pmtiles` CLI from <https://github.com/protomaps/go-pmtiles/releases> (Linux x86_64 tarball; put the
+   `pmtiles` binary on `PATH`) and check it with `pmtiles version`.
+3. Run `bash frontend/scripts/build-tiles.sh --out ./tiles` (bash, not sh). It picks the newest daily build from
+   `build-metadata.protomaps.dev/builds.json` (pass `--source https://build.protomaps.com/<YYYYMMDD>.pmtiles` to pin
+   one), extracts India at `--maxzoom 11` (about 35 s, 276 MiB), and downloads only the fonts/sprites the style uses
+   from a pinned `protomaps/basemaps-assets` commit.
+4. Run it **before** the first `docker compose up`: if `./tiles` does not exist, Docker creates it owned by root and
+   the script cannot write to it (`sudo chown -R "$USER" ./tiles` fixes that).
+
+`TILES_DIR` (default `./tiles`) is mounted read-only into the frontend container. The script writes everything into
+a temp dir and swaps `manifest.json` **last**, so browsers never see a manifest pointing at a missing file, and no
+container restart or image rebuild is needed. It keeps the current and the previous `.pmtiles` and deletes older
+ones. Monthly refreshes are plenty.
+
+**Roll back:** edit `tiles/manifest.json` so `"pmtiles"` names the previous file (it is still on disk). Clients pick
+it up on their next page load (`manifest.json` is served `no-cache`; everything else is immutable).
+
+**Missing volume:** the site still works; `/tiles/manifest.json` is 404 and the map shows a plain background with
+"Map background unavailable — markers still work".
+
+### Rules
+
+- **Disputed boundaries:** India's official map differs from OpenStreetMap's de facto boundaries. The style draws no
+  boundary lines of any kind and no country or state/region labels (`baseStyle.js`; enforced by tests). Do not try to
+  draw "corrected" borders.
+- **Never hotlink** `maps.protomaps.com` / `build.protomaps.com` builds from the app; always extract and self-host.
+- **Attribution** must stay visible on the map: © OpenStreetMap contributors (ODbL), Protomaps, GeoNames (CC BY 4.0).
+  It comes from `manifest.json`.
+- **CDN (GEO-7):** Cloudflare does not cache byte-range requests to large files on the free plan by default; serving
+  `.pmtiles` through Cloudflare needs R2 + a Worker (Protomaps' documented path) or a cache rule, not a plain proxy.
+
 ## Attribution
 
 GeoNames data is CC BY 4.0 (see `src/main/resources/geo/ATTRIBUTION.md`). Any page that shows resolved
