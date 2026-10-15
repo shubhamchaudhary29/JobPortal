@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { useNavigate, useSearchParams } from "react-router-dom";
+import { Link, useNavigate, useSearchParams } from "react-router-dom";
 import Header from "../components/Header";
 import JobCard from "../components/jobs/JobCard";
 import { getAllJobs } from "../services/job-service";
@@ -17,6 +17,8 @@ export default function Jobs() {
   const locationQuery = searchParams.get("location") || "";
   const page = Math.max(0, Number.parseInt(searchParams.get("page") || "0", 10) || 0);
   const requestKey = `${page}:${roleQuery}:${locationQuery}:${retryKey}`;
+  const mapQuery = searchParams.get("role")?.trim().slice(0, 100);
+  const mapLink = mapQuery ? `/jobs/map?${new URLSearchParams({ q: mapQuery })}` : "/jobs/map";
   const loading = loadedKey !== requestKey;
 
   useEffect(() => {
@@ -48,13 +50,18 @@ export default function Jobs() {
       <Header />
 
       <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-10">
-        <div className="mb-10">
-          <h1 className="text-3xl font-extrabold text-slate-900">
-            {roleQuery || locationQuery ? "Search Results" : "Explore Opportunities"}
-          </h1>
-          <p className="text-slate-500 mt-2 font-medium">
-            {pageData.totalElements} {pageData.totalElements === 1 ? 'job' : 'jobs'} found based on your preferences.
-          </p>
+        <div className="mb-10 flex flex-wrap items-end justify-between gap-4">
+          <div>
+            <h1 className="text-3xl font-extrabold text-slate-900">
+              {roleQuery || locationQuery ? "Search Results" : "Explore Opportunities"}
+            </h1>
+            <p className="text-slate-500 mt-2 font-medium">
+              {pageData.totalElements} {pageData.totalElements === 1 ? 'job' : 'jobs'} found based on your preferences.
+            </p>
+          </div>
+          <Link to={mapLink} className="inline-flex items-center gap-2 rounded-xl bg-indigo-50 px-5 py-2.5 text-sm font-semibold text-indigo-600 transition hover:bg-indigo-100">
+            <span aria-hidden="true">🗺️</span> View on map
+          </Link>
         </div>
 
         {loading ? (

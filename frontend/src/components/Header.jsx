@@ -51,6 +51,9 @@ export default function Header() {
             <Link to="/jobs" className="text-sm font-medium text-slate-600 hover:text-indigo-600 transition-colors hidden sm:block">
               Browse Jobs
             </Link>
+            <Link to="/jobs/map" className="text-sm font-medium text-slate-600 hover:text-indigo-600 transition-colors hidden sm:block">
+              Map
+            </Link>
 
             {!isLoggedIn ? (
               <div className="flex items-center gap-3">

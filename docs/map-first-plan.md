@@ -45,7 +45,8 @@ Attribution required: © OpenStreetMap contributors, GeoNames (CC-BY 4.0).
 - [x] GEO-2 — in-memory map snapshot endpoint with ETag/304 and pregzipped bodies (PR #17)
 - [x] GEO-3 — map job lists (place, nearby, unplaced) with a snapshot-versioned cache, plus nginx upstream keepalive (PR #18)
 - [x] GEO-4 — self-hosted India basemap (.pmtiles + fonts/sprites in a volume, served by nginx) and a MapLibre base map with no borders or country/state labels (PR #19)
-- [ ] GEO-5 … GEO-7
+- [x] GEO-5 — `/jobs/map`: clustered city markers, place/near-me/this-area job lists, Remote and Anywhere-in-India tabs, linked from the header and Jobs page (PR #20)
+- [ ] GEO-6 … GEO-7
 
 ---
 
@@ -161,6 +162,18 @@ No geo query and no distance sort yet — with city-centre places they add nothi
 - Marker → place panel → existing `JobDetails` → existing `ApplyJobModal`.
 - City-level markers labelled as areas ("Bengaluru · 214 jobs"); office pins styled differently (GEO-6).
 - "Remote & anywhere in India" tab for jobs without places.
+
+**Done (PR #20):**
+- The page is `/jobs/map` (lazy chunk), linked from the header ("Map") and the Jobs page ("View on map"). The
+  **homepage is unchanged**: whether the map becomes the homepage is decided from production coverage numbers.
+- The temporary GEO-4 `/map-preview` route redirects to `/jobs/map`; `MapPreview.jsx` is gone.
+- Separate tabs: **Remote** (captioned as possibly including roles outside India, see follow-ups) and
+  **Anywhere in India** (STATE + COUNTRY).
+- Privacy: the browser rounds user coordinates to the 0.05° grid before any request; they are never put in the URL,
+  stored (no localStorage) or logged. Only `place`, `tab` and `q` are query params; the map view is in the hash,
+  except while a near-me area is shown.
+  Near-me and this-area searches live in memory only and reset to "Top places" on reload.
+- Office pins stay GEO-6; markers are city-level areas.
 
 ---
 

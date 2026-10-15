@@ -27,6 +27,10 @@ export const apiRoutes = Object.freeze({
     coverLetters: (id) => `${API_V1}/jobs/${encodeURIComponent(id)}/cover-letters`,
     applications: (id) => `${API_V1}/jobs/${encodeURIComponent(id)}/applications`,
     applicationStatus: (id) => `${API_V1}/jobs/${encodeURIComponent(id)}/application-status`,
+    mapSnapshot: `${API_V1}/jobs/map/snapshot`,
+    mapPlaceJobs: (id) => `${API_V1}/jobs/map/places/${encodeURIComponent(id)}/jobs`,
+    mapNearby: `${API_V1}/jobs/map/nearby`,
+    mapUnplaced: `${API_V1}/jobs/map/unplaced`,
   }),
   applications: Object.freeze({
     collection: `${API_V1}/applications`,

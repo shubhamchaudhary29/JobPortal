@@ -13,4 +13,12 @@ describe("versioned API routes", () => {
     expect(apiRoutes.adminAggregation.registryValidation("a b")).toBe("/api/v1/admin/ingestion/registry/a%20b/validation");
     expect(apiRoutes.candidateProfile.resumeStatus).toBe("/api/v1/candidate-profile/resume/status");
   });
+
+  it("routes the map endpoints and encodes place ids", () => {
+    expect(apiRoutes.jobs.mapSnapshot).toBe("/api/v1/jobs/map/snapshot");
+    expect(apiRoutes.jobs.mapPlaceJobs("1277333")).toBe("/api/v1/jobs/map/places/1277333/jobs");
+    expect(apiRoutes.jobs.mapPlaceJobs("a/b c")).toBe("/api/v1/jobs/map/places/a%2Fb%20c/jobs");
+    expect(apiRoutes.jobs.mapNearby).toBe("/api/v1/jobs/map/nearby");
+    expect(apiRoutes.jobs.mapUnplaced).toBe("/api/v1/jobs/map/unplaced");
+  });
 });

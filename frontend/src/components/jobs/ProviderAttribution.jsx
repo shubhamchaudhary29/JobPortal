@@ -12,7 +12,7 @@ export default function ProviderAttribution({ source, className = "" }) {
   if (!provider) return null;
   return (
     <a href={provider.url} target="_blank" rel="noopener noreferrer"
-      className={`inline-flex min-h-[23px] min-w-[116px] items-center text-xs text-slate-500 underline ${className}`}
+      className={`inline-flex min-h-[23px] min-w-[116px] items-center gap-1 text-xs text-slate-500 underline ${className}`}
       data-testid="provider-attribution">
       Jobs by{" "}<span className="font-semibold">{provider.name}</span>
     </a>
