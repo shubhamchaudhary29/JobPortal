@@ -89,6 +89,12 @@ public class MongoIndexInitializer implements ApplicationRunner {
                 .on("boardKey", Sort.Direction.ASC).named("employer_registry_enabled_order_idx"));
         mongo.indexOps("employer_registry_audit").ensureIndex(new Index().on("entryId", Sort.Direction.ASC)
                 .on("at", Sort.Direction.DESC).named("employer_registry_audit_entry_at_idx"));
+        IndexOperations offices = mongo.indexOps("company_offices");
+        offices.ensureIndex(new Index().on("companyKey", Sort.Direction.ASC).named("company_offices_company_idx"));
+        offices.ensureIndex(new Index().on("companyKey", Sort.Direction.ASC).on("placeId", Sort.Direction.ASC)
+                .on("label", Sort.Direction.ASC).unique().named("company_offices_company_place_label_unique"));
+        mongo.indexOps("company_office_audit").ensureIndex(new Index().on("officeId", Sort.Direction.ASC)
+                .on("at", Sort.Direction.DESC).named("company_office_audit_office_at_idx"));
         mongo.indexOps("candidate_profiles").ensureIndex(new Index().on("userId", Sort.Direction.ASC)
                 .unique().named("candidate_profile_user_unique"));
         IndexOperations resumes = mongo.indexOps("tailored_resume_versions");

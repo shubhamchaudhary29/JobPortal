@@ -137,7 +137,10 @@ export default function EmployerRegistryAdmin() {
             <h1 className="text-3xl font-extrabold text-slate-900">Employer registry</h1>
             <p className="mt-1 text-slate-600">ATS boards that scheduled ingestion reads. Changes apply on the next run and are audited.</p>
           </div>
-          <Link to="/admin/aggregation" className="font-bold text-indigo-700">← Aggregation operations</Link>
+          <div className="flex gap-4">
+            <Link to="/admin/offices" className="font-bold text-indigo-700">Office pins →</Link>
+            <Link to="/admin/aggregation" className="font-bold text-indigo-700">← Aggregation operations</Link>
+          </div>
         </div>
 
         {notice && <div role="status" className="rounded-xl border border-indigo-200 bg-indigo-50 p-4 text-indigo-900">{notice}</div>}

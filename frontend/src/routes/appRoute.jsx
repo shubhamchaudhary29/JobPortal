@@ -23,6 +23,7 @@ import MapJobsSkeleton from "../components/map/MapJobsSkeleton";
 
 // Lazy so MapLibre stays out of the entry bundle.
 const MapJobs = lazy(() => import("../pages/MapJobs"));
+const OfficeAdmin = lazy(() => import("../pages/OfficeAdmin"));
 
 export default function AppRoutes() {
   return (
@@ -120,6 +121,16 @@ export default function AppRoutes() {
         element={
           <ProtectedRoute requiredRole="ADMIN">
             <AggregationAdmin />
+          </ProtectedRoute>
+        }
+      />
+      <Route
+        path="/admin/offices"
+        element={
+          <ProtectedRoute requiredRole="ADMIN">
+            <Suspense fallback={<p role="status" className="p-6 text-sm text-slate-500">Loading office pins…</p>}>
+              <OfficeAdmin />
+            </Suspense>
           </ProtectedRoute>
         }
       />

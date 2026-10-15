@@ -24,6 +24,7 @@ export default function MapJobCard({ job, distanceKm }) {
   const date = posted(job);
   const distance = formatDistance(distanceKm);
   const type = job.employmentType ? employmentLabel(job.employmentType) : "";
+  const officeLabel = job.places?.[0]?.officeLabel;
 
   return (
     <article className="group rounded-2xl border border-slate-100 bg-white p-4 shadow-sm transition-all duration-200 hover:border-indigo-100 hover:shadow-md">
@@ -36,7 +37,8 @@ export default function MapJobCard({ job, distanceKm }) {
           <h3 className="line-clamp-2 font-bold text-slate-900 transition-colors group-hover:text-indigo-600">{job.title}</h3>
           {job.company && <p className="mt-0.5 truncate text-sm font-medium text-slate-500">{job.company}</p>}
           <div className="mt-3 flex flex-wrap gap-1.5">
-            {job.location && <span className={chip}>📍 {job.location}</span>}
+            {officeLabel ? <span className={`${chip} bg-indigo-50 text-indigo-700`} title={job.location || undefined}>📍 {officeLabel}</span>
+              : job.location && <span className={chip}>📍 {job.location}</span>}
             <span className={chip}>💰 {formatSalary(job.salaryMin, job.salaryMax)}</span>
             {type && <span className={chip}>{type}</span>}
             {distance && <span className="inline-flex items-center rounded-lg bg-indigo-50 px-2 py-1 text-xs font-semibold text-indigo-700">{distance} away</span>}

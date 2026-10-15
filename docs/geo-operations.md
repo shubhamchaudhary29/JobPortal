@@ -75,6 +75,12 @@ report uses; each job counts once per place. Reconciliation duplicates and inact
 
 It is built by one aggregation and served from memory; requests never reach MongoDB.
 
+Office pins (GEO-6) add two fields and change no existing one: `places[].officeJobs` (how many of the city's `jobs`
+belong to a pinned office; `jobs - officeJobs` stay at the city centre) and `offices[]` (`id`, `company`, `label`,
+`placeId`, `lat`, `lng`, `jobs`; only offices that own jobs, sorted by id). The aggregation groups placed jobs by sorted
+place ids and `lower(trim(company))` (keeping up to 5 raw spellings per group); Java maps each group's company key to
+an office. More than 100,000 groups logs `event=geo_snapshot_large_facet` (no failure).
+
 | Header | Value |
 |---|---|
 | `ETag` | `"<version>"`: a hash of the content, unchanged while the data is unchanged |
@@ -111,6 +117,7 @@ All anonymous `GET`s; responses never include descriptions, application URLs or 
 | `/api/v1/jobs/map/places/{placeId}/jobs` | Jobs at one place (404 if the place is not in the gazetteer) | `public, max-age=60` |
 | `/api/v1/jobs/map/nearby?lat&lng&radiusKm` | Nearest 50 places within the radius + their jobs | `private, max-age=60` |
 | `/api/v1/jobs/map/unplaced?kind=remote\|india` | Jobs with no place: REMOTE, or STATE/COUNTRY | `public, max-age=60` |
+| `/api/v1/jobs/map/offices/{officeId}/jobs` | Jobs at one pinned office (404 if unknown, disabled or ambiguous) | `public, max-age=60` |
 
 Common parameters: `q` (optional phrase search, max 100 chars; quotes are ignored), `page` 0–49 (default 0),
 `size` 1–20 (default 20). Paging is slice-based (`hasNext`, no count query). Jobs are newest first.
@@ -121,6 +128,13 @@ Common parameters: `q` (optional phrase search, max 100 chars; quotes are ignore
 - **Nearby:** `lat`/`lng` are rounded to a 0.05° grid (≈5 km) before any use; the raw values are never stored,
   cached or logged. Candidate places come from the in-memory snapshot (at most 200 are queried, 50 returned).
   Each job lists its in-radius places with `distanceKm`.
+- **Offices:** each job place carries `officeId`/`officeLabel` when the company has a pinned office there, and in
+  nearby its `distanceKm` is measured to the office point. Nearby `places` mixes cities (`kind: "city"`) and offices
+  within the radius (`kind: "office"`, with `officeId`, `company`, `label`, the office's point and jobs), sorted by
+  distance. An office in range brings its own jobs even when its city centre is out of range. Lists stay newest first;
+  there is no distance sort.
+- **Office list:** the GEO-3 place filter for the office's city AND `company` in the spellings the last snapshot
+  counted for that office. A spelling first seen after the last snapshot appears after the next refresh.
 - **Limits:** `radiusKm` 1–100 (default 25); every query has `maxTimeMS` 3000.
 - **503 `Retry-After: 10`:** no snapshot yet (same as the snapshot endpoint).
   **503 `Retry-After: 5`:** a query exceeded 3 s.
@@ -133,13 +147,17 @@ Common parameters: `q` (optional phrase search, max 100 chars; quotes are ignore
 | `GEO_MAP_JOBS_CACHE_MAX_ENTRIES` | `2000` | Expired entries go first, then the oldest |
 
 Metrics: `jobportal.geo.mapjobs.cache` (counter, `result=hit|miss`), `jobportal.geo.mapjobs.query` (timer,
-`endpoint=place|nearby|unplaced`), `jobportal.geo.mapjobs.timeouts` (counter).
+`endpoint=place|office|nearby|unplaced`), `jobportal.geo.mapjobs.timeouts` (counter).
 
 **nginx:** `/api/` is proxied through an upstream with `keepalive 64` over HTTP/1.1 (GEO-3A). Without it,
 every request opened a new backend connection and load tests failed with 502 (`99: Address not available`).
 
-**Known limitation:** REMOTE includes foreign-remote listings such as "Remote - United States"; the resolver
-does not yet tell them apart from India-remote ones.
+**Remote scope (GEO-6A, parser version 2):** a remote marker is scoped by its own candidate. "Remote",
+"Work from home" and "Remote - India" are REMOTE; a remote marker whose only location is foreign ("Remote - United
+States", "United States (Remote)", "Remote - San Francisco, CA, United States") is FOREIGN with `remote: true`, so it
+is not in the Remote list. Any open or India-scoped remote marker in the location keeps the job REMOTE, and a resolved
+Indian place keeps it PLACE. Postings can still restrict eligibility in their description, which the resolver does not
+read, so the Remote tab asks candidates to check each posting.
 
 **Load tests (local only):** seed with `python3 backend/backend/scripts/seed-map-jobs.py | docker compose exec
 -T mongodb mongosh --quiet jobportal`, restart the backend, then run `scripts/k6/map-jobs.js`.
@@ -183,6 +201,54 @@ it up on their next page load (`manifest.json` is served `no-cache`; everything 
   It comes from `manifest.json`.
 - **CDN (GEO-7):** Cloudflare does not cache byte-range requests to large files on the free plan by default; serving
   `.pmtiles` through Cloudflare needs R2 + a Worker (Protomaps' documented path) or a cache rule, not a plain proxy.
+
+## Office pins
+
+City markers sit at the city centre. An ADMIN can pin a company's real office once, and from then on that company's
+jobs in that city show at the office, with real distances in "near me". Pins come from a click on the map: no
+geocoding API.
+
+**Data:** `company_offices` (one document per office: `companyKey`, `company` as entered, `label`, `placeId`, `lat`,
+`lng`, `enabled`, created/updated by and at) and the append-only `company_office_audit` (before/after per change).
+Company and city are an office's identity; to change either, disable the office and pin a new one.
+
+**Editor:** `/admin/offices` (ADMIN; linked from Aggregation operations and the employer registry). Pick a row in the
+worklist ("Pin office"), click the map at the office (zoom 12 on the city) and drag the pin to adjust, give it a label
+and Save. A 400 (for example "Pin is far from Bengaluru") is shown under the map. "New office" starts without a city:
+the server assigns the nearest large city. The offices table edits label and pin, enables/disables, and shows each
+office's audit history.
+
+**API** (ADMIN, `/api/v1/admin/geo/offices`): `GET` list (`q`, `enabled`, paging), `GET /{id}`, `POST`
+(`company`, `label`, `lat`, `lng`, optional `placeId`), `PATCH /{id}` (`label`, `lat`, `lng`, `enabled`),
+`GET /{id}/audit`, `GET /candidates?limit=50`.
+
+**Work the candidates list.** `candidates` ranks (company, city) pairs by visible jobs where the company has no
+enabled office in that city, so the pins that move the most jobs come first. Companies are merged by their matching
+key, so "Acme Pvt Ltd" and "ACME" are one row (shown with the most common spelling). The list is cached for 5 minutes
+and dropped when an office changes.
+
+**Validation:**
+- The pin must be inside India's bounding box (lat 6–37.5, lng 68–97.5).
+- Without `placeId` the office belongs to the nearest city of 100,000+ people (a pin in Cyber City is Gurugram, not
+  Delhi). Pass `placeId` for a smaller city.
+- **60 km guard:** the pin must be within 60 km of its city's centre, otherwise 400 "Pin is far from <city>". It
+  catches misclicks (a Bengaluru office dropped in Mysuru). A real office further out belongs to another city.
+- Labels are 2–80 characters and unique per company and city.
+
+**Which jobs an office gets:** a job of company key `k` at place `p` belongs to an office only if **exactly one**
+enabled office has key `k` and place `p`. With two enabled offices for one company in one city, neither gets jobs and
+the company stays at city level there (ambiguous; disable one to fix it). Offices apply to jobs from every provider.
+They are assigned at read time; jobs are never rewritten.
+
+**How long until a change shows:** every office create/update/disable schedules a snapshot rebuild 5 s later
+(property `geo.snapshot.office-refresh-delay-ms`, default 5000; debounced, so a burst of edits costs one build). Browsers cache the snapshot for
+up to 60 s, so the map shows a change within about a minute; the worst case is the regular 5-minute rebuild if the
+async one fails. Job lists use the new snapshot version as their cache key, so they switch at the same time.
+
+**Company matching key** (`shared.text.CompanyNames`, also used by job fingerprints): NFKC, lower case, `&` → "and",
+punctuation removed, legal suffixes (`pvt ltd`, `limited`, `technologies`, `india`, …) stripped from the end, then
+former names mapped by `backend/backend/src/main/resources/aggregation/company-aliases.json`. Changing that file
+changes fingerprints too, so it needs a new `JobFingerprint.VERSION` and the fingerprint migration.
 
 ## Map page
 

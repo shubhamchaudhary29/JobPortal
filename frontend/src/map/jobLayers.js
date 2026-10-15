@@ -9,6 +9,8 @@ export const LAYERS = Object.freeze({
   selected: "places-selected",
   pointCounts: "places-counts",
   names: "places-names",
+  offices: "offices-points",
+  officeNames: "offices-names",
 });
 /** Zoom at which clusters have all split into single places (clusterMaxZoom + 1). */
 export const PLACE_ZOOM = 10;
@@ -24,6 +26,10 @@ const FONT_REGULAR = ["Noto Sans Regular"];
 const NONE_SELECTED = "";
 
 const JOBS = ["get", "jobs"];
+const UNCLUSTERED = ["!", ["has", "point_count"]];
+const IS_OFFICE = ["==", ["get", "kind"], "office"];
+const CITY_POINTS = ["all", UNCLUSTERED, ["!", IS_OFFICE]];
+const OFFICE_POINTS = ["all", UNCLUSTERED, IS_OFFICE];
 /** Same shape as formatCount: 999, 1.2k, 12k. */
 export const COUNT_LABEL = ["case",
   [">=", JOBS, 10000], ["concat", ["to-string", ["round", ["/", JOBS, 1000]]], "k"],
@@ -47,8 +53,8 @@ export function markerOpacity(dimmed) {
   return dimmed ? { circle: 0.25, stroke: 0.4, text: 0.4 } : { circle: 0.85, stroke: 1, text: 1 };
 }
 
-export const selectedFilter = (placeId) =>
-  ["all", ["!", ["has", "point_count"]], ["==", ["get", "id"], placeId || NONE_SELECTED]];
+/** Ring around the selected city or office (ids never collide: gazetteer numbers vs Mongo ids). */
+export const selectedFilter = (id) => ["all", UNCLUSTERED, ["==", ["get", "id"], id || NONE_SELECTED]];
 
 /** Layer specs in drawing order. Text layers are included only when the style has glyphs. */
 export function jobLayers({ hasGlyphs }) {
@@ -60,12 +66,16 @@ export function jobLayers({ hasGlyphs }) {
     { id: LAYERS.clusters, type: "circle", source: PLACES_SOURCE, filter: ["has", "point_count"],
       paint: { "circle-color": INDIGO_600, "circle-opacity": opacity.circle, "circle-stroke-color": WHITE,
         "circle-stroke-width": 2, "circle-stroke-opacity": opacity.stroke, "circle-radius": RADIUS_BY_JOBS(14, 38) } },
-    { id: LAYERS.points, type: "circle", source: PLACES_SOURCE, filter: ["!", ["has", "point_count"]],
+    { id: LAYERS.points, type: "circle", source: PLACES_SOURCE, filter: CITY_POINTS,
       paint: { "circle-color": INDIGO_600, "circle-opacity": opacity.circle, "circle-stroke-color": WHITE,
         "circle-stroke-width": 1.5, "circle-stroke-opacity": opacity.stroke, "circle-radius": RADIUS_BY_JOBS(9, 30) } },
+    // Offices: white with an indigo ring and smaller, so they read as a precise point rather than an area.
+    { id: LAYERS.offices, type: "circle", source: PLACES_SOURCE, filter: OFFICE_POINTS,
+      paint: { "circle-color": WHITE, "circle-opacity": 1, "circle-stroke-color": INDIGO_600, "circle-stroke-width": 3,
+        "circle-stroke-opacity": opacity.stroke, "circle-radius": RADIUS_BY_JOBS(6, 14) } },
     { id: LAYERS.selected, type: "circle", source: PLACES_SOURCE, filter: selectedFilter(null),
       paint: { "circle-color": "rgba(0,0,0,0)", "circle-stroke-color": INDIGO_900, "circle-stroke-width": 3,
-        "circle-radius": ["+", RADIUS_BY_JOBS(9, 30), 4] } },
+        "circle-radius": ["+", ["case", IS_OFFICE, RADIUS_BY_JOBS(6, 14), RADIUS_BY_JOBS(9, 30)], 4] } },
   ];
   if (!hasGlyphs) return layers;
   return [
@@ -73,14 +83,18 @@ export function jobLayers({ hasGlyphs }) {
     { id: LAYERS.clusterCounts, type: "symbol", source: PLACES_SOURCE, filter: ["has", "point_count"],
       layout: { "text-field": COUNT_LABEL, "text-font": FONT_MEDIUM, "text-size": 12, "text-allow-overlap": true },
       paint: { "text-color": WHITE, "text-opacity": opacity.text } },
-    { id: LAYERS.pointCounts, type: "symbol", source: PLACES_SOURCE, filter: ["!", ["has", "point_count"]],
+    { id: LAYERS.pointCounts, type: "symbol", source: PLACES_SOURCE, filter: CITY_POINTS,
       layout: { "text-field": COUNT_LABEL, "text-font": FONT_MEDIUM, "text-size": 11, "text-allow-overlap": true },
       paint: { "text-color": WHITE, "text-opacity": opacity.text } },
     { id: LAYERS.names, type: "symbol", source: PLACES_SOURCE, minzoom: NAMES_MIN_ZOOM,
-      filter: ["!", ["has", "point_count"]],
+      filter: CITY_POINTS,
       layout: { "text-field": ["concat", ["get", "name"], " · ", COUNT_LABEL, " jobs"], "text-font": FONT_REGULAR,
         "text-size": 12, "text-anchor": "top", "text-offset": [0, 1.6], "text-optional": true },
       paint: { "text-color": SLATE_700, "text-halo-color": WHITE, "text-halo-width": 1.5, "text-opacity": opacity.text } },
+    { id: LAYERS.officeNames, type: "symbol", source: PLACES_SOURCE, filter: OFFICE_POINTS,
+      layout: { "text-field": ["get", "name"], "text-font": FONT_MEDIUM, "text-size": 11, "text-anchor": "left",
+        "text-offset": [1.2, 0], "text-optional": true },
+      paint: { "text-color": INDIGO_900, "text-halo-color": WHITE, "text-halo-width": 1.5, "text-opacity": opacity.text } },
   ];
 }
 
@@ -93,6 +107,9 @@ export function dimmingPaint(dimmed) {
     [LAYERS.points, "circle-opacity", opacity.circle],
     [LAYERS.points, "circle-stroke-opacity", opacity.stroke],
     [LAYERS.selected, "circle-stroke-opacity", opacity.stroke],
+    [LAYERS.offices, "circle-opacity", dimmed ? 0.4 : 1],
+    [LAYERS.offices, "circle-stroke-opacity", opacity.stroke],
+    [LAYERS.officeNames, "text-opacity", opacity.text],
     [LAYERS.clusterCounts, "text-opacity", opacity.text],
     [LAYERS.pointCounts, "text-opacity", opacity.text],
     [LAYERS.names, "text-opacity", opacity.text],

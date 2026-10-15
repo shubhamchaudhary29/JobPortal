@@ -107,6 +107,8 @@ public class Gazetteer {
 
     public Optional<Place> byId(String id) { return Optional.ofNullable(id == null ? null : byId.get(id)); }
     public int placeCount() { return byId.size(); }
+    /** Every place, for in-memory scans such as the nearest city to an office pin. */
+    public java.util.Collection<Place> places() { return java.util.Collections.unmodifiableCollection(byId.values()); }
     /** First 12 hex characters of SHA-256 over every data file's raw bytes. */
     public String dataHash() { return dataHash; }
     public List<Place> aliasMatches(String key) { return aliases.getOrDefault(key, List.of()); }

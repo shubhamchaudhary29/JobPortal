@@ -1,5 +1,6 @@
 package com.example.backend.integration.aggregation;
 
+import com.example.backend.shared.text.CompanyNames;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import java.io.IOException;
@@ -33,8 +34,6 @@ public final class JobFingerprint {
     private static final Set<String> COUNTRIES = new HashSet<>();
     private static final List<String> REMOTE_WORDS = new ArrayList<>();
     private static final List<String> WORK_MODE_WORDS = new ArrayList<>();
-    private static final List<String> COMPANY_SUFFIXES = new ArrayList<>();
-    private static final Map<String, String> COMPANY_ALIASES = new HashMap<>();
 
     static {
         JsonNode cities = read("aggregation/city-aliases.json");
@@ -48,10 +47,6 @@ public final class JobFingerprint {
         REMOTE_WORDS.sort((left, right) -> right.length() - left.length());
         cities.get("workModeWords").forEach(node -> WORK_MODE_WORDS.add(node.asText()));
         WORK_MODE_WORDS.sort((left, right) -> right.length() - left.length());
-        JsonNode companies = read("aggregation/company-aliases.json");
-        companies.get("suffixes").forEach(node -> COMPANY_SUFFIXES.add(node.asText()));
-        COMPANY_SUFFIXES.sort((left, right) -> right.length() - left.length());
-        companies.get("aliases").fields().forEachRemaining(entry -> COMPANY_ALIASES.put(entry.getKey(), entry.getValue().asText()));
     }
 
     private JobFingerprint() { }
@@ -69,21 +64,8 @@ public final class JobFingerprint {
 
     static String title(String value) { return basic(value); }
 
-    static String company(String value) {
-        String normalized = basic(value);
-        boolean stripped = true;
-        while (stripped) {
-            stripped = false;
-            for (String suffix : COMPANY_SUFFIXES) {
-                if (normalized.endsWith(" " + suffix)) {
-                    normalized = normalized.substring(0, normalized.length() - suffix.length() - 1).trim();
-                    stripped = true;
-                    break;
-                }
-            }
-        }
-        return COMPANY_ALIASES.getOrDefault(normalized, normalized);
-    }
+    /** Company part of the key; the rules live in {@link CompanyNames} so office pins match the same way. */
+    static String company(String value) { return CompanyNames.key(value); }
 
     static String location(String value) {
         if (value == null || value.isBlank()) return "";

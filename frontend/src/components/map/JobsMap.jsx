@@ -9,7 +9,7 @@ import { formatViewHash, parseViewHash, replaceHash } from "../../map/viewHash";
 
 const AREA_BUTTON_DELAY_MS = 500;
 const OWN_MOVE = Object.freeze({ ownMove: true });
-const CLICKABLE = [LAYERS.clusters, LAYERS.points];
+const CLICKABLE = [LAYERS.clusters, LAYERS.points, LAYERS.offices];
 const MARKERS_MARK = "jobs-map:markers-visible";
 
 const prefersReducedMotion = () => Boolean(globalThis.matchMedia?.("(prefers-reduced-motion: reduce)").matches);
@@ -40,23 +40,26 @@ function removeOverlay(map) {
 
 /**
  * Clustered city markers over the base map. Supplementary to the panel, which offers everything keyboard users need.
+ * {@code selected}: the city or office shown in the panel ({@code {id, lat, lng}}), ringed and framed.
  * {@code area}: {@code {lat, lng, radiusKm, fit, approximate}} draws the search circle (and frames it when fit).
  */
-export default function JobsMap({ snapshot, selectedPlace, dimmed, area, allowAreaSearch, onSelectPlace, onSearchArea, className = "" }) {
+export default function JobsMap({ snapshot, selected, dimmed, area, allowAreaSearch, onSelectPlace, onSelectOffice,
+  onSearchArea, className = "" }) {
   const [ready, setReady] = useState(null);
   const [showAreaButton, setShowAreaButton] = useState(false);
-  const callbacks = useRef({ onSelectPlace, onSearchArea });
+  const callbacks = useRef({ onSelectPlace, onSelectOffice, onSearchArea });
   // A view restored from the URL hash (reload, or Back from a job) wins over framing the place it was showing.
   const [restoredPlaceId] = useState(() => {
     const { hash = "", search = "" } = globalThis.location ?? {};
-    return /^#\d/.test(hash) ? new URLSearchParams(search).get("place") : null;
+    const params = new URLSearchParams(search);
+    return /^#\d/.test(hash) ? params.get("office") || params.get("place") : null;
   });
   const framedPlaceId = useRef(restoredPlaceId);
   // While a near-me area is shown the view centre is the user's (rounded) position, so it stays out of the URL.
   const privateView = useRef(false);
 
   useEffect(() => {
-    callbacks.current = { onSelectPlace, onSearchArea };
+    callbacks.current = { onSelectPlace, onSelectOffice, onSearchArea };
   });
 
   const handleReady = useCallback((map, { hasGlyphs }) => {
@@ -86,6 +89,10 @@ export default function JobsMap({ snapshot, selectedPlace, dimmed, area, allowAr
       const id = event.features?.[0]?.properties?.id;
       if (id != null) callbacks.current.onSelectPlace?.(String(id));
     };
+    const clickOffice = (event) => {
+      const id = event.features?.[0]?.properties?.id;
+      if (id != null) callbacks.current.onSelectOffice?.(String(id));
+    };
     let userMoving = false;
     let timer = null;
     const moveStart = (event) => {
@@ -108,13 +115,22 @@ export default function JobsMap({ snapshot, selectedPlace, dimmed, area, allowAr
     CLICKABLE.forEach((layer) => { map.on("mouseenter", layer, pointer); map.on("mouseleave", layer, plain); });
     map.on("click", LAYERS.clusters, clickCluster);
     map.on("click", LAYERS.points, clickPlace);
+    map.on("click", LAYERS.offices, clickOffice);
     map.on("movestart", moveStart);
     map.on("moveend", moveEnd);
+    // A pasted or edited view hash on an open page moves the map, as MapLibre's own hash option did.
+    const hashChange = () => {
+      const view = parseViewHash(window.location.hash);
+      if (view) map.jumpTo(view, OWN_MOVE);
+    };
+    window.addEventListener("hashchange", hashChange);
     return () => {
+      window.removeEventListener("hashchange", hashChange);
       clearTimeout(timer);
       CLICKABLE.forEach((layer) => { map.off("mouseenter", layer, pointer); map.off("mouseleave", layer, plain); });
       map.off("click", LAYERS.clusters, clickCluster);
       map.off("click", LAYERS.points, clickPlace);
+      map.off("click", LAYERS.offices, clickOffice);
       map.off("movestart", moveStart);
       map.off("moveend", moveEnd);
       removeOverlay(map);
@@ -137,9 +153,9 @@ export default function JobsMap({ snapshot, selectedPlace, dimmed, area, allowAr
     });
   }, [map, dimmed]);
 
-  const placeId = selectedPlace?.id ?? null;
-  const placeLat = selectedPlace?.lat;
-  const placeLng = selectedPlace?.lng;
+  const placeId = selected?.id ?? null;
+  const placeLat = selected?.lat;
+  const placeLng = selected?.lng;
   useEffect(() => {
     if (!map) return;
     map.setFilter(LAYERS.selected, selectedFilter(placeId));
