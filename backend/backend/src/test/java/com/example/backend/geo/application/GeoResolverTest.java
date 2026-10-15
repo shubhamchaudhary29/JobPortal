@@ -82,10 +82,45 @@ class GeoResolverTest {
         GeoResolution foreign = resolve("San Francisco, CA, United States");
         assertEquals(GeoStatus.FOREIGN, foreign.status());
         assertTrue(foreign.placeIds().isEmpty());
+        assertFalse(foreign.remote());
+    }
+
+    // GEO-6A: "Remote - United States" was REMOTE before parser version 2.
+    @ParameterizedTest
+    @ValueSource(strings = {"Remote - United States", "Remote - UK", "Remote, USA", "United States (Remote)",
+            "Remote - San Francisco, CA, United States", "Remote - Germany / Remote - UK", "United States, Remote"})
+    void foreignOnlyRemoteIsForeign(String input) {
+        GeoResolution result = resolve(input);
+        assertEquals(GeoStatus.FOREIGN, result.status());
+        assertTrue(result.remote());
+        assertTrue(result.placeIds().isEmpty());
     }
 
     @ParameterizedTest
-    @ValueSource(strings = {"Remote", "Remote - India", "Work from home", "Remote - United States"})
+    @ValueSource(strings = {"Remote - United States; Remote - India", "Remote - UK / Remote", "Remote - US; Anywhere",
+            "Work from home (Remote)"})
+    void anyOpenOrIndiaRemoteMarkerKeepsRemote(String input) {
+        GeoResolution result = resolve(input);
+        assertEquals(GeoStatus.REMOTE, result.status());
+        assertTrue(result.remote());
+    }
+
+    @Test
+    void placeWithForeignRemoteStaysPlace() {
+        GeoResolution result = resolve("Bengaluru; Remote - United States");
+        assertEquals(GeoStatus.PLACE, result.status());
+        assertNear(single(result), BENGALURU, 25);
+        assertTrue(result.remote());
+    }
+
+    @Test
+    void parserVersionIsPartOfTheResolutionVersion() {
+        assertTrue(RESOLVER.version().startsWith(GeoResolver.PARSER_VERSION + "-"));
+        assertEquals(2, GeoResolver.PARSER_VERSION);
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {"Remote", "Remote - India", "Work from home"})
     void remoteMarkersAreRemoteWithoutPlace(String input) {
         GeoResolution result = resolve(input);
         assertEquals(GeoStatus.REMOTE, result.status());

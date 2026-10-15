@@ -136,7 +136,7 @@ describe("MapJobs page", () => {
   it("captions the Remote tab and loads remote jobs", async () => {
     renderAt("/jobs/map");
     fireEvent.click(await screen.findByRole("tab", { name: /Remote/ }));
-    expect(await screen.findByText("Remote roles — some may be based outside India.")).toBeInTheDocument();
+    expect(await screen.findByText("Remote roles — check location eligibility on each posting.")).toBeInTheDocument();
     await screen.findByText("Engineer remote-1");
     expect(service.getUnplacedJobs).toHaveBeenCalledWith(expect.objectContaining({ kind: "remote", q: "", page: 0 }));
     expect(params().get("tab")).toBe("remote");

@@ -18,10 +18,13 @@ import org.springframework.stereotype.Component;
  * Resolves a free-text job location (plus an optional provider hint) to gazetteer places, offline.
  * Pure and thread-safe; never throws. Split candidates on {@code / ; | &} and " or "; commas inside a
  * candidate are a hierarchy ("Bengaluru, Karnataka, India") unless every segment is a major city.
+ * A remote marker is scoped by its own candidate: "Remote - United States" or "United States (Remote)" is
+ * foreign-only remote (FOREIGN when nothing else places the job); "Remote" and "Remote - India" stay REMOTE.
  */
 @Component
 public class GeoResolver {
-    public static final int PARSER_VERSION = 1;
+    /** 2: remote markers scoped to a foreign country with no Indian location are FOREIGN, not REMOTE (GEO-6A). */
+    public static final int PARSER_VERSION = 2;
     static final int MAX_INPUT_LENGTH = 300;
     static final int MAX_PLACES = 10;
     static final long LIST_MODE_MIN_POPULATION = 300_000;
@@ -73,7 +76,7 @@ public class GeoResolver {
         if (signals.places.isEmpty() && !blank) parse(raw.length() > MAX_INPUT_LENGTH
                 ? raw.substring(0, MAX_INPUT_LENGTH) : raw, signals);
         List<String> placeIds = signals.places.stream().limit(MAX_PLACES).toList();
-        return new GeoResolution(signals.status(), placeIds, signals.remote, point, version);
+        return new GeoResolution(signals.status(), placeIds, signals.remote(), point, version);
     }
 
     private void applyHint(LocationHint hint, Signals signals) {
@@ -103,39 +106,49 @@ public class GeoResolver {
 
     private void parse(String raw, Signals signals) {
         String text = POSTAL_CODE.matcher(raw).replaceAll(" ");
-        Matcher workMode = WORK_MODE_PARENTHETICAL.matcher(text);
-        StringBuilder stripped = new StringBuilder();
-        while (workMode.find()) {
-            if (isRemoteWord(workMode.group(1))) signals.remote = true;
-            workMode.appendReplacement(stripped, " ");
-        }
-        workMode.appendTail(stripped);
-        text = stripped.toString();
         // "Jammu & Kashmir" / "Daman and Diu" must not be split on '&' into separate places.
-        if (isPureState(Gazetteer.key(text))) { signals.state = true; return; }
+        Matcher workMode = WORK_MODE_PARENTHETICAL.matcher(text);
+        boolean remoteMarker = false;
+        while (workMode.find()) remoteMarker |= isRemoteWord(workMode.group(1));
+        if (isPureState(Gazetteer.key(workMode.replaceAll(" ")))) {
+            signals.state = true;
+            signals.remoteOpen |= remoteMarker;
+            return;
+        }
         for (String candidate : CANDIDATE_SEPARATOR.split(text)) {
-            if (!candidate.isBlank()) candidate(candidate, signals);
+            if (!candidate.isBlank()) signals.merge(candidate(candidate));
         }
     }
 
-    private void candidate(String raw, Signals signals) {
-        String text = WORK_MODE_PREFIX.matcher(raw).replaceFirst("");
+    /** Signals of one candidate on their own, so its remote marker can be scoped by its own location. */
+    private Signals candidate(String raw) {
+        Signals signals = new Signals();
+        Matcher workMode = WORK_MODE_PARENTHETICAL.matcher(raw);
+        StringBuilder stripped = new StringBuilder();
+        while (workMode.find()) {
+            if (isRemoteWord(workMode.group(1))) signals.remoteOpen = true;
+            workMode.appendReplacement(stripped, " ");
+        }
+        workMode.appendTail(stripped);
+        String text = WORK_MODE_PREFIX.matcher(stripped.toString()).replaceFirst("");
         String key = Gazetteer.key(text);
-        if (key.isEmpty() || WORK_MODE_WORDS.contains(key)) return;
-        if (COUNTRY_PHRASES.contains(key) || gazetteer.isIndia(key)) { signals.country = true; return; }
-        if (REMOTE_WORDS.contains(key)) { signals.remote = true; return; }
+        if (key.isEmpty() || WORK_MODE_WORDS.contains(key)) return signals;
+        if (COUNTRY_PHRASES.contains(key) || gazetteer.isIndia(key)) { signals.country = true; return signals; }
+        if (REMOTE_WORDS.contains(key)) { signals.remoteOpen = true; return signals; }
         Matcher remote = REMOTE_PREFIX.matcher(text);
         if (remote.matches()) {
-            signals.remote = true;
+            signals.remoteOpen = true;
             String rest = remote.group(1);
             String restKey = Gazetteer.key(rest);
-            if (restKey.isEmpty() || gazetteer.isIndia(restKey) || gazetteer.isForeign(restKey)) return;
+            if (restKey.isEmpty() || gazetteer.isIndia(restKey)) return signals;
+            if (gazetteer.isForeign(restKey)) { signals.foreign = true; return signals.scopeRemote(); }
             text = rest;
             key = restKey;
         }
-        if (isPureState(key)) { signals.state = true; return; }
-        if (gazetteer.isForeign(key)) { signals.foreign = true; return; }
+        if (isPureState(key)) { signals.state = true; return signals; }
+        if (gazetteer.isForeign(key)) { signals.foreign = true; return signals.scopeRemote(); }
         segments(text, signals);
+        return signals.scopeRemote();
     }
 
     private void segments(String candidate, Signals signals) {
@@ -143,12 +156,13 @@ public class GeoResolver {
         for (String segment : candidate.split(",")) {
             String key = Gazetteer.key(segment);
             if (key.isEmpty() || WORK_MODE_WORDS.contains(key)) continue;
-            if (REMOTE_WORDS.contains(key)) { signals.remote = true; continue; }
+            if (REMOTE_WORDS.contains(key)) { signals.remoteOpen = true; continue; }
             segments.add(key);
         }
         if (segments.isEmpty()) return;
-        for (int index = 1; index < segments.size(); index++) {
-            if (gazetteer.isForeign(segments.get(index))) { signals.foreign = true; return; }
+        // Any foreign segment ("San Francisco, CA, United States", or "United States, Remote") means no Indian place.
+        for (String segment : segments) {
+            if (gazetteer.isForeign(segment)) { signals.foreign = true; return; }
         }
         if (segments.size() >= 2 && segments.stream().allMatch(this::isMajorCity)) {
             segments.forEach(segment -> signals.places.add(lookup(segment, null).id()));
@@ -234,19 +248,42 @@ public class GeoResolver {
 
     private static final class Signals {
         final Set<String> places = new LinkedHashSet<>();
-        boolean remote;
+        /** Remote with no scope, or scoped to India. */
+        boolean remoteOpen;
+        /** Remote scoped to a foreign country only ("Remote - United States"). */
+        boolean remoteForeign;
         boolean state;
         boolean country;
         boolean foreign;
 
-        boolean any() { return !places.isEmpty() || remote || state || country || foreign; }
+        boolean any() { return !places.isEmpty() || remoteOpen || remoteForeign || state || country || foreign; }
+
+        boolean remote() { return remoteOpen || remoteForeign; }
+
+        /** Within one candidate: a remote marker whose only location is foreign is foreign-only remote. */
+        Signals scopeRemote() {
+            if (remoteOpen && foreign && places.isEmpty() && !state && !country) {
+                remoteOpen = false;
+                remoteForeign = true;
+            }
+            return this;
+        }
+
+        void merge(Signals other) {
+            places.addAll(other.places);
+            remoteOpen |= other.remoteOpen;
+            remoteForeign |= other.remoteForeign;
+            state |= other.state;
+            country |= other.country;
+            foreign |= other.foreign;
+        }
 
         GeoStatus status() {
             if (!places.isEmpty()) return GeoStatus.PLACE;
-            if (remote) return GeoStatus.REMOTE;
+            if (remoteOpen) return GeoStatus.REMOTE;
             if (state) return GeoStatus.STATE;
             if (country) return GeoStatus.COUNTRY;
-            if (foreign) return GeoStatus.FOREIGN;
+            if (foreign || remoteForeign) return GeoStatus.FOREIGN;
             return GeoStatus.UNRESOLVED;
         }
     }

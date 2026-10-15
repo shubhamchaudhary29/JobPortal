@@ -30,7 +30,7 @@ const GEOLOCATION_MESSAGES = {
 };
 const PANEL_ID = "map-panel-list";
 const INDIA_CAPTION = "Jobs open across a state or anywhere in India.";
-const REMOTE_CAPTION = "Remote roles — some may be based outside India.";
+const REMOTE_CAPTION = "Remote roles — check location eligibility on each posting.";
 
 const backButton = "text-sm font-semibold text-indigo-600 hover:text-indigo-700";
 const distanceOf = (job) => job.places?.[0]?.distanceKm;

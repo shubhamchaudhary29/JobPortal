@@ -138,8 +138,12 @@ Metrics: `jobportal.geo.mapjobs.cache` (counter, `result=hit|miss`), `jobportal.
 **nginx:** `/api/` is proxied through an upstream with `keepalive 64` over HTTP/1.1 (GEO-3A). Without it,
 every request opened a new backend connection and load tests failed with 502 (`99: Address not available`).
 
-**Known limitation:** REMOTE includes foreign-remote listings such as "Remote - United States"; the resolver
-does not yet tell them apart from India-remote ones.
+**Remote scope (GEO-6A, parser version 2):** a remote marker is scoped by its own candidate. "Remote",
+"Work from home" and "Remote - India" are REMOTE; a remote marker whose only location is foreign ("Remote - United
+States", "United States (Remote)", "Remote - San Francisco, CA, United States") is FOREIGN with `remote: true`, so it
+is not in the Remote list. Any open or India-scoped remote marker in the location keeps the job REMOTE, and a resolved
+Indian place keeps it PLACE. Postings can still restrict eligibility in their description, which the resolver does not
+read, so the Remote tab asks candidates to check each posting.
 
 **Load tests (local only):** seed with `python3 backend/backend/scripts/seed-map-jobs.py | docker compose exec
 -T mongodb mongosh --quiet jobportal`, restart the backend, then run `scripts/k6/map-jobs.js`.

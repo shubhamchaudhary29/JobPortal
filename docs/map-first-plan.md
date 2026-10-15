@@ -167,7 +167,7 @@ No geo query and no distance sort yet — with city-centre places they add nothi
 - The page is `/jobs/map` (lazy chunk), linked from the header ("Map") and the Jobs page ("View on map"). The
   **homepage is unchanged**: whether the map becomes the homepage is decided from production coverage numbers.
 - The temporary GEO-4 `/map-preview` route redirects to `/jobs/map`; `MapPreview.jsx` is gone.
-- Separate tabs: **Remote** (captioned as possibly including roles outside India, see follow-ups) and
+- Separate tabs: **Remote** (foreign-only remote listings are `FOREIGN` since GEO-6A) and
   **Anywhere in India** (STATE + COUNTRY).
 - Privacy: the browser rounds user coordinates to the 0.05° grid before any request; they are never put in the URL,
   stored (no localStorage) or logged. Only `place`, `tab` and `q` are query params; the map view is in the hash,
@@ -203,7 +203,6 @@ No geo query and no distance sort yet — with city-centre places they add nothi
 
 ## Follow-ups
 
-- Distinguish foreign-remote from India-remote in the resolver (version bump → automatic re-resolution).
 - Investigate Adzuna `"India"`-only listings (31% COUNTRY in the GEO-1 local preview).
 
 ## Optional later
