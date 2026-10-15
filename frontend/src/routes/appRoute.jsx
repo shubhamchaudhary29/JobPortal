@@ -1,5 +1,5 @@
 import { lazy, Suspense } from "react";
-import { Routes, Route } from "react-router-dom";
+import { Navigate, Routes, Route } from "react-router-dom";
 
 import Home from "../pages/Home";
 import Jobs from "../pages/Jobs";
@@ -19,9 +19,10 @@ import ChatRoom from "../pages/ChatRoom";
 import AggregationAdmin from "../pages/AggregationAdmin";
 import EmployerRegistryAdmin from "../pages/EmployerRegistryAdmin";
 import ProtectedRoute from "../components/ProtectedRoute";
+import MapJobsSkeleton from "../components/map/MapJobsSkeleton";
 
-// Temporary GEO-4 preview; replaced by the GEO-5 map page. Lazy so MapLibre stays out of the entry bundle.
-const MapPreview = lazy(() => import("../pages/MapPreview"));
+// Lazy so MapLibre stays out of the entry bundle.
+const MapJobs = lazy(() => import("../pages/MapJobs"));
 
 export default function AppRoutes() {
   return (
@@ -29,18 +30,21 @@ export default function AppRoutes() {
       {/* Public routes */}
       <Route path="/" element={<Home />} />
       <Route path="/jobs" element={<Jobs />} />
+      {/* Static segments outrank :jobId in React Router's ranking, so /jobs/map never reaches JobDetails. */}
+      <Route
+        path="/jobs/map"
+        element={
+          <Suspense fallback={<MapJobsSkeleton />}>
+            <MapJobs />
+          </Suspense>
+        }
+      />
       <Route path="/jobs/:jobId" element={<JobDetails />} />
       <Route path="/login" element={<Login />} />
       <Route path="/register" element={<Register />} />
       <Route path="/recruiter-login" element={<RecruiterLogin />} />
-      <Route
-        path="/map-preview"
-        element={
-          <Suspense fallback={<p className="p-6 text-sm text-slate-500">Loading map…</p>}>
-            <MapPreview />
-          </Suspense>
-        }
-      />
+      {/* The GEO-4 preview route, kept for old links. */}
+      <Route path="/map-preview" element={<Navigate to="/jobs/map" replace />} />
 
       {/* Recruiter-only routes */}
       <Route

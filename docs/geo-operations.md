@@ -184,6 +184,39 @@ it up on their next page load (`manifest.json` is served `no-cache`; everything 
 - **CDN (GEO-7):** Cloudflare does not cache byte-range requests to large files on the free plan by default; serving
   `.pmtiles` through Cloudflare needs R2 + a Worker (Protomaps' documented path) or a cache rule, not a plain proxy.
 
+## Map page
+
+`/jobs/map` (GEO-5) is the user-facing map: clustered city markers from the snapshot, a list panel, "Near me", "Jobs in
+this area", and Remote / Anywhere-in-India tabs. Job cards open the normal `/jobs/{id}` page and apply flow. The old
+`/map-preview` route redirects here. The homepage is unchanged.
+
+| URL part | Meaning |
+|---|---|
+| `?place=<placeId>` | Selected place (dropped if it is not in the snapshot or the place endpoint returns 404) |
+| `?tab=remote\|india` | Remote or Anywhere-in-India list (absent = On map) |
+| `?q=<text>` | Search (max 100 chars); filters the list only, markers always show all openings |
+| `#zoom/lat/lng` | Map view (MapLibre `hash`), so reload and Back from a job restore it |
+
+**Requests per visit:** one snapshot (browser cache `max-age=60` + ETag revalidation; served from backend memory), then
+one list request per place/tab/search/page. Place and unplaced lists are `public, max-age=60` and backed by the
+snapshot-versioned server cache (`GEO_MAP_JOBS_CACHE_TTL_MS`); nearby is `private, max-age=60`. Panning and zooming
+make no API calls. A 503 snapshot is retried after `Retry-After`, up to 3 times, then the panel offers Retry; the base
+map still renders.
+
+**Privacy:** the browser rounds the position from `navigator.geolocation` (coarse: `enableHighAccuracy: false`, cached
+up to 10 min) to the 0.05° grid immediately, and the request sends only the rounded values. Coordinates never enter the
+URL, `localStorage` or logs; near-me and this-area results reset on reload. While a near-me area is shown, the
+`#zoom/lat/lng` view hash is removed (the view centre would be the user's rounded position) and comes back once the area
+is cleared. The map draws an "Approximate area" circle,
+not a "you are here" dot. If location is denied or times out, a city picker (top 50 places by jobs) runs the same search
+from that city.
+
+**Test near-me locally:** geolocation needs a secure context, and `http://localhost` counts as one. In Chrome DevTools open
+*More tools → Sensors* and pick a location (or enter e.g. 28.6139, 77.2090 for Delhi); choose "Location unavailable" to
+test the city picker. To test denial, block location in the site settings. With an empty database, seed jobs with
+`scripts/seed-map-jobs.py` (see *Load tests* above) and remove them afterwards
+(`db.jobs.deleteMany({seedBatch: "geo-load"})`).
+
 ## Attribution
 
 GeoNames data is CC BY 4.0 (see `src/main/resources/geo/ATTRIBUTION.md`). Any page that shows resolved

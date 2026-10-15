@@ -50,6 +50,7 @@ describe("BaseMap", () => {
     expect(map.options.maxZoom).toBe(14);
     expect(map.options.dragRotate).toBe(false);
     expect(screen.queryByRole("status")).not.toBeInTheDocument();
+    expect(map.options.style.glyphs).toBeTruthy();
 
     unmount();
     expect(map.remove).toHaveBeenCalledTimes(1);
@@ -79,6 +80,24 @@ describe("BaseMap", () => {
     expect(maplibre.AttributionControl).toHaveBeenCalledWith(expect.objectContaining({
       customAttribution: "© OpenStreetMap contributors · GeoNames",
     }));
+  });
+
+  it("tells onReady whether the style has glyphs for text layers", async () => {
+    const onReady = vi.fn();
+    manifest.loadTilesManifest.mockResolvedValue(valid);
+    render(<BaseMap onReady={onReady} />);
+    await waitFor(() => expect(maplibre.instances).toHaveLength(1));
+    const load = (map) => map.on.mock.calls.find(([event]) => event === "load")[1];
+    load(maplibre.instances[0])();
+    expect(onReady).toHaveBeenLastCalledWith(maplibre.instances[0], { hasGlyphs: true });
+    cleanup();
+
+    manifest.loadTilesManifest.mockResolvedValue(null);
+    render(<BaseMap onReady={onReady} />);
+    await waitFor(() => expect(maplibre.instances).toHaveLength(2));
+    expect(maplibre.instances[1].options.style.glyphs).toBeUndefined();
+    load(maplibre.instances[1])();
+    expect(onReady).toHaveBeenLastCalledWith(maplibre.instances[1], { hasGlyphs: false });
   });
 
   it("does not create a map if unmounted before the manifest arrives", async () => {

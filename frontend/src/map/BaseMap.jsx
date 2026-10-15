@@ -21,7 +21,11 @@ function paddedBounds([west, south, east, north]) {
  * Self-hosted India base map. Falls back to a plain background (with a small notice) when the tiles volume is
  * missing, so overlays drawn in onReady still work.
  */
-/** {@code hash}: keep the view in the URL fragment (#zoom/lat/lng), MapLibre's built-in option. */
+/**
+ * {@code hash}: keep the view in the URL fragment (#zoom/lat/lng), MapLibre's built-in option.
+ * {@code onReady(map, { hasGlyphs })}: hasGlyphs is false for the fallback style, which has no fonts, so callers must
+ * only add text/symbol layers when it is true.
+ */
 export default function BaseMap({ onReady, className = "", hash = false }) {
   const container = useRef(null);
   const onReadyRef = useRef(onReady);
@@ -38,9 +42,10 @@ export default function BaseMap({ onReady, className = "", hash = false }) {
     loadTilesManifest().then((manifest) => {
       if (cancelled || !container.current) return;
       setUnavailable(!manifest);
+      const style = manifest ? buildBaseStyle(manifest) : buildFallbackStyle();
       map = new maplibregl.Map({
         container: container.current,
-        style: manifest ? buildBaseStyle(manifest) : buildFallbackStyle(),
+        style,
         center: INDIA_CENTER,
         zoom: 4,
         minZoom: 3,
@@ -59,7 +64,8 @@ export default function BaseMap({ onReady, className = "", hash = false }) {
       // With tiles, the source carries the manifest attribution; without them nothing would credit the data.
       map.addControl(new maplibregl.AttributionControl(manifest ? { compact: true }
         : { compact: true, customAttribution: FALLBACK_ATTRIBUTION }), "bottom-right");
-      map.on("load", () => onReadyRef.current?.(map));
+      const hasGlyphs = Boolean(style.glyphs);
+      map.on("load", () => onReadyRef.current?.(map, { hasGlyphs }));
     });
     return () => {
       cancelled = true;
