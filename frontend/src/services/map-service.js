@@ -54,6 +54,10 @@ export const getPlaceJobs = (placeId, { q, page = 0, size = PAGE_SIZE, signal } 
 export const getNearbyJobs = ({ lat, lng, radiusKm, q, page = 0, size = PAGE_SIZE, signal } = {}) =>
   get(apiRoutes.jobs.mapNearby, { lat: roundToGrid(lat), lng: roundToGrid(lng), radiusKm, q: q?.trim(), page, size }, signal);
 
+/** Slice of jobs at one pinned office (same shape as a place's jobs). */
+export const getOfficeJobs = (officeId, { q, page = 0, size = PAGE_SIZE, signal } = {}) =>
+  get(apiRoutes.jobs.mapOfficeJobs(officeId), { q: q?.trim(), page, size }, signal);
+
 /** Jobs without a place: {@code kind} "remote" or "india" (state- and India-wide). */
 export const getUnplacedJobs = ({ kind, q, page = 0, size = PAGE_SIZE, signal } = {}) =>
   get(apiRoutes.jobs.mapUnplaced, { kind, q: q?.trim(), page, size }, signal);

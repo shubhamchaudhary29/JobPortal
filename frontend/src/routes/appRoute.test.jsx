@@ -8,6 +8,7 @@ import Header from "../components/Header";
 
 // Pages are stubbed: these tests are about which page a URL reaches.
 vi.mock("../pages/MapJobs", () => ({ default: () => <p>Map page</p> }));
+vi.mock("../pages/OfficeAdmin", () => ({ default: () => <p>Office pins page</p> }));
 vi.mock("../pages/JobDetails", () => ({ default: () => <p>Job details page</p> }));
 vi.mock("../pages/Jobs", () => ({ default: () => <p>Jobs page</p> }));
 vi.mock("../pages/Home", () => ({ default: () => <p>Home page</p> }));
@@ -42,6 +43,22 @@ describe("map routes", () => {
     renderAt("/map-preview");
     expect(await screen.findByText("Map page")).toBeInTheDocument();
     expect(screen.getByTestId("path")).toHaveTextContent("/jobs/map");
+  });
+
+  it("lazy-loads the office pin editor for ADMIN only", async () => {
+    const renderAs = (role) => render(
+      <AuthContext.Provider value={{ accessToken: role ? "token" : null, role, initialized: true }}>
+        <MemoryRouter initialEntries={["/admin/offices"]}><AppRoutes /><Path /></MemoryRouter>
+      </AuthContext.Provider>,
+    );
+    renderAs("ADMIN");
+    expect(await screen.findByText("Office pins page")).toBeInTheDocument();
+    cleanup();
+    renderAs(null);
+    expect(screen.getByTestId("path")).toHaveTextContent("/login");
+    cleanup();
+    renderAs("USER");
+    expect(screen.queryByText("Office pins page")).not.toBeInTheDocument();
   });
 
   it("leaves the homepage unchanged", () => {

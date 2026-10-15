@@ -3,7 +3,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 const { apiGet } = vi.hoisted(() => ({ apiGet: vi.fn() }));
 vi.mock("./helper", () => ({ default: { get: apiGet } }));
 
-import { getMapSnapshot, getNearbyJobs, getPlaceJobs, getUnplacedJobs, isAbortError } from "./map-service";
+import { getMapSnapshot, getNearbyJobs, getOfficeJobs, getPlaceJobs, getUnplacedJobs, isAbortError } from "./map-service";
 
 const slice = { content: [{ id: "job-1" }], page: 0, size: 20, hasNext: false, totalHint: 1 };
 const httpError = (status, headers = {}) => Object.assign(new Error(`HTTP ${status}`), { response: { status, headers } });
@@ -37,6 +37,12 @@ describe("map service", () => {
       { params: { lat: 12.95, lng: 77.6, radiusKm: 25, page: 0, size: 20 }, signal: undefined });
     const [, { params }] = apiGet.mock.calls[0];
     expect(JSON.stringify(params)).not.toContain("12.9716");
+  });
+
+  it("requests one office's jobs with an encoded id", async () => {
+    await getOfficeJobs("665f/1", { q: "java", page: 1 });
+    expect(apiGet).toHaveBeenCalledWith("/api/v1/jobs/map/offices/665f%2F1/jobs",
+      { params: { q: "java", page: 1, size: 20 }, signal: undefined });
   });
 
   it("requests unplaced jobs by kind", async () => {

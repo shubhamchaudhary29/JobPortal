@@ -20,7 +20,7 @@ describe("job map layers", () => {
 
     const withText = jobLayers({ hasGlyphs: true });
     const symbols = withText.filter((layer) => layer.type === "symbol");
-    expect(symbols.map((layer) => layer.id)).toEqual([LAYERS.clusterCounts, LAYERS.pointCounts, LAYERS.names]);
+    expect(symbols.map((layer) => layer.id)).toEqual([LAYERS.clusterCounts, LAYERS.pointCounts, LAYERS.names, LAYERS.officeNames]);
     symbols.forEach((layer) => layer.layout["text-font"].forEach((font) => expect(baseFonts).toContain(font)));
     expect(withText.find((layer) => layer.id === LAYERS.names).minzoom).toBe(7);
   });
@@ -29,6 +29,18 @@ describe("job map layers", () => {
     const clusters = jobLayers({ hasGlyphs: false }).find((layer) => layer.id === LAYERS.clusters);
     expect(clusters.paint["circle-color"]).toBe("#4f46e5");
     expect(selectedFilter("1277333")).toEqual(["all", ["!", ["has", "point_count"]], ["==", ["get", "id"], "1277333"]]);
+  });
+
+  it("draws offices as their own unclustered layer and keeps them out of the city layers", () => {
+    const all = jobLayers({ hasGlyphs: true });
+    const offices = all.find((layer) => layer.id === LAYERS.offices);
+    expect(offices.filter).toEqual(["all", ["!", ["has", "point_count"]], ["==", ["get", "kind"], "office"]]);
+    expect(offices.paint["circle-color"]).toBe("#ffffff");
+    expect(offices.paint["circle-stroke-color"]).toBe("#4f46e5");
+    for (const id of [LAYERS.points, LAYERS.pointCounts, LAYERS.names]) {
+      expect(JSON.stringify(all.find((layer) => layer.id === id).filter)).toContain('["!",["==",["get","kind"],"office"]]');
+    }
+    expect(all.find((layer) => layer.id === LAYERS.officeNames).layout["text-field"]).toEqual(["get", "name"]);
   });
 
   it("dims markers for the Remote and India tabs", () => {

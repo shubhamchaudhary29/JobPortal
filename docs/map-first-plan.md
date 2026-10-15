@@ -19,7 +19,7 @@ Phase prefix is `GEO-n` to avoid colliding with the aggregation milestones (M10�
 | Map tiles | Protomaps `.pmtiles` India extract, self-hosted |
 | Map rendering | MapLibre GL JS, client-side clustering |
 | User location | Browser Geolocation API; city picker fallback (from gazetteer) |
-| Precise office pins | Admin clicks the map in the employer registry (GEO-6) |
+| Precise office pins | Admin clicks the map in `/admin/offices` (GEO-6) |
 
 Attribution required: © OpenStreetMap contributors, GeoNames (CC-BY 4.0).
 
@@ -46,7 +46,8 @@ Attribution required: © OpenStreetMap contributors, GeoNames (CC-BY 4.0).
 - [x] GEO-3 — map job lists (place, nearby, unplaced) with a snapshot-versioned cache, plus nginx upstream keepalive (PR #18)
 - [x] GEO-4 — self-hosted India basemap (.pmtiles + fonts/sprites in a volume, served by nginx) and a MapLibre base map with no borders or country/state labels (PR #19)
 - [x] GEO-5 — `/jobs/map`: clustered city markers, place/near-me/this-area job lists, Remote and Anywhere-in-India tabs, linked from the header and Jobs page (PR #20)
-- [ ] GEO-6 … GEO-7
+- [x] GEO-6 — foreign-only remote listings are `FOREIGN`; ADMIN office pins (audited, 60 km guard) applied at read time to the snapshot, office job lists and nearby; `/admin/offices` editor and office markers (PR #21)
+- [ ] GEO-7
 
 ---
 
@@ -177,11 +178,34 @@ No geo query and no distance sort yet — with city-centre places they add nothi
 
 ---
 
-## GEO-6 — Office pins and real distance
+## GEO-6 — Office pins and remote scope (done, PR #21)
 
-- Employer registry: `offices: [{label, lat, lng}]`, set by clicking the map in `EmployerRegistryAdmin`.
-- Resolver prefers an office point when an employer has exactly one office in the resolved city; Adzuna `rawPoint` also becomes usable.
-- Add `geoPoints[]` + 2dsphere index now, and `$geoNear` distance sorting for jobs with office precision.
+**6A — remote scope.** A remote marker is scoped by its own location candidate. "Remote - United States",
+"United States (Remote)" and similar foreign-only remote listings with no Indian place are `FOREIGN` (with
+`remote: true`); "Remote" and "Remote - India" stay `REMOTE`; a place still wins. Parser version 2 re-resolves stored
+listings automatically.
+
+**6B — offices.** `company_offices` (one document per office) with an audited ADMIN API. Admins pin offices by
+clicking the map; there is no geocoding. An office belongs to a gazetteer city (given, or the nearest city of 100k+
+people) and must be within **60 km** of its centre (misclick guard). Offices match jobs from every provider by company
+key (`shared.text.CompanyNames`, the fingerprint normalization moved out of `JobFingerprint` with byte-identical
+output). A worklist ranks (company, city) pairs without an office by job count.
+
+**Rule:** a job of company key `k` at place `p` belongs to an office only if exactly one enabled office has `k` and
+`p`; none or several (ambiguous) → city level.
+
+**6C — read-time assignment.** Offices are applied when the snapshot is built and when a job page is mapped, never
+written into jobs: edits show after one snapshot rebuild (async, 5 s after a change; ≤ 5 min worst case) with no job
+rewrites. The snapshot adds `places[].officeJobs` and `offices[]` without changing existing fields. New
+`/api/v1/jobs/map/offices/{id}/jobs`; job places carry `officeId`/`officeLabel`; nearby includes office points and
+measures distances to the office.
+
+**6D — UI.** `/admin/offices` (worklist, click/drag pin editor, offices, audit) and office markers, panel, URL
+`office=` and chips on `/jobs/map`.
+
+**Deferred (decided):** no `2dsphere` index and no `$geoNear`. Job lists stay newest first; distances are shown per job
+from the office or city centre. Revisit only if users ask for distance sorting. Adzuna `rawPoint` is still stored but
+unused.
 
 ---
 

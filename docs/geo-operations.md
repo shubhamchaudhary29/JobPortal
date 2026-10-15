@@ -212,6 +212,12 @@ geocoding API.
 `lng`, `enabled`, created/updated by and at) and the append-only `company_office_audit` (before/after per change).
 Company and city are an office's identity; to change either, disable the office and pin a new one.
 
+**Editor:** `/admin/offices` (ADMIN; linked from Aggregation operations and the employer registry). Pick a row in the
+worklist ("Pin office"), click the map at the office (zoom 12 on the city) and drag the pin to adjust, give it a label
+and Save. A 400 (for example "Pin is far from Bengaluru") is shown under the map. "New office" starts without a city:
+the server assigns the nearest large city. The offices table edits label and pin, enables/disables, and shows each
+office's audit history.
+
 **API** (ADMIN, `/api/v1/admin/geo/offices`): `GET` list (`q`, `enabled`, paging), `GET /{id}`, `POST`
 (`company`, `label`, `lat`, `lng`, optional `placeId`), `PATCH /{id}` (`label`, `lat`, `lng`, `enabled`),
 `GET /{id}/audit`, `GET /candidates?limit=50`.

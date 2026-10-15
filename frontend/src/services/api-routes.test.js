@@ -20,5 +20,10 @@ describe("versioned API routes", () => {
     expect(apiRoutes.jobs.mapPlaceJobs("a/b c")).toBe("/api/v1/jobs/map/places/a%2Fb%20c/jobs");
     expect(apiRoutes.jobs.mapNearby).toBe("/api/v1/jobs/map/nearby");
     expect(apiRoutes.jobs.mapUnplaced).toBe("/api/v1/jobs/map/unplaced");
+    expect(apiRoutes.jobs.mapOfficeJobs("a/b")).toBe("/api/v1/jobs/map/offices/a%2Fb/jobs");
+    expect(apiRoutes.adminOffices.collection).toBe("/api/v1/admin/geo/offices");
+    expect(apiRoutes.adminOffices.candidates).toBe("/api/v1/admin/geo/offices/candidates");
+    expect(apiRoutes.adminOffices.byId("o 1")).toBe("/api/v1/admin/geo/offices/o%201");
+    expect(apiRoutes.adminOffices.audit("o1")).toBe("/api/v1/admin/geo/offices/o1/audit");
   });
 });

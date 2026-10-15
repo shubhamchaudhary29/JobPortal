@@ -58,7 +58,7 @@ vi.mock("../map/tilesManifest", async (original) => ({
   }),
 }));
 const service = vi.hoisted(() => ({
-  getMapSnapshot: vi.fn(), getPlaceJobs: vi.fn(), getNearbyJobs: vi.fn(), getUnplacedJobs: vi.fn(),
+  getMapSnapshot: vi.fn(), getPlaceJobs: vi.fn(), getNearbyJobs: vi.fn(), getUnplacedJobs: vi.fn(), getOfficeJobs: vi.fn(),
 }));
 vi.mock("../services/map-service", async (original) => ({ ...(await original()), ...service }));
 vi.mock("../components/Header", () => ({ default: () => <header>Header</header> }));
@@ -72,6 +72,9 @@ const MUMBAI = { id: "1275339", name: "Mumbai", state: "Maharashtra", lat: 19.07
 const snapshot = {
   version: "v1", placedJobs: 1564, places: [BENGALURU, DELHI, MUMBAI], unplaced: { REMOTE: 40, STATE: 5, COUNTRY: 12, UNRESOLVED: 9 },
 };
+const OFFICE = { id: "665f1c2e9b1e8a0012345678", company: "Acme", label: "Bellandur", placeId: BENGALURU.id,
+  lat: 12.926, lng: 77.6762, jobs: 30 };
+const withOffice = { ...snapshot, places: [{ ...BENGALURU, officeJobs: 30 }, DELHI, MUMBAI], offices: [OFFICE] };
 const job = (id, extra = {}) => ({
   id, title: `Engineer ${id}`, company: "Acme", location: "Bengaluru", employmentType: "FULL_TIME", salaryMin: 800000,
   salaryMax: 1200000, source: "adzuna", createdAt: "2026-10-10T09:00:00", publishedAt: null,
@@ -325,6 +328,16 @@ describe("MapJobs page", () => {
     expect(window.location.hash).toBe("#9/12.97/77.59");
   });
 
+  it("follows a view hash edited on the open page", async () => {
+    renderAt("/jobs/map");
+    const map = await readyMap();
+    act(() => {
+      window.history.replaceState(null, "", "/jobs/map#11/12.97/77.59");
+      window.dispatchEvent(new HashChangeEvent("hashchange"));
+    });
+    expect(map.jumpTo).toHaveBeenLastCalledWith({ zoom: 11, center: [77.59, 12.97] }, { ownMove: true });
+  });
+
   it("drops a place that is not in the snapshot and shows top places", async () => {
     renderAt("/jobs/map?place=999");
     expect(await screen.findByText("Top places")).toBeInTheDocument();
@@ -356,6 +369,76 @@ describe("MapJobs page", () => {
     service.getMapSnapshot.mockResolvedValue(snapshot);
     fireEvent.click(screen.getByRole("button", { name: "Retry" }));
     expect(await screen.findByText("Top places")).toBeInTheDocument();
+  });
+
+  describe("office pins", () => {
+    const officeJob = job("office-1", { places: [{ id: BENGALURU.id, name: "Bengaluru", distanceKm: 3.1, officeId: OFFICE.id,
+      officeLabel: "Bellandur" }] });
+    beforeEach(() => {
+      service.getMapSnapshot.mockResolvedValue(withOffice);
+      service.getOfficeJobs.mockResolvedValue(slice([officeJob], { totalHint: 30 }));
+    });
+
+    it("draws offices separately from the city remainder", async () => {
+      renderAt("/jobs/map");
+      const map = await readyMap();
+      await waitFor(() => expect(map.sources.places.setData).toHaveBeenLastCalledWith(expect.objectContaining({
+        features: expect.arrayContaining([
+          expect.objectContaining({ properties: expect.objectContaining({ id: BENGALURU.id, kind: "city", jobs: 184 }) }),
+          expect.objectContaining({ properties: expect.objectContaining({ id: OFFICE.id, kind: "office", jobs: 30 }) }),
+        ]),
+      })));
+      expect(map.layers["offices-points"]).toBeDefined();
+    });
+
+    it("opens an office clicked on the map and lists its jobs", async () => {
+      renderAt("/jobs/map?place=1277333");
+      const map = await readyMap();
+      act(() => map.handler("click", "offices-points")({ features: [{ properties: { id: OFFICE.id } }] }));
+      await waitFor(() => expect(params().get("office")).toBe(OFFICE.id));
+      expect(params().has("place")).toBe(false);
+      expect(await screen.findByRole("heading", { name: "Acme" })).toBeInTheDocument();
+      expect(screen.getByText("Bellandur · Bengaluru")).toBeInTheDocument();
+      expect(screen.getByText("30 jobs")).toBeInTheDocument();
+      expect(service.getOfficeJobs).toHaveBeenCalledWith(OFFICE.id, expect.objectContaining({ page: 0, q: "" }));
+      expect(await screen.findByText("📍 Bellandur")).toBeInTheDocument();
+      await waitFor(() => expect(map.easeTo).toHaveBeenCalledWith(expect.objectContaining({ center: [OFFICE.lng, OFFICE.lat] }),
+        { ownMove: true }));
+    });
+
+    it("restores ?office= and searches within it", async () => {
+      renderAt("/jobs/map?office=665f1c2e9b1e8a0012345678&q=java");
+      expect(await screen.findByRole("heading", { name: "Acme" })).toBeInTheDocument();
+      expect(service.getOfficeJobs).toHaveBeenCalledWith(OFFICE.id, expect.objectContaining({ q: "java" }));
+      expect(screen.getByText("Results")).toBeInTheDocument();
+    });
+
+    it("drops an office that is not in the snapshot", async () => {
+      renderAt("/jobs/map?office=unknown");
+      expect(await screen.findByText("Top places")).toBeInTheDocument();
+      await waitFor(() => expect(params().has("office")).toBe(false));
+    });
+
+    it("shows how many city jobs are at pinned offices", async () => {
+      service.getPlaceJobs.mockResolvedValue(slice([job("job-1")], { totalHint: 214 }));
+      renderAt("/jobs/map?place=1277333");
+      expect(await screen.findByText("214 jobs · 30 at pinned offices")).toBeInTheDocument();
+    });
+
+    it("offers office chips near the user and opens the office", async () => {
+      mockGeolocation(vi.fn((success) => success({ coords: { latitude: 12.95, longitude: 77.65 } })));
+      service.getNearbyJobs.mockResolvedValue(nearby([officeJob], [
+        { ...BENGALURU, distanceKm: 6.2, kind: "city" },
+        { id: BENGALURU.id, name: "Bengaluru", state: "Karnataka", lat: OFFICE.lat, lng: OFFICE.lng, distanceKm: 3.1, jobs: 30,
+          kind: "office", officeId: OFFICE.id, company: "Acme", label: "Bellandur" },
+      ]));
+      renderAt("/jobs/map");
+      fireEvent.click(await screen.findByRole("button", { name: /Near me/ }));
+      expect(await screen.findByText("3.1 km away")).toBeInTheDocument();
+      fireEvent.click(screen.getByRole("button", { name: /Acme · Bellandur · 3.1 km/ }));
+      await waitFor(() => expect(params().get("office")).toBe(OFFICE.id));
+      expect(service.getOfficeJobs).toHaveBeenCalledWith(OFFICE.id, expect.anything());
+    });
   });
 
   it("cleans up map layers and listeners on unmount", async () => {
