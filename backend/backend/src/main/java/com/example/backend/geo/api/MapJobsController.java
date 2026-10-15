@@ -38,6 +38,16 @@ public class MapJobsController {
         return cached(PUBLIC_CACHE, jobs.place(placeId, q, page, size));
     }
 
+    @GetMapping("/offices/{officeId}/jobs")
+    @Operation(summary = "Jobs at one pinned office",
+            description = "The office's city filter plus the company; 404 for unknown or disabled offices")
+    public ResponseEntity<MapJobService.MapJobSlice> office(@PathVariable String officeId,
+                                                            @RequestParam(required = false) String q,
+                                                            @RequestParam(required = false) Integer page,
+                                                            @RequestParam(required = false) Integer size) {
+        return cached(PUBLIC_CACHE, jobs.office(officeId, q, page, size));
+    }
+
     @GetMapping("/nearby")
     @Operation(summary = "Places and jobs near a point",
             description = "lat/lng are rounded to a 0.05° grid before use; radiusKm 1-100 (default 25)")

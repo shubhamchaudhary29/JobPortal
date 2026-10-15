@@ -29,16 +29,35 @@ public class MapJobQueries {
 
     /** Visible jobs with at least one of {@code placeIds}; both {@code $or} branches are index-backed. */
     public List<Document> atPlaces(Collection<String> placeIds, String phrase, int page, int size) {
-        List<String> ids = List.copyOf(placeIds);
+        return atPlaces(placeIds, List.of(), phrase, page, size);
+    }
+
+    /**
+     * Visible jobs at any of {@code placeIds}, or at an office scope's place with one of its company spellings.
+     * Every branch starts with an index-backed place condition.
+     */
+    public List<Document> atPlaces(Collection<String> placeIds, Collection<OfficeScope> offices, String phrase, int page,
+                                   int size) {
+        List<Document> branches = new ArrayList<>();
+        if (!placeIds.isEmpty()) branches.addAll(placeBranches(List.copyOf(placeIds)));
+        for (OfficeScope office : offices) {
+            if (office.companies().isEmpty()) continue;
+            branches.add(new Document("$and", List.of(new Document("$or", placeBranches(List.of(office.placeId()))),
+                    new Document("company", new Document("$in", List.copyOf(office.companies()))))));
+        }
+        if (branches.isEmpty()) return List.of();
+        Document filter = new Document("$and", List.of(GeoPipelines.visibleJobs(), new Document("$or", branches)));
+        if (phrase != null) filter.append("$text", text(phrase));
+        return mongo.getCollection(JOBS).find(filter).projection(PROJECTION).sort(SORT)
+                .skip(page * size).limit(size + 1).maxTime(MAX_TIME_MS, TimeUnit.MILLISECONDS).into(new ArrayList<>());
+    }
+
+    private static List<Document> placeBranches(List<String> ids) {
         Document byListing = new Document("sourceListings", new Document("$elemMatch",
                 new Document("active", new Document("$ne", false)).append("geo.placeIds", new Document("$in", ids))));
         Document byTopLevel = new Document("sourceListings.0", new Document("$exists", false))
                 .append("geo.placeIds", new Document("$in", ids));
-        Document filter = new Document("$and", List.of(GeoPipelines.visibleJobs(),
-                new Document("$or", List.of(byListing, byTopLevel))));
-        if (phrase != null) filter.append("$text", text(phrase));
-        return mongo.getCollection(JOBS).find(filter).projection(PROJECTION).sort(SORT)
-                .skip(page * size).limit(size + 1).maxTime(MAX_TIME_MS, TimeUnit.MILLISECONDS).into(new ArrayList<>());
+        return List.of(byListing, byTopLevel);
     }
 
     /** Visible jobs with no place whose best status rank is one of {@code ranks}. */
@@ -58,6 +77,9 @@ public class MapJobQueries {
         return mongo.getCollection(JOBS).aggregate(stages).maxTime(MAX_TIME_MS, TimeUnit.MILLISECONDS)
                 .into(new ArrayList<>());
     }
+
+    /** Jobs at {@code placeId} whose raw {@code company} is one of {@code companies} (an office's spellings). */
+    public record OfficeScope(String placeId, Collection<String> companies) { }
 
     /** Phrase search, like {@code TextCriteria.matchingPhrase}; {@code phrase} is already free of quotes. */
     private static Document text(String phrase) {

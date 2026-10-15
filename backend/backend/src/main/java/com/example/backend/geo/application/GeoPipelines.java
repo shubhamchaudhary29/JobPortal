@@ -27,6 +27,12 @@ final class GeoPipelines {
                 new Document("reconciliationTargetId", null), new Document("reconciliationConflictId", null)));
     }
 
+    /** {@code lower(trim(company))}, "" when missing: spellings that differ only in case or padding group together. */
+    static Document lowerCompany() {
+        return new Document("$toLower", new Document("$trim",
+                new Document("input", new Document("$ifNull", List.of("$company", "")))));
+    }
+
     static Document listings() {
         return new Document("$ifNull", List.of("$sourceListings", List.of()));
     }

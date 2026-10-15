@@ -75,6 +75,12 @@ report uses; each job counts once per place. Reconciliation duplicates and inact
 
 It is built by one aggregation and served from memory; requests never reach MongoDB.
 
+Office pins (GEO-6) add two fields and change no existing one: `places[].officeJobs` (how many of the city's `jobs`
+belong to a pinned office; `jobs - officeJobs` stay at the city centre) and `offices[]` (`id`, `company`, `label`,
+`placeId`, `lat`, `lng`, `jobs`; only offices that own jobs, sorted by id). The aggregation groups placed jobs by sorted
+place ids and `lower(trim(company))` (keeping up to 5 raw spellings per group); Java maps each group's company key to
+an office. More than 100,000 groups logs `event=geo_snapshot_large_facet` (no failure).
+
 | Header | Value |
 |---|---|
 | `ETag` | `"<version>"`: a hash of the content, unchanged while the data is unchanged |
@@ -111,6 +117,7 @@ All anonymous `GET`s; responses never include descriptions, application URLs or 
 | `/api/v1/jobs/map/places/{placeId}/jobs` | Jobs at one place (404 if the place is not in the gazetteer) | `public, max-age=60` |
 | `/api/v1/jobs/map/nearby?lat&lng&radiusKm` | Nearest 50 places within the radius + their jobs | `private, max-age=60` |
 | `/api/v1/jobs/map/unplaced?kind=remote\|india` | Jobs with no place: REMOTE, or STATE/COUNTRY | `public, max-age=60` |
+| `/api/v1/jobs/map/offices/{officeId}/jobs` | Jobs at one pinned office (404 if unknown, disabled or ambiguous) | `public, max-age=60` |
 
 Common parameters: `q` (optional phrase search, max 100 chars; quotes are ignored), `page` 0–49 (default 0),
 `size` 1–20 (default 20). Paging is slice-based (`hasNext`, no count query). Jobs are newest first.
@@ -121,6 +128,13 @@ Common parameters: `q` (optional phrase search, max 100 chars; quotes are ignore
 - **Nearby:** `lat`/`lng` are rounded to a 0.05° grid (≈5 km) before any use; the raw values are never stored,
   cached or logged. Candidate places come from the in-memory snapshot (at most 200 are queried, 50 returned).
   Each job lists its in-radius places with `distanceKm`.
+- **Offices:** each job place carries `officeId`/`officeLabel` when the company has a pinned office there, and in
+  nearby its `distanceKm` is measured to the office point. Nearby `places` mixes cities (`kind: "city"`) and offices
+  within the radius (`kind: "office"`, with `officeId`, `company`, `label`, the office's point and jobs), sorted by
+  distance. An office in range brings its own jobs even when its city centre is out of range. Lists stay newest first;
+  there is no distance sort.
+- **Office list:** the GEO-3 place filter for the office's city AND `company` in the spellings the last snapshot
+  counted for that office. A spelling first seen after the last snapshot appears after the next refresh.
 - **Limits:** `radiusKm` 1–100 (default 25); every query has `maxTimeMS` 3000.
 - **503 `Retry-After: 10`:** no snapshot yet (same as the snapshot endpoint).
   **503 `Retry-After: 5`:** a query exceeded 3 s.
@@ -133,7 +147,7 @@ Common parameters: `q` (optional phrase search, max 100 chars; quotes are ignore
 | `GEO_MAP_JOBS_CACHE_MAX_ENTRIES` | `2000` | Expired entries go first, then the oldest |
 
 Metrics: `jobportal.geo.mapjobs.cache` (counter, `result=hit|miss`), `jobportal.geo.mapjobs.query` (timer,
-`endpoint=place|nearby|unplaced`), `jobportal.geo.mapjobs.timeouts` (counter).
+`endpoint=place|office|nearby|unplaced`), `jobportal.geo.mapjobs.timeouts` (counter).
 
 **nginx:** `/api/` is proxied through an upstream with `keepalive 64` over HTTP/1.1 (GEO-3A). Without it,
 every request opened a new backend connection and load tests failed with 502 (`99: Address not available`).
@@ -219,6 +233,11 @@ and dropped when an office changes.
 enabled office has key `k` and place `p`. With two enabled offices for one company in one city, neither gets jobs and
 the company stays at city level there (ambiguous; disable one to fix it). Offices apply to jobs from every provider.
 They are assigned at read time; jobs are never rewritten.
+
+**How long until a change shows:** every office create/update/disable schedules a snapshot rebuild 5 s later
+(property `geo.snapshot.office-refresh-delay-ms`, default 5000; debounced, so a burst of edits costs one build). Browsers cache the snapshot for
+up to 60 s, so the map shows a change within about a minute; the worst case is the regular 5-minute rebuild if the
+async one fails. Job lists use the new snapshot version as their cache key, so they switch at the same time.
 
 **Company matching key** (`shared.text.CompanyNames`, also used by job fingerprints): NFKC, lower case, `&` → "and",
 punctuation removed, legal suffixes (`pvt ltd`, `limited`, `technologies`, `india`, …) stripped from the end, then

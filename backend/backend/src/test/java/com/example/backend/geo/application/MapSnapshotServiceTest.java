@@ -122,8 +122,10 @@ class MapSnapshotServiceTest {
         return new Document("placed", List.of(placed)).append("unplaced", List.of(new Document("_id", 2).append("count", 3)));
     }
 
+    /** One "placed" facet row: jobs grouped by sorted place ids and lower-cased company (GEO-6C). */
     private static Document placed(List<String> ids, int count) {
-        return new Document("_id", ids).append("count", count);
+        return new Document("_id", new Document("places", ids).append("company", "acme")).append("count", count)
+                .append("variants", List.of("Acme"));
     }
 
     private static final class MutableClock extends Clock {

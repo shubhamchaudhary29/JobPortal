@@ -193,12 +193,10 @@ public class CompanyOfficeService {
     }
 
     private List<Candidate> computeCandidates() {
-        Document lowerCompany = new Document("$toLower", new Document("$trim",
-                new Document("input", new Document("$ifNull", List.of("$company", "")))));
         List<Document> pipeline = List.of(
                 new Document("$match", GeoPipelines.visibleJobs()),
                 new Document("$project", new Document("_id", 0).append("company", "$company")
-                        .append("lower", lowerCompany).append("placeIds", GeoPipelines.placeIds())),
+                        .append("lower", GeoPipelines.lowerCompany()).append("placeIds", GeoPipelines.placeIds())),
                 new Document("$match", new Document("placeIds.0", new Document("$exists", true))
                         .append("lower", new Document("$ne", ""))),
                 new Document("$unwind", "$placeIds"),
