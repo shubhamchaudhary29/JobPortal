@@ -1,0 +1,501 @@
+[ {
+  "company" : "Acme pvt ltd",
+  "key" : "acme",
+  "fingerprint" : "537bc2fa1bb13557d03a6de36fd62f64584833c0515cfbac776eaac03bcb778a"
+}, {
+  "company" : "ACME PVT LTD",
+  "key" : "acme",
+  "fingerprint" : "537bc2fa1bb13557d03a6de36fd62f64584833c0515cfbac776eaac03bcb778a"
+}, {
+  "company" : "Acme private limited",
+  "key" : "acme",
+  "fingerprint" : "537bc2fa1bb13557d03a6de36fd62f64584833c0515cfbac776eaac03bcb778a"
+}, {
+  "company" : "ACME PRIVATE LIMITED",
+  "key" : "acme",
+  "fingerprint" : "537bc2fa1bb13557d03a6de36fd62f64584833c0515cfbac776eaac03bcb778a"
+}, {
+  "company" : "Acme pvt",
+  "key" : "acme",
+  "fingerprint" : "537bc2fa1bb13557d03a6de36fd62f64584833c0515cfbac776eaac03bcb778a"
+}, {
+  "company" : "ACME PVT",
+  "key" : "acme",
+  "fingerprint" : "537bc2fa1bb13557d03a6de36fd62f64584833c0515cfbac776eaac03bcb778a"
+}, {
+  "company" : "Acme private",
+  "key" : "acme",
+  "fingerprint" : "537bc2fa1bb13557d03a6de36fd62f64584833c0515cfbac776eaac03bcb778a"
+}, {
+  "company" : "ACME PRIVATE",
+  "key" : "acme",
+  "fingerprint" : "537bc2fa1bb13557d03a6de36fd62f64584833c0515cfbac776eaac03bcb778a"
+}, {
+  "company" : "Acme ltd",
+  "key" : "acme",
+  "fingerprint" : "537bc2fa1bb13557d03a6de36fd62f64584833c0515cfbac776eaac03bcb778a"
+}, {
+  "company" : "ACME LTD",
+  "key" : "acme",
+  "fingerprint" : "537bc2fa1bb13557d03a6de36fd62f64584833c0515cfbac776eaac03bcb778a"
+}, {
+  "company" : "Acme limited",
+  "key" : "acme",
+  "fingerprint" : "537bc2fa1bb13557d03a6de36fd62f64584833c0515cfbac776eaac03bcb778a"
+}, {
+  "company" : "ACME LIMITED",
+  "key" : "acme",
+  "fingerprint" : "537bc2fa1bb13557d03a6de36fd62f64584833c0515cfbac776eaac03bcb778a"
+}, {
+  "company" : "Acme inc",
+  "key" : "acme",
+  "fingerprint" : "537bc2fa1bb13557d03a6de36fd62f64584833c0515cfbac776eaac03bcb778a"
+}, {
+  "company" : "ACME INC",
+  "key" : "acme",
+  "fingerprint" : "537bc2fa1bb13557d03a6de36fd62f64584833c0515cfbac776eaac03bcb778a"
+}, {
+  "company" : "Acme llc",
+  "key" : "acme",
+  "fingerprint" : "537bc2fa1bb13557d03a6de36fd62f64584833c0515cfbac776eaac03bcb778a"
+}, {
+  "company" : "ACME LLC",
+  "key" : "acme",
+  "fingerprint" : "537bc2fa1bb13557d03a6de36fd62f64584833c0515cfbac776eaac03bcb778a"
+}, {
+  "company" : "Acme technologies",
+  "key" : "acme",
+  "fingerprint" : "537bc2fa1bb13557d03a6de36fd62f64584833c0515cfbac776eaac03bcb778a"
+}, {
+  "company" : "ACME TECHNOLOGIES",
+  "key" : "acme",
+  "fingerprint" : "537bc2fa1bb13557d03a6de36fd62f64584833c0515cfbac776eaac03bcb778a"
+}, {
+  "company" : "Acme software",
+  "key" : "acme",
+  "fingerprint" : "537bc2fa1bb13557d03a6de36fd62f64584833c0515cfbac776eaac03bcb778a"
+}, {
+  "company" : "ACME SOFTWARE",
+  "key" : "acme",
+  "fingerprint" : "537bc2fa1bb13557d03a6de36fd62f64584833c0515cfbac776eaac03bcb778a"
+}, {
+  "company" : "Acme india",
+  "key" : "acme",
+  "fingerprint" : "537bc2fa1bb13557d03a6de36fd62f64584833c0515cfbac776eaac03bcb778a"
+}, {
+  "company" : "ACME INDIA",
+  "key" : "acme",
+  "fingerprint" : "537bc2fa1bb13557d03a6de36fd62f64584833c0515cfbac776eaac03bcb778a"
+}, {
+  "company" : "bundl",
+  "key" : "swiggy",
+  "fingerprint" : "8e76a5a463cf96cb5198ed3adb5f211d59cbd170609c05c55c4930c3a3700955"
+}, {
+  "company" : "Bundl Pvt. Ltd.",
+  "key" : "swiggy",
+  "fingerprint" : "8e76a5a463cf96cb5198ed3adb5f211d59cbd170609c05c55c4930c3a3700955"
+}, {
+  "company" : "swiggy",
+  "key" : "swiggy",
+  "fingerprint" : "8e76a5a463cf96cb5198ed3adb5f211d59cbd170609c05c55c4930c3a3700955"
+}, {
+  "company" : "SWIGGY India Private Limited",
+  "key" : "swiggy",
+  "fingerprint" : "8e76a5a463cf96cb5198ed3adb5f211d59cbd170609c05c55c4930c3a3700955"
+}, {
+  "company" : "one97 communications",
+  "key" : "paytm",
+  "fingerprint" : "20bb98d5ff006b2d60160e7d19388615723289c5332d89c187cf40294e343b4f"
+}, {
+  "company" : "One97 Communications Pvt. Ltd.",
+  "key" : "paytm",
+  "fingerprint" : "20bb98d5ff006b2d60160e7d19388615723289c5332d89c187cf40294e343b4f"
+}, {
+  "company" : "paytm",
+  "key" : "paytm",
+  "fingerprint" : "20bb98d5ff006b2d60160e7d19388615723289c5332d89c187cf40294e343b4f"
+}, {
+  "company" : "PAYTM India Private Limited",
+  "key" : "paytm",
+  "fingerprint" : "20bb98d5ff006b2d60160e7d19388615723289c5332d89c187cf40294e343b4f"
+}, {
+  "company" : "fsn e commerce ventures",
+  "key" : "nykaa",
+  "fingerprint" : "861fb51122e844abb328c88655cb30a0068b186479c8426be51fb255a196acaa"
+}, {
+  "company" : "Fsn E Commerce Ventures Pvt. Ltd.",
+  "key" : "nykaa",
+  "fingerprint" : "861fb51122e844abb328c88655cb30a0068b186479c8426be51fb255a196acaa"
+}, {
+  "company" : "nykaa",
+  "key" : "nykaa",
+  "fingerprint" : "861fb51122e844abb328c88655cb30a0068b186479c8426be51fb255a196acaa"
+}, {
+  "company" : "NYKAA India Private Limited",
+  "key" : "nykaa",
+  "fingerprint" : "861fb51122e844abb328c88655cb30a0068b186479c8426be51fb255a196acaa"
+}, {
+  "company" : "ani",
+  "key" : "ola",
+  "fingerprint" : "91ec79c52c2fac9fb8085192791b17b4da93702c1297ccaaf02a779d3dd03611"
+}, {
+  "company" : "Ani Pvt. Ltd.",
+  "key" : "ola",
+  "fingerprint" : "91ec79c52c2fac9fb8085192791b17b4da93702c1297ccaaf02a779d3dd03611"
+}, {
+  "company" : "ola",
+  "key" : "ola",
+  "fingerprint" : "91ec79c52c2fac9fb8085192791b17b4da93702c1297ccaaf02a779d3dd03611"
+}, {
+  "company" : "OLA India Private Limited",
+  "key" : "ola",
+  "fingerprint" : "91ec79c52c2fac9fb8085192791b17b4da93702c1297ccaaf02a779d3dd03611"
+}, {
+  "company" : "urbanclap",
+  "key" : "urban company",
+  "fingerprint" : "5070d0e7222d38c1027232f77e73134ae689dd98aed9434b347137447db84639"
+}, {
+  "company" : "Urbanclap Pvt. Ltd.",
+  "key" : "urban company",
+  "fingerprint" : "5070d0e7222d38c1027232f77e73134ae689dd98aed9434b347137447db84639"
+}, {
+  "company" : "urban company",
+  "key" : "urban company",
+  "fingerprint" : "5070d0e7222d38c1027232f77e73134ae689dd98aed9434b347137447db84639"
+}, {
+  "company" : "URBAN COMPANY India Private Limited",
+  "key" : "urban company",
+  "fingerprint" : "5070d0e7222d38c1027232f77e73134ae689dd98aed9434b347137447db84639"
+}, {
+  "company" : "dreamplug",
+  "key" : "cred",
+  "fingerprint" : "4ce4c239073844f662199b0c3372994ec609b71f208aaee12b7c4e00fd6c7600"
+}, {
+  "company" : "Dreamplug Pvt. Ltd.",
+  "key" : "cred",
+  "fingerprint" : "4ce4c239073844f662199b0c3372994ec609b71f208aaee12b7c4e00fd6c7600"
+}, {
+  "company" : "cred",
+  "key" : "cred",
+  "fingerprint" : "4ce4c239073844f662199b0c3372994ec609b71f208aaee12b7c4e00fd6c7600"
+}, {
+  "company" : "CRED India Private Limited",
+  "key" : "cred",
+  "fingerprint" : "4ce4c239073844f662199b0c3372994ec609b71f208aaee12b7c4e00fd6c7600"
+}, {
+  "company" : "sorting hat",
+  "key" : "unacademy",
+  "fingerprint" : "1810f8d827979e19bd5e437b0fadebd5dfbc0016f8a678cf748b9314e2c06057"
+}, {
+  "company" : "Sorting Hat Pvt. Ltd.",
+  "key" : "unacademy",
+  "fingerprint" : "1810f8d827979e19bd5e437b0fadebd5dfbc0016f8a678cf748b9314e2c06057"
+}, {
+  "company" : "unacademy",
+  "key" : "unacademy",
+  "fingerprint" : "1810f8d827979e19bd5e437b0fadebd5dfbc0016f8a678cf748b9314e2c06057"
+}, {
+  "company" : "UNACADEMY India Private Limited",
+  "key" : "unacademy",
+  "fingerprint" : "1810f8d827979e19bd5e437b0fadebd5dfbc0016f8a678cf748b9314e2c06057"
+}, {
+  "company" : "mohalla tech",
+  "key" : "sharechat",
+  "fingerprint" : "35dc503ab6b8953fc0a9e80f75494f1323532d941bc6d252ddc69e1c94fdbfa3"
+}, {
+  "company" : "Mohalla Tech Pvt. Ltd.",
+  "key" : "sharechat",
+  "fingerprint" : "35dc503ab6b8953fc0a9e80f75494f1323532d941bc6d252ddc69e1c94fdbfa3"
+}, {
+  "company" : "sharechat",
+  "key" : "sharechat",
+  "fingerprint" : "35dc503ab6b8953fc0a9e80f75494f1323532d941bc6d252ddc69e1c94fdbfa3"
+}, {
+  "company" : "SHARECHAT India Private Limited",
+  "key" : "sharechat",
+  "fingerprint" : "35dc503ab6b8953fc0a9e80f75494f1323532d941bc6d252ddc69e1c94fdbfa3"
+}, {
+  "company" : "kiranakart",
+  "key" : "zepto",
+  "fingerprint" : "ee2a2f65cfe4b19e8c3001945a95f027340f8cbd9a7c0dfbaba741e72dc33f91"
+}, {
+  "company" : "Kiranakart Pvt. Ltd.",
+  "key" : "zepto",
+  "fingerprint" : "ee2a2f65cfe4b19e8c3001945a95f027340f8cbd9a7c0dfbaba741e72dc33f91"
+}, {
+  "company" : "zepto",
+  "key" : "zepto",
+  "fingerprint" : "ee2a2f65cfe4b19e8c3001945a95f027340f8cbd9a7c0dfbaba741e72dc33f91"
+}, {
+  "company" : "ZEPTO India Private Limited",
+  "key" : "zepto",
+  "fingerprint" : "ee2a2f65cfe4b19e8c3001945a95f027340f8cbd9a7c0dfbaba741e72dc33f91"
+}, {
+  "company" : "grofers",
+  "key" : "blinkit",
+  "fingerprint" : "8b474ca6c0fc8e99f5a8362fda37c56485433fd8552d3710d1415b75a96f1ff1"
+}, {
+  "company" : "Grofers Pvt. Ltd.",
+  "key" : "blinkit",
+  "fingerprint" : "8b474ca6c0fc8e99f5a8362fda37c56485433fd8552d3710d1415b75a96f1ff1"
+}, {
+  "company" : "blinkit",
+  "key" : "blinkit",
+  "fingerprint" : "8b474ca6c0fc8e99f5a8362fda37c56485433fd8552d3710d1415b75a96f1ff1"
+}, {
+  "company" : "BLINKIT India Private Limited",
+  "key" : "blinkit",
+  "fingerprint" : "8b474ca6c0fc8e99f5a8362fda37c56485433fd8552d3710d1415b75a96f1ff1"
+}, {
+  "company" : "flipkart internet",
+  "key" : "flipkart",
+  "fingerprint" : "7d6f1a29ac417d8aa58836476744708c54a30850efd5bf03dbe7df24be71f3b0"
+}, {
+  "company" : "Flipkart Internet Pvt. Ltd.",
+  "key" : "flipkart",
+  "fingerprint" : "7d6f1a29ac417d8aa58836476744708c54a30850efd5bf03dbe7df24be71f3b0"
+}, {
+  "company" : "flipkart",
+  "key" : "flipkart",
+  "fingerprint" : "7d6f1a29ac417d8aa58836476744708c54a30850efd5bf03dbe7df24be71f3b0"
+}, {
+  "company" : "FLIPKART India Private Limited",
+  "key" : "flipkart",
+  "fingerprint" : "7d6f1a29ac417d8aa58836476744708c54a30850efd5bf03dbe7df24be71f3b0"
+}, {
+  "company" : "pocket fm",
+  "key" : "pocketfm",
+  "fingerprint" : "5a4e36544a944f126cb853faa2d6545d7aa95a0807b6a52aa008b5174a839888"
+}, {
+  "company" : "Pocket Fm Pvt. Ltd.",
+  "key" : "pocketfm",
+  "fingerprint" : "5a4e36544a944f126cb853faa2d6545d7aa95a0807b6a52aa008b5174a839888"
+}, {
+  "company" : "pocketfm",
+  "key" : "pocketfm",
+  "fingerprint" : "5a4e36544a944f126cb853faa2d6545d7aa95a0807b6a52aa008b5174a839888"
+}, {
+  "company" : "POCKETFM India Private Limited",
+  "key" : "pocketfm",
+  "fingerprint" : "5a4e36544a944f126cb853faa2d6545d7aa95a0807b6a52aa008b5174a839888"
+}, {
+  "company" : "nextbillion technology",
+  "key" : "groww",
+  "fingerprint" : "c41876a5cfec5b6bcb998230c9bee235ba380bc675360c0606f86893c45bdc51"
+}, {
+  "company" : "Nextbillion Technology Pvt. Ltd.",
+  "key" : "groww",
+  "fingerprint" : "c41876a5cfec5b6bcb998230c9bee235ba380bc675360c0606f86893c45bdc51"
+}, {
+  "company" : "groww",
+  "key" : "groww",
+  "fingerprint" : "c41876a5cfec5b6bcb998230c9bee235ba380bc675360c0606f86893c45bdc51"
+}, {
+  "company" : "GROWW India Private Limited",
+  "key" : "groww",
+  "fingerprint" : "c41876a5cfec5b6bcb998230c9bee235ba380bc675360c0606f86893c45bdc51"
+}, {
+  "company" : "",
+  "key" : "",
+  "fingerprint" : "51e43acd82d3b8db47312171986c64c6ffd5e8543fe5082aef4554e611413f0d"
+}, {
+  "company" : " ",
+  "key" : "",
+  "fingerprint" : "51e43acd82d3b8db47312171986c64c6ffd5e8543fe5082aef4554e611413f0d"
+}, {
+  "company" : "\t",
+  "key" : "",
+  "fingerprint" : "51e43acd82d3b8db47312171986c64c6ffd5e8543fe5082aef4554e611413f0d"
+}, {
+  "company" : "Acme",
+  "key" : "acme",
+  "fingerprint" : "537bc2fa1bb13557d03a6de36fd62f64584833c0515cfbac776eaac03bcb778a"
+}, {
+  "company" : "ACME",
+  "key" : "acme",
+  "fingerprint" : "537bc2fa1bb13557d03a6de36fd62f64584833c0515cfbac776eaac03bcb778a"
+}, {
+  "company" : "acme pvt ltd",
+  "key" : "acme",
+  "fingerprint" : "537bc2fa1bb13557d03a6de36fd62f64584833c0515cfbac776eaac03bcb778a"
+}, {
+  "company" : "Acme Pvt. Ltd.",
+  "key" : "acme",
+  "fingerprint" : "537bc2fa1bb13557d03a6de36fd62f64584833c0515cfbac776eaac03bcb778a"
+}, {
+  "company" : "Acme Software Technologies Pvt Ltd",
+  "key" : "acme",
+  "fingerprint" : "537bc2fa1bb13557d03a6de36fd62f64584833c0515cfbac776eaac03bcb778a"
+}, {
+  "company" : "Acme Technologies India Private Limited",
+  "key" : "acme",
+  "fingerprint" : "537bc2fa1bb13557d03a6de36fd62f64584833c0515cfbac776eaac03bcb778a"
+}, {
+  "company" : "Tata Consultancy Services",
+  "key" : "tata consultancy services",
+  "fingerprint" : "0d75810458f29b14e77790d9fa8101007a5a7b2edf2b2da76a1a6f534d25d04e"
+}, {
+  "company" : "Infosys Limited",
+  "key" : "infosys",
+  "fingerprint" : "1ffab89c5f2de5b2b026a210cc7661bc9fd1b3e6dd49938a9a12a53970f62151"
+}, {
+  "company" : "Wipro Ltd.",
+  "key" : "wipro",
+  "fingerprint" : "9227c08baa6e600342f6c1ab4bd1c7f1c9a53b7535568c68aa1578e54eb363ec"
+}, {
+  "company" : "Larsen & Toubro",
+  "key" : "larsen and toubro",
+  "fingerprint" : "5e017118814fb128fb94567884b95d96c8c4a45c750c0bcd6c7957078dccf1c9"
+}, {
+  "company" : "L&T Infotech",
+  "key" : "l and t infotech",
+  "fingerprint" : "efc5ea60a63754900ecb2e98f2b0a0edac1986c2d38d9bd50c2db21a8b2834c4"
+}, {
+  "company" : "AT&T",
+  "key" : "at and t",
+  "fingerprint" : "0d418aa43821d2aea7f88a7e228f6f5e5e60b7c23c516c40fe455f428e8487d4"
+}, {
+  "company" : "Procter & Gamble India",
+  "key" : "procter and gamble",
+  "fingerprint" : "e7f78ec70f33aa49f30b414eba931b828669d99d19979e6083fcea626de80050"
+}, {
+  "company" : "Zoho Corp.",
+  "key" : "zoho corp",
+  "fingerprint" : "ddd389116764739d53ebc9a7d2b39c79b956555fe242f37df25dfec01a5c06c1"
+}, {
+  "company" : "Freshworks Inc.",
+  "key" : "freshworks",
+  "fingerprint" : "c9b6c6bf4418f9c10581c6f1532d50cdcad566072eb88dc320554de2a20a17c3"
+}, {
+  "company" : "Ｆｕｌｌｗｉｄｔｈ Ｃｏｒｐ",
+  "key" : "fullwidth corp",
+  "fingerprint" : "20fb13af41b6c15f5c93b5179578c9b32a0fb3c6fe672c369b2cbcc3d0722b51"
+}, {
+  "company" : "Café Coffee Day",
+  "key" : "café coffee day",
+  "fingerprint" : "59c934bc4b05b9535b5d33a3074e52151ceebfc835fca4fc23dc4e19e1e6b456"
+}, {
+  "company" : "Société Générale",
+  "key" : "société générale",
+  "fingerprint" : "b1a0b7df730ef42a42654c109f9da3129fc4195f0b7b2527d0ffe7c000c29a12"
+}, {
+  "company" : "Nestlé India",
+  "key" : "nestlé",
+  "fingerprint" : "58f468795125e8c03a048f9f6c11c01614ac2b7dc6a16cd566e3e7c018da892b"
+}, {
+  "company" : "उदाहरण प्राइवेट लिमिटेड",
+  "key" : "उद हरण प र इव ट ल म ट ड",
+  "fingerprint" : "7a7f7d2d04f8a5d5c636dd70b13dbd61f3a7b16706cde2c7a452e97e0e274d35"
+}, {
+  "company" : "株式会社テスト",
+  "key" : "株式会社テスト",
+  "fingerprint" : "fbfc1f899889ebe253423249f73d157c0d07c10755259145bb900640715181d1"
+}, {
+  "company" : "C++ Labs",
+  "key" : "c++ labs",
+  "fingerprint" : "6415863f8e3ceff580a2de29702f1dbe72d3a51229c5d036e1b4c77ee9cd6194"
+}, {
+  "company" : "C# Works",
+  "key" : "c# works",
+  "fingerprint" : "4d49364749cb26b14022187c433bf2f71866fb6dee8737ed80f83602fd7d90b0"
+}, {
+  "company" : "Google (India) Pvt Ltd",
+  "key" : "google",
+  "fingerprint" : "f65ae961d4ed4ce63bf26ec56cf88c8c10d38da46ca269cc64cb45a28fae9397"
+}, {
+  "company" : "Amazon.com, Inc.",
+  "key" : "amazon com",
+  "fingerprint" : "7f8121c4f68793f86e46afc8285334c9ab24f5eac30a8e4ad6cc56b87a90f6d6"
+}, {
+  "company" : "  Swiggy  ",
+  "key" : "swiggy",
+  "fingerprint" : "8e76a5a463cf96cb5198ed3adb5f211d59cbd170609c05c55c4930c3a3700955"
+}, {
+  "company" : "Bundl Technologies Private Limited",
+  "key" : "swiggy",
+  "fingerprint" : "8e76a5a463cf96cb5198ed3adb5f211d59cbd170609c05c55c4930c3a3700955"
+}, {
+  "company" : "One97 Communications Ltd",
+  "key" : "paytm",
+  "fingerprint" : "20bb98d5ff006b2d60160e7d19388615723289c5332d89c187cf40294e343b4f"
+}, {
+  "company" : "FSN E-Commerce Ventures Ltd",
+  "key" : "nykaa",
+  "fingerprint" : "861fb51122e844abb328c88655cb30a0068b186479c8426be51fb255a196acaa"
+}, {
+  "company" : "ANI Technologies Pvt. Ltd.",
+  "key" : "ola",
+  "fingerprint" : "91ec79c52c2fac9fb8085192791b17b4da93702c1297ccaaf02a779d3dd03611"
+}, {
+  "company" : "Sorting Hat Technologies",
+  "key" : "unacademy",
+  "fingerprint" : "1810f8d827979e19bd5e437b0fadebd5dfbc0016f8a678cf748b9314e2c06057"
+}, {
+  "company" : "Pocket FM",
+  "key" : "pocketfm",
+  "fingerprint" : "5a4e36544a944f126cb853faa2d6545d7aa95a0807b6a52aa008b5174a839888"
+}, {
+  "company" : "Nextbillion Technology Pvt Ltd",
+  "key" : "groww",
+  "fingerprint" : "c41876a5cfec5b6bcb998230c9bee235ba380bc675360c0606f86893c45bdc51"
+}, {
+  "company" : "Limited",
+  "key" : "limited",
+  "fingerprint" : "2d58b00af42988b9bf715fff0183981feb6a74cbc8202ea79eafe9f70ffd0130"
+}, {
+  "company" : "Pvt Ltd",
+  "key" : "pvt",
+  "fingerprint" : "9793cd9fded43efd9dd4d77e25478f9c1fb6b1f113ef1cc42b813b6479d21066"
+}, {
+  "company" : "India",
+  "key" : "india",
+  "fingerprint" : "e0e3ca014badde0a4e177727ee74f98a01ea73f3302044cb8827e5bf84275e0b"
+}, {
+  "company" : "Inc",
+  "key" : "inc",
+  "fingerprint" : "3f9b3efd7cf6af0ae60be38c1685d4373c36d4345908d07d7b6603891a6495b6"
+}, {
+  "company" : "Software India Pvt Ltd",
+  "key" : "software",
+  "fingerprint" : "8e06ef485c5990b392c4cdfb387f809b5aae6f0860d6d5d54cad5db0af604940"
+}, {
+  "company" : "Acme Ltd Ltd",
+  "key" : "acme",
+  "fingerprint" : "537bc2fa1bb13557d03a6de36fd62f64584833c0515cfbac776eaac03bcb778a"
+}, {
+  "company" : "Acme-Tech",
+  "key" : "acme tech",
+  "fingerprint" : "c9f6e2a600979e09c34223a1bb90644e35f90e4e2a2e246170f7335873a4a8d4"
+}, {
+  "company" : "Acme/Beta",
+  "key" : "acme beta",
+  "fingerprint" : "e65f37384bcc08b6dfe58a7699c418abcfc4190c39dc945bc968db26791274a0"
+}, {
+  "company" : "acme_inc",
+  "key" : "acme",
+  "fingerprint" : "537bc2fa1bb13557d03a6de36fd62f64584833c0515cfbac776eaac03bcb778a"
+}, {
+  "company" : "123 Labs",
+  "key" : "123 labs",
+  "fingerprint" : "08270ec897a99228e3ddc6b5d7840e3f608efd353570f472437442e26566d939"
+}, {
+  "company" : "Ltd Acme",
+  "key" : "ltd acme",
+  "fingerprint" : "08ef2474fd0a591602aa92ed90f276245620c29e83aff759a7a8d6e82a8d4326"
+}, {
+  "company" : "Acme Indian",
+  "key" : "acme indian",
+  "fingerprint" : "a8f37164eaae3a584a3874ad9025d1240bd09be5f751b06216a476834567f8b7"
+}, {
+  "company" : "Acme Indiana",
+  "key" : "acme indiana",
+  "fingerprint" : "6b132017af65ddb351087e9b5d94f4aba3c7ab15f8057bdfad6cd89f7c714e32"
+}, {
+  "company" : "Acme    Pvt     Ltd",
+  "key" : "acme",
+  "fingerprint" : "537bc2fa1bb13557d03a6de36fd62f64584833c0515cfbac776eaac03bcb778a"
+}, {
+  "company" : "Acme\nPvt Ltd",
+  "key" : "acme",
+  "fingerprint" : "537bc2fa1bb13557d03a6de36fd62f64584833c0515cfbac776eaac03bcb778a"
+} ]

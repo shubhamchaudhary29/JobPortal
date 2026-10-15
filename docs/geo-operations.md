@@ -188,6 +188,43 @@ it up on their next page load (`manifest.json` is served `no-cache`; everything 
 - **CDN (GEO-7):** Cloudflare does not cache byte-range requests to large files on the free plan by default; serving
   `.pmtiles` through Cloudflare needs R2 + a Worker (Protomaps' documented path) or a cache rule, not a plain proxy.
 
+## Office pins
+
+City markers sit at the city centre. An ADMIN can pin a company's real office once, and from then on that company's
+jobs in that city show at the office, with real distances in "near me". Pins come from a click on the map: no
+geocoding API.
+
+**Data:** `company_offices` (one document per office: `companyKey`, `company` as entered, `label`, `placeId`, `lat`,
+`lng`, `enabled`, created/updated by and at) and the append-only `company_office_audit` (before/after per change).
+Company and city are an office's identity; to change either, disable the office and pin a new one.
+
+**API** (ADMIN, `/api/v1/admin/geo/offices`): `GET` list (`q`, `enabled`, paging), `GET /{id}`, `POST`
+(`company`, `label`, `lat`, `lng`, optional `placeId`), `PATCH /{id}` (`label`, `lat`, `lng`, `enabled`),
+`GET /{id}/audit`, `GET /candidates?limit=50`.
+
+**Work the candidates list.** `candidates` ranks (company, city) pairs by visible jobs where the company has no
+enabled office in that city, so the pins that move the most jobs come first. Companies are merged by their matching
+key, so "Acme Pvt Ltd" and "ACME" are one row (shown with the most common spelling). The list is cached for 5 minutes
+and dropped when an office changes.
+
+**Validation:**
+- The pin must be inside India's bounding box (lat 6–37.5, lng 68–97.5).
+- Without `placeId` the office belongs to the nearest city of 100,000+ people (a pin in Cyber City is Gurugram, not
+  Delhi). Pass `placeId` for a smaller city.
+- **60 km guard:** the pin must be within 60 km of its city's centre, otherwise 400 "Pin is far from <city>". It
+  catches misclicks (a Bengaluru office dropped in Mysuru). A real office further out belongs to another city.
+- Labels are 2–80 characters and unique per company and city.
+
+**Which jobs an office gets:** a job of company key `k` at place `p` belongs to an office only if **exactly one**
+enabled office has key `k` and place `p`. With two enabled offices for one company in one city, neither gets jobs and
+the company stays at city level there (ambiguous; disable one to fix it). Offices apply to jobs from every provider.
+They are assigned at read time; jobs are never rewritten.
+
+**Company matching key** (`shared.text.CompanyNames`, also used by job fingerprints): NFKC, lower case, `&` → "and",
+punctuation removed, legal suffixes (`pvt ltd`, `limited`, `technologies`, `india`, …) stripped from the end, then
+former names mapped by `backend/backend/src/main/resources/aggregation/company-aliases.json`. Changing that file
+changes fingerprints too, so it needs a new `JobFingerprint.VERSION` and the fingerprint migration.
+
 ## Map page
 
 `/jobs/map` (GEO-5) is the user-facing map: clustered city markers from the snapshot, a list panel, "Near me", "Jobs in
