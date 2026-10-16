@@ -261,6 +261,41 @@ so GEO-7 starts by closing those bypasses.
 and tiles are not. 2026-10-17 laptop results (200 VUs, GEO-0 memory limits): snapshot 13k req/s p95 34 ms, map lists
 10.8k req/s p95 34 ms, 0% errors, backend peak 513 MiB, Mongo 250 MiB. Table in `docs/geo-operations.md`.
 
+**7E — tiles to Cloudflare R2 (decision only; not built).** Ships "when bandwidth justifies it".
+
+*Why not just Cloudflare's proxy:* `.pmtiles` is not a default cached extension and the map reads it with byte-range
+requests, so behind the orange cloud every tile read still leaves EC2 (GEO-7C runbook, step 7).
+
+*Trigger:* `/tiles/` egress from EC2 above **50 GB/month** (half of AWS's 100 GB/month free data transfer out, which the
+API, SPA and snapshot also use), or tiles above half of total egress. Measure it for a week:
+
+1. `/tiles/` has `access_log off` (MapLibre makes many range requests per pan). For the measurement only, remove that
+   line from `frontend/jobportal-locations.conf`, rebuild the frontend and deploy; restore it afterwards.
+2. After 7 days (container logs survive restarts but not `docker compose down`; record the start time):
+
+   ```bash
+   docker compose logs --no-log-prefix --since 168h frontend \
+     | awk '$7 ~ /^\/tiles\// { bytes += $10 } END { printf "%.2f GB/week, %.1f GB/month est.\n", bytes/1e9, bytes/1e9*30/7 }'
+   ```
+
+   Fields are nginx's default `combined` format (`$7` path, `$10` body bytes sent). Compare with the instance's
+   `NetworkOut` in CloudWatch for the same week.
+
+*Target design (when triggered):*
+- Upload the current `.pmtiles` and `assets/<ref>/` to an R2 bucket from `build-tiles.sh` (new `--r2-bucket` option
+  via `rclone` or `wrangler r2 object put`); `manifest.json` is uploaded last, as today.
+- Deploy Protomaps' documented Cloudflare Worker (`serverless/cloudflare` in protomaps/PMTiles), bound to the bucket,
+  on a route such as `tiles.<domain>/*`. It serves individual `/{z}/{x}/{y}.mvt` tiles with cache headers, so
+  Cloudflare's CDN caches them and EC2 serves no tile bytes. R2 has no egress fees.
+- Frontend: `VITE_TILES_URL` (default `/tiles`) replaces the hard-coded `TILES_BASE` in `src/map/tilesManifest.js`;
+  the style switches from the `pmtiles://` protocol to the Worker's tile URL template when the variable is set. The
+  manifest validation (single path segments) stays; CORS on the Worker allows only `https://<domain>`.
+- CSP: add the tiles origin to `connect-src` (and `img-src` for sprites) before the policy is promoted to enforcing.
+- Rollback: unset `VITE_TILES_URL` and rebuild; nginx `/tiles/` keeps serving the volume.
+- Cost guard (zero paid cost): free R2 is 10 GB storage and 10 M reads/month; the free Workers plan allows
+  **100,000 requests/day**. CDN-cached tiles do not invoke the Worker, but a cold cache does; check Worker request
+  counts for the first week and keep the nginx path as the fallback if the free plan would be exceeded.
+
 ---
 
 ## Scaling path (only when load demands it)
