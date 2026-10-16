@@ -20,6 +20,9 @@ function mapError(error) {
       retryAfterSeconds: Number.isFinite(retryAfter) && retryAfter > 0 ? retryAfter : DEFAULT_RETRY_AFTER_SECONDS,
     });
   }
+  if (status === 429) {
+    return Object.assign(new Error("Too many map requests"), { kind: "rateLimited", status });
+  }
   return Object.assign(new Error("Map request failed"), { kind: "error", status });
 }
 

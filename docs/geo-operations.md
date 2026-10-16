@@ -293,6 +293,86 @@ test the city picker. To test denial, block location in the site settings. With 
   else the socket address. `X-Forwarded-For` is ignored; nginx sends only `$remote_addr` in it.
 - Swagger (`/swagger-ui.html`, `/v3/api-docs`) is 404 under Compose unless `SWAGGER_ENABLED=true` is set in `.env`.
 
+### nginx configuration (GEO-7B)
+
+| File in `frontend/` | Installed as | Purpose |
+|---|---|---|
+| `nginx.conf.template` | rendered to `conf.d/default.conf` | HTTPS server (when the certificate is readable) |
+| `nginx-http.conf` | copied to `conf.d/default.conf` | Plain HTTP server for local runs |
+| `jobportal-locations.conf` | `jobportal/locations.conf` | All locations, shared by both servers |
+| `proxy-backend.conf` | `jobportal/proxy-backend.conf` | Proxy settings for every `/api/` location |
+| `security-headers.conf` | `jobportal/security-headers.conf` | Security headers |
+| `nginx-limits.conf` | `conf.d/00-limits.conf` | `limit_req` zones (http context) |
+| `select-nginx-config.sh` | `/docker-entrypoint.d/05-…` | Picks HTTPS/HTTP and renders the template |
+
+The template is rendered with `envsubst '${APP_SERVER_NAMES} ${TLS_CERT_PATH} ${TLS_KEY_PATH}'`, so nginx variables
+such as `$host` are untouched. The script rejects values that are not plain host names or absolute paths, and the
+container then fails to start instead of running a broken config.
+
+| Variable (frontend) | Default | Meaning |
+|---|---|---|
+| `APP_DOMAIN` | `54-236-126-94.sslip.io` | Canonical host; Let's Encrypt directory name |
+| `APP_SERVER_NAMES` | `$APP_DOMAIN` | Space-separated `server_name` list |
+| `TLS_CERT_PATH` | `/etc/letsencrypt/live/$APP_DOMAIN/fullchain.pem` | Certificate inside the container |
+| `TLS_KEY_PATH` | `/etc/letsencrypt/live/$APP_DOMAIN/privkey.pem` | Private key inside the container |
+
+With no new variables in `.env`, the rendered server names and certificate paths are exactly those of the pre-GEO-7
+`nginx.conf`.
+
+**Check a config change** before deploying (dummy certificate; `--add-host` because nginx resolves the upstream):
+
+```bash
+docker build -t jobportal-frontend:test frontend
+mkdir -p /tmp/le/live/54-236-126-94.sslip.io && openssl req -x509 -newkey rsa:2048 -nodes -days 1 -subj /CN=test \
+  -keyout /tmp/le/live/54-236-126-94.sslip.io/privkey.pem -out /tmp/le/live/54-236-126-94.sslip.io/fullchain.pem
+docker run --rm --add-host backend:127.0.0.1 -v /tmp/le:/etc/letsencrypt:ro jobportal-frontend:test \
+  sh -c '/docker-entrypoint.d/05-select-jobportal-config.sh && nginx -t'          # HTTPS branch
+docker run --rm --add-host backend:127.0.0.1 jobportal-frontend:test \
+  sh -c '/docker-entrypoint.d/05-select-jobportal-config.sh && nginx -t'          # HTTP branch
+```
+
+### Rate limits (GEO-7B)
+
+Per client IP (`$binary_remote_addr`), `nodelay` (a burst is answered at once, then excess requests are rejected):
+
+| Location | Zone | Rate | Burst |
+|---|---|---|---|
+| `/api/` (everything else, including `/jobs/map/snapshot`) | `api` | 20 r/s | 40 |
+| `/api/v1/jobs/map/{nearby, places/*/jobs, offices/*/jobs, unplaced}` | `map_list` | 5 r/s | 10 |
+| `/api/v1/auth/{sessions, sessions/refresh, registrations, recruiter-registrations}` | `auth` | 10 r/min | 5 |
+| Swagger (when enabled) | `api` | 20 r/s | 40 |
+| `/tiles/`, static files, `/ws` | none | | |
+
+- The snapshot stays in the general zone: it is precomputed and answered with ETag/304.
+- The backend's login limiter (5 attempts per IP and email per minute) still applies behind the `auth` zone.
+- A rejected request gets `429` with `Retry-After: 1` and a body in the backend's ProblemDetail shape:
+  `{"type":".../problems/rate-limit","title":"Too many requests","status":429,"detail":"Too many requests, slow down
+  and try again shortly.","code":"RATE_LIMITED"}`. The map list panel shows "You're browsing a little fast…" with
+  Retry; login shows the detail inline.
+- Rejections are logged at `warn` in the nginx error log (`limiting requests, excess: … by zone "map_list", client:
+  …`). The access log format is unchanged (it does contain the request line, as before GEO-7).
+- **Tune:** edit `frontend/nginx-limits.conf` (rates) or `frontend/jobportal-locations.conf` (bursts), rebuild the
+  frontend image. Everyone behind one NAT shares one key, so raise `burst` before `rate` if offices report 429s.
+
+### Security headers (GEO-7B)
+
+Set by nginx on every response (HTML, API, tiles, 429s) via `security-headers.conf`, which is included at server
+level and again in each location with its own `add_header` (an `add_header` in a location drops the inherited ones).
+Spring Security's copies are hidden on proxied responses so there are no duplicates.
+
+| Header | Value |
+|---|---|
+| `Strict-Transport-Security` | `max-age=31536000` (HTTPS only; no `includeSubDomains`/`preload` while on shared sslip.io) |
+| `X-Content-Type-Options` | `nosniff` |
+| `Referrer-Policy` | `strict-origin-when-cross-origin` |
+| `X-Frame-Options` | `DENY` |
+| `Permissions-Policy` | `geolocation=(self), camera=(), microphone=()` (the map's "Near me" needs geolocation) |
+| `Content-Security-Policy-Report-Only` | `default-src 'self'`, blob workers allowed, … (see the file) |
+
+The CSP is **report-only**: browsers log violations in the console but block nothing. MapLibre runs blob workers, and a
+wrong enforcing policy breaks the map silently. Promote it to `Content-Security-Policy` in a later phase, once the map,
+chat, resume upload/download and admin pages show no violations.
+
 ## Attribution
 
 GeoNames data is CC BY 4.0 (see `src/main/resources/geo/ATTRIBUTION.md`). Any page that shows resolved

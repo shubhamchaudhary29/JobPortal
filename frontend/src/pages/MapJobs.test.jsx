@@ -359,6 +359,14 @@ describe("MapJobs page", () => {
     expect(await screen.findByText("Engineer job-1")).toBeInTheDocument();
   });
 
+  it("explains a rate-limited list instead of failing silently", async () => {
+    service.getPlaceJobs.mockRejectedValueOnce({ kind: "rateLimited", status: 429 });
+    renderAt("/jobs/map?place=1277333");
+    expect(await screen.findByText("You're browsing a little fast. Wait a moment, then try again.")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Retry" }));
+    expect(await screen.findByText("Engineer job-1")).toBeInTheDocument();
+  });
+
   it("retries an unavailable snapshot, then offers Retry", async () => {
     service.getMapSnapshot.mockRejectedValue({ kind: "unavailable", retryAfterSeconds: 0.01 });
     renderAt("/jobs/map");

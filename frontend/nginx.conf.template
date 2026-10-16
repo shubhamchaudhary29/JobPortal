@@ -1,0 +1,27 @@
+# HTTPS server. Rendered by select-nginx-config.sh with
+#   envsubst '${APP_SERVER_NAMES} ${TLS_CERT_PATH} ${TLS_KEY_PATH}'
+# so nginx's own variables ($host, $remote_addr, ...) are left untouched.
+
+upstream jobportal_backend {
+    server backend:8080;
+    keepalive 64;
+    # Shorter than Tomcat's keep-alive idle timeout, so nginx never reuses a socket Tomcat already closed.
+    keepalive_timeout 15s;
+}
+
+server {
+    listen 80;
+    server_name ${APP_SERVER_NAMES};
+    return 301 https://$host$request_uri;
+}
+
+server {
+    listen 443 ssl;
+    server_name ${APP_SERVER_NAMES};
+
+    ssl_certificate     ${TLS_CERT_PATH};
+    ssl_certificate_key ${TLS_KEY_PATH};
+    ssl_protocols TLSv1.2 TLSv1.3;
+
+    include /etc/nginx/jobportal/locations.conf;
+}

@@ -1,10 +1,12 @@
 import { useState } from "react";
 import { useNavigate, Link } from "react-router-dom";
-import { loginUser } from "../services/user-service"; 
+import { loginUser } from "../services/user-service";
+import { safeApiMessage } from "../services/helper";
 
 export default function Login() {
   const navigate = useNavigate(); // For smooth page transitions
   const [showPassword, setShowPassword] = useState(false);
+  const [error, setError] = useState("");
 
   const [formData, setFormData] = useState({
     email: "",
@@ -20,6 +22,7 @@ export default function Login() {
 
 const handleLogin = async (e) => {
     e.preventDefault();
+    setError("");
     try {
       const { email, password } = formData;
       const { role } = await loginUser(email, password);
@@ -32,9 +35,8 @@ const handleLogin = async (e) => {
       } else {
         navigate("/");
       }
-    } catch (error) {
-      console.error("Login failed:", error);
-      alert("Invalid credentials");
+    } catch (err) {
+      setError(safeApiMessage(err, "Invalid email or password."));
     }
   };
 
@@ -49,6 +51,12 @@ const handleLogin = async (e) => {
           Apply to jobs faster 🚀
         </p>
 
+
+        {error && (
+          <div role="alert" className="mt-4 rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+            {error}
+          </div>
+        )}
 
         <form onSubmit={handleLogin} className="mt-6 space-y-5">
           <div>

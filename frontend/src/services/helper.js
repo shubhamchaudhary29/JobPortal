@@ -40,8 +40,14 @@ apiClient.interceptors.response.use(
 
 export default apiClient;
 
+export const RATE_LIMIT_MESSAGE = "Too many requests, slow down and try again shortly.";
+
+/** A 429 from nginx's limit_req or the backend's login limiter (both send a ProblemDetail body). */
+export const isRateLimited = (error) => error?.response?.status === 429;
+
 export const safeApiMessage = (error, fallback) => {
   const problem = error?.response?.data;
+  if (isRateLimited(error)) return RATE_LIMIT_MESSAGE;
   if (error?.response?.status === 400 && problem?.code === "VALIDATION_ERROR") {
     return problem.detail || fallback;
   }

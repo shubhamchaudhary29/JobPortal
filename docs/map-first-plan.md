@@ -48,7 +48,7 @@ Attribution required: © OpenStreetMap contributors, GeoNames (CC-BY 4.0).
 - [x] GEO-5 — `/jobs/map`: clustered city markers, place/near-me/this-area job lists, Remote and Anywhere-in-India tabs, linked from the header and Jobs page (PR #20)
 - [x] GEO-6 — foreign-only remote listings are `FOREIGN`; ADMIN office pins (audited, 60 km guard) applied at read time to the snapshot, office job lists and nearby; `/admin/offices` editor and office markers (PR #21)
 - [x] GEO-7A — trust only nginx's `X-Real-IP` for client IPs (`shared.web.ClientIp`), backend port no longer published, Swagger off in Compose by default
-- [ ] GEO-7B — domain-templated nginx, `limit_req` rate limits with a JSON 429, security headers
+- [x] GEO-7B — domain-templated nginx, `limit_req` rate limits with a JSON 429, security headers
 - [ ] GEO-7C — Cloudflare real IP (`CLOUDFLARE_PROXY`), Origin CA cert support, own-domain runbook
 - [ ] GEO-7D — k6 capacity runs inside the Compose network and a rate-limit check through nginx
 - [ ] GEO-7E — tiles to Cloudflare R2: trigger and target design (decision only)
@@ -233,6 +233,18 @@ so GEO-7 starts by closing those bypasses.
 - The backend is `expose`d on the Compose network only; `docker-compose.dev.yml` publishes `127.0.0.1:8080` for local
   debugging. The smoke test checks health from inside the network and that host port 8080 refuses connections.
 - `SWAGGER_ENABLED` defaults to `false` in Compose (the properties default stays `true` for `./mvnw spring-boot:run`).
+
+**7B — domain-agnostic nginx, rate limits, security headers (done).**
+- `nginx.conf.template` is rendered at container start from `APP_SERVER_NAMES`, `TLS_CERT_PATH` and `TLS_KEY_PATH`
+  (defaults derived from `APP_DOMAIN`, default the sslip.io host, so production renders exactly as before). Values that
+  are not host names or absolute paths stop the container. All locations live in one include shared by the HTTPS and
+  HTTP servers.
+- `limit_req`: `api` 20 r/s (burst 40) on `/api/`; `map_list` 5 r/s (burst 10) on the nearby/place/office/unplaced
+  lists; `auth` 10 r/min (burst 5) on login, refresh and registrations. The snapshot, tiles, static files and `/ws` are
+  not throttled beyond that. 429s carry a ProblemDetail body (`code: RATE_LIMITED`); the map list and login show a
+  friendly message.
+- HSTS (no `includeSubDomains`), `nosniff`, `Referrer-Policy`, `X-Frame-Options: DENY`, `Permissions-Policy`
+  (geolocation self only), and a report-only CSP, on every response.
 
 ---
 
