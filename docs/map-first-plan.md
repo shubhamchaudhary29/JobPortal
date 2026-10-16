@@ -50,7 +50,7 @@ Attribution required: © OpenStreetMap contributors, GeoNames (CC-BY 4.0).
 - [x] GEO-7A — trust only nginx's `X-Real-IP` for client IPs (`shared.web.ClientIp`), backend port no longer published, Swagger off in Compose by default
 - [x] GEO-7B — domain-templated nginx, `limit_req` rate limits with a JSON 429, security headers
 - [x] GEO-7C — Cloudflare real IP (`CLOUDFLARE_PROXY`), Origin CA cert support, own-domain runbook (code and runbook done; **cutover pending**: domain purchase and DNS are manual)
-- [ ] GEO-7D — k6 capacity runs inside the Compose network and a rate-limit check through nginx
+- [x] GEO-7D — k6 capacity runs inside the Compose network and a rate-limit check through nginx
 - [ ] GEO-7E — tiles to Cloudflare R2: trigger and target design (decision only)
 
 ---
@@ -254,6 +254,12 @@ so GEO-7 starts by closing those bypasses.
 - Origin CA certificates: `TLS_DIR` (default `/etc/letsencrypt`) is mounted read-only at the same path and
   `TLS_CERT_PATH`/`TLS_KEY_PATH` point inside it. Defaults leave the sslip.io deployment unchanged.
 - Runbook: `docs/geo-operations.md` → "Own domain and Cloudflare (GEO-7C)".
+
+**7D — load tests that fit the limits (done).** `map-snapshot.js` and `map-jobs.js` now default to
+`http://backend:8080` and run inside the Compose network; `map-jobs.js` has a 5% office leg (seed offices with
+`seed-map-jobs.py --offices N`). `rate-limits.js` goes through nginx and asserts nearby is throttled while the snapshot
+and tiles are not. 2026-10-17 laptop results (200 VUs, GEO-0 memory limits): snapshot 13k req/s p95 34 ms, map lists
+10.8k req/s p95 34 ms, 0% errors, backend peak 513 MiB, Mongo 250 MiB. Table in `docs/geo-operations.md`.
 
 ---
 

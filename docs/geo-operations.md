@@ -159,8 +159,7 @@ is not in the Remote list. Any open or India-scoped remote marker in the locatio
 Indian place keeps it PLACE. Postings can still restrict eligibility in their description, which the resolver does not
 read, so the Remote tab asks candidates to check each posting.
 
-**Load tests (local only):** seed with `python3 backend/backend/scripts/seed-map-jobs.py | docker compose exec
--T mongodb mongosh --quiet jobportal`, restart the backend, then run `scripts/k6/map-jobs.js`.
+**Load tests (local only):** see "Load tests (GEO-7D)" below.
 
 ## Map tiles
 
@@ -374,6 +373,50 @@ Spring Security's copies are hidden on proxied responses so there are no duplica
 The CSP is **report-only**: browsers log violations in the console but block nothing. MapLibre runs blob workers, and a
 wrong enforcing policy breaks the map silently. Promote it to `Content-Security-Policy` in a later phase, once the map,
 chat, resume upload/download and admin pages show no violations.
+
+### Load tests (GEO-7D)
+
+Local only, never against production. Since GEO-7B, nginx caps one IP at 5 r/s on map lists and 20 r/s on the rest of
+`/api/`, so capacity runs bypass nginx and target the backend **inside the Compose network**; a separate script checks
+the limits through nginx.
+
+```bash
+# Seed ~2,000 jobs and 3 "Acme" offices, then restart the backend so the snapshot includes them.
+python3 backend/backend/scripts/seed-map-jobs.py --offices 3 | docker compose exec -T mongodb mongosh --quiet jobportal
+docker compose restart backend
+
+# Capacity (network = <Compose project>_default, e.g. jobportal_default; check with `docker network ls`).
+docker run --rm -i --network jobportal_default -e BASE_URL=http://backend:8080 grafana/k6 run - < backend/backend/scripts/k6/map-snapshot.js
+docker run --rm -i --network jobportal_default -e BASE_URL=http://backend:8080 grafana/k6 run - < backend/backend/scripts/k6/map-jobs.js
+
+# Rate limits, through nginx from one IP.
+docker run --rm -i --network host -e BASE_URL=http://localhost grafana/k6 run - < backend/backend/scripts/k6/rate-limits.js
+
+# Clean up.
+docker compose exec -T mongodb mongosh --quiet jobportal --eval \
+  'db.jobs.deleteMany({seedBatch: "geo-load"}); db.company_offices.deleteMany({seedBatch: "geo-load"})'
+```
+
+| Script | Mix |
+|---|---|
+| `map-snapshot.js` | 200 VUs × 60 s; half revalidate with `If-None-Match` (304), all gzip |
+| `map-jobs.js` | 200 VUs × 60 s; 65% place lists, 20% nearby, 10% place + `q`, 5% office lists (place lists when the snapshot has no offices) |
+| `rate-limits.js` | 20 s at fixed rates through nginx: nearby 15 r/s, snapshot 10 r/s, `/tiles/manifest.json` 50 r/s |
+
+**Results, 2026-10-17.** Laptop: Intel Core i5-1240P (16 threads), 7.4 GiB RAM, Linux 7.0, Docker 29.1, k6 2.3.0 in
+Docker on the same machine (so k6 competes with the stack for CPU). Default Compose memory limits (GEO-0: backend
+1 GiB, Mongo 768 MiB, WiredTiger 0.25 GB). Data: 2,000 seeded jobs (1,813 placed over 30 places), 3 offices.
+Peak memory is the highest `docker stats` sample during the run.
+
+| Run | VUs | Requests/s | p95 | p99 | Errors | Peak backend | Peak Mongo |
+|---|---|---|---|---|---|---|---|
+| `map-snapshot.js` (backend direct) | 200 | 13,047 | 33.6 ms | 58.6 ms | 0.00% | 482 MiB | 250 MiB |
+| `map-jobs.js` (backend direct) | 200 | 10,756 | 34.4 ms | 91.3 ms | 0.00% | 513 MiB | 234 MiB |
+| `rate-limits.js` (through nginx) | ≤ 20 | 75 | 3.7 ms | 4.4 ms | 0.00% unexpected | 512 MiB | 238 MiB |
+
+`rate-limits.js` thresholds all passed: nearby 63.1% 429 (190 of 301; the expected share is ≈ 1 − 111/300), every 429
+had the `RATE_LIMITED` body, the snapshot was 200/304 for 201 of 201, and `/tiles/manifest.json` had 0 429s.
+These are laptop numbers for regressions, not a production capacity promise: the EC2 box has less CPU and RAM.
 
 ## Own domain and Cloudflare (GEO-7C)
 
