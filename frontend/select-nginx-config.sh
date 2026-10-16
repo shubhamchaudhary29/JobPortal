@@ -8,6 +8,7 @@ set -eu
 : "${APP_SERVER_NAMES:=$APP_DOMAIN}"
 : "${TLS_CERT_PATH:=/etc/letsencrypt/live/$APP_DOMAIN/fullchain.pem}"
 : "${TLS_KEY_PATH:=/etc/letsencrypt/live/$APP_DOMAIN/privkey.pem}"
+: "${CLOUDFLARE_PROXY:=false}"
 export APP_DOMAIN APP_SERVER_NAMES TLS_CERT_PATH TLS_KEY_PATH
 
 fail() { echo "select-nginx-config: $*" >&2; exit 1; }
@@ -19,6 +20,16 @@ printf '%s' "$APP_SERVER_NAMES" | grep -Eq '^[A-Za-z0-9.*-]+( +[A-Za-z0-9.*-]+)*
 for path in "$TLS_CERT_PATH" "$TLS_KEY_PATH"; do
     printf '%s' "$path" | grep -Eq '^/[A-Za-z0-9._/-]+$' || fail "TLS paths must be absolute file paths: '$path'"
 done
+
+# Behind Cloudflare, restore the visitor address from CF-Connecting-IP, trusted only from Cloudflare's ranges.
+# Off by default: without the proxy there is no reason to read the header at all.
+realip=/etc/nginx/jobportal/realip.conf
+case "$CLOUDFLARE_PROXY" in
+    true)  cp /etc/nginx/jobportal/cloudflare-realip.conf "$realip"
+           echo "select-nginx-config: Cloudflare real IP enabled" ;;
+    false) : > "$realip" ;;
+    *)     fail "CLOUDFLARE_PROXY must be true or false: '$CLOUDFLARE_PROXY'" ;;
+esac
 
 target=/etc/nginx/conf.d/default.conf
 if [ -r "$TLS_CERT_PATH" ] && [ -r "$TLS_KEY_PATH" ]; then

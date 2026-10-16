@@ -315,6 +315,8 @@ container then fails to start instead of running a broken config.
 | `APP_SERVER_NAMES` | `$APP_DOMAIN` | Space-separated `server_name` list |
 | `TLS_CERT_PATH` | `/etc/letsencrypt/live/$APP_DOMAIN/fullchain.pem` | Certificate inside the container |
 | `TLS_KEY_PATH` | `/etc/letsencrypt/live/$APP_DOMAIN/privkey.pem` | Private key inside the container |
+| `TLS_DIR` | `/etc/letsencrypt` | Host certificate directory, mounted read-only at the same path (GEO-7C) |
+| `CLOUDFLARE_PROXY` | `false` | `true` restores the visitor IP from `CF-Connecting-IP` (GEO-7C) |
 
 With no new variables in `.env`, the rendered server names and certificate paths are exactly those of the pre-GEO-7
 `nginx.conf`.
@@ -372,6 +374,121 @@ Spring Security's copies are hidden on proxied responses so there are no duplica
 The CSP is **report-only**: browsers log violations in the console but block nothing. MapLibre runs blob workers, and a
 wrong enforcing policy breaks the map silently. Promote it to `Content-Security-Policy` in a later phase, once the map,
 chat, resume upload/download and admin pages show no violations.
+
+## Own domain and Cloudflare (GEO-7C)
+
+Cloudflare cannot proxy `*.sslip.io`, so the edge needs an own domain. The code is ready; the cutover is manual.
+
+### How the client IP flows
+
+```
+visitor ──▶ Cloudflare edge ──▶ nginx ──▶ backend
+            adds CF-Connecting-IP   realip: if the TCP peer is in a Cloudflare range,   ClientIp.of():
+                                    $remote_addr := CF-Connecting-IP                     X-Real-IP (= $remote_addr)
+                                    limit_req keys on $binary_remote_addr                login limiter key
+                                    X-Real-IP / X-Forwarded-For := $remote_addr
+```
+
+- `CLOUDFLARE_PROXY=true` makes `select-nginx-config.sh` install `frontend/cloudflare-realip.conf`
+  (`set_real_ip_from` for every Cloudflare range, `real_ip_header CF-Connecting-IP`, `real_ip_recursive on`) into both
+  servers; with `false` (default) the include is empty and the header is ignored.
+- A `CF-Connecting-IP` from any address outside those ranges is ignored even when the flag is on, so a visitor that
+  reaches the origin directly cannot pick its own rate-limit key. The security group (step 6) makes that moot anyway.
+- **Local proof** (2026-10-17, stack up with `CLOUDFLARE_PROXY=true`, Compose project `geo7`):
+
+  ```bash
+  docker run --rm --network geo7_default curlimages/curl:8.10.1 -s -o /dev/null \
+    -H 'CF-Connecting-IP: 1.2.3.4' -A cf-spoof http://frontend/api/v1/health
+  docker compose -p geo7 logs frontend | grep cf-spoof
+  # 172.19.0.5 - - [...] "GET /api/v1/health HTTP/1.1" 200 ... "cf-spoof"   ← the docker peer, not 1.2.3.4
+  ```
+
+  Eight logins with a different `CF-Connecting-IP` each still hit 429 after five. As a positive control, a container
+  whose realip file also trusts `172.16.0.0/12` logged `1.2.3.4`, and the backend limiter then counted each forged
+  visitor separately, which shows the header reaches `ClientIp` only through a trusted proxy.
+- **Refresh the ranges** when Cloudflare announces a change: `bash frontend/scripts/update-cloudflare-ips.sh`, commit
+  the diff, rebuild the frontend, and update the security group (step 6).
+
+### Runbook
+
+1. **Domain and Cloudflare.** Buy the domain. In Cloudflare (free plan) *Add a site*, pick Free, and set the two
+   nameservers it shows at the registrar. Wait until the site shows *Active*.
+2. **DNS.** `A  @  → <EC2 Elastic IP>` and `CNAME  www  → @`, both **Proxied** (orange cloud).
+3. **TLS.** SSL/TLS → Overview → **Full (strict)**. SSL/TLS → Origin Server → *Create Certificate*: RSA (2048),
+   hostnames `<domain>` and `*.<domain>`, 15 years. On EC2:
+
+   ```bash
+   sudo mkdir -p /etc/ssl/cloudflare
+   sudo nano /etc/ssl/cloudflare/origin.pem   # paste the Origin Certificate
+   sudo nano /etc/ssl/cloudflare/origin.key   # paste the Private Key (shown once)
+   sudo chmod 600 /etc/ssl/cloudflare/origin.key && sudo chmod 644 /etc/ssl/cloudflare/origin.pem
+   ```
+
+   nginx's master process runs as root and reads the key before dropping privileges, so `600 root` is fine.
+   The Origin CA certificate is trusted only by Cloudflare, never by browsers: it only works behind the orange cloud.
+4. **`.env`** on EC2 (keep a copy of the old file: `cp .env .env.before-cloudflare`):
+
+   ```bash
+   APP_DOMAIN=<domain>
+   APP_SERVER_NAMES="<domain> www.<domain>"
+   TLS_DIR=/etc/ssl/cloudflare
+   TLS_CERT_PATH=/etc/ssl/cloudflare/origin.pem
+   TLS_KEY_PATH=/etc/ssl/cloudflare/origin.key
+   CLOUDFLARE_PROXY=true
+   CORS_ALLOWED_ORIGINS=https://<domain>,https://www.<domain>
+   REFRESH_COOKIE_SECURE=true
+   ```
+
+   CORS origins need the `https://` scheme. Then deploy:
+   `git pull && docker compose down && docker compose up -d --build`, and check
+   `docker compose logs frontend | grep select-nginx` shows "Cloudflare real IP enabled" and "HTTPS for <domain> www.<domain>".
+5. **WebSockets.** Network → WebSockets **On** (free plan). `/ws` (SockJS chat) depends on it.
+6. **Security group.** Inbound 80 and 443 **only from Cloudflare's ranges**, 22 only from your own IP, nothing on 8080
+   or 27017 (neither is published by Compose anyway). The ranges are the ones in `frontend/cloudflare-realip.conf`.
+   Optional AWS CLI loop (replace `sg-…`; then delete the old `0.0.0.0/0` and `::/0` rules for 80/443 in the console):
+
+   ```bash
+   SG=sg-0123456789abcdef0
+   for cidr in $(sed -n 's/^set_real_ip_from \(.*\);$/\1/p' frontend/cloudflare-realip.conf); do
+     for port in 80 443; do
+       case "$cidr" in
+         *:*) range="Ipv6Ranges=[{CidrIpv6=$cidr,Description=cloudflare}]" ;;
+         *)   range="IpRanges=[{CidrIp=$cidr,Description=cloudflare}]" ;;
+       esac
+       aws ec2 authorize-security-group-ingress --group-id "$SG" \
+         --ip-permissions "IpProtocol=tcp,FromPort=$port,ToPort=$port,$range"
+     done
+   done
+   ```
+
+   Security groups allow 60 inbound rules per address family by default; 14 IPv4 × 2 ports fits.
+   Once 80 is closed to the world, Let's Encrypt HTTP-01 renewals for the sslip.io fallback stop working; the Origin CA
+   certificate does not need renewing for 15 years.
+7. **Cache.** Caching → Cache Rules → *Create rule* "API bypass": URI Path starts with `/api/` → **Bypass cache**
+   (Cloudflare does not cache JSON by default; the rule makes it explicit). Add `/ws` to the same rule. `/assets/*`
+   (hashed Vite files) can be cached; nothing else needs a rule. `.pmtiles` is not a default cached extension, so tile
+   range requests pass through to nginx. Serving tiles from R2 is GEO-7E.
+8. **Verify.**
+   - `curl -sI https://<domain>` shows `server: cloudflare` and `strict-transport-security: max-age=31536000`.
+   - In a browser: login, `/jobs/map` (markers and base map), "Near me", chat over WebSocket (DevTools → Network → WS
+     shows `101`), resume PDF download, `/admin/offices`.
+   - `docker compose logs --tail 20 frontend` shows real visitor IPs, not `172.x` or Cloudflare addresses.
+   - `curl -m 10 -k https://<EC2 Elastic IP>` from outside AWS **times out** (security group).
+   - Rate limits still bite per visitor: run the `nearby` loop from GEO-7B against `https://<domain>`.
+9. **Rollback.**
+   - Restore the old `.env` (`cp .env.before-cloudflare .env`, which has `CLOUDFLARE_PROXY=false` and the sslip.io
+     values), re-open 80/443 to `0.0.0.0/0` and `::/0` in the security group, and redeploy
+     (`docker compose down && docker compose up -d --build`). The site is back on `https://54-236-126-94.sslip.io`.
+   - Setting the DNS records to **DNS only** (grey cloud) sends visitors straight to EC2, where the Origin CA certificate
+     is **not** browser-trusted. Grey cloud with the own domain therefore needs a Let's Encrypt certificate for it first
+     (`certbot certonly` for `<domain>` and `www.<domain>`, then `APP_DOMAIN=<domain>`, `TLS_DIR=/etc/letsencrypt`, empty
+     `TLS_CERT_PATH`/`TLS_KEY_PATH`, `CLOUDFLARE_PROXY=false`).
+
+### Fallback: sslip.io with Let's Encrypt
+
+With no GEO-7 variables in `.env`, the frontend serves `54-236-126-94.sslip.io` with the Let's Encrypt certificate from
+`/etc/letsencrypt/live/54-236-126-94.sslip.io/`, exactly as before GEO-7. Renewal stays as it is today (port 80 must be
+reachable for HTTP-01).
 
 ## Attribution
 

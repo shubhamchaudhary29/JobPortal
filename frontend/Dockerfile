@@ -21,7 +21,8 @@ RUN command -v envsubst
 
 # Rate-limit zones (http context, loaded before default.conf) and the shared server snippets.
 COPY nginx-limits.conf /etc/nginx/conf.d/00-limits.conf
-COPY nginx.conf.template nginx-http.conf jobportal-locations.conf proxy-backend.conf security-headers.conf /etc/nginx/jobportal/
+COPY nginx.conf.template nginx-http.conf jobportal-locations.conf proxy-backend.conf security-headers.conf \
+     cloudflare-realip.conf /etc/nginx/jobportal/
 RUN mv /etc/nginx/jobportal/jobportal-locations.conf /etc/nginx/jobportal/locations.conf
 
 # Render HTTPS when the deployment certificate is mounted; otherwise use local HTTP.

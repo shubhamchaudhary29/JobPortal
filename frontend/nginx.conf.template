@@ -12,6 +12,7 @@ upstream jobportal_backend {
 server {
     listen 80;
     server_name ${APP_SERVER_NAMES};
+    include /etc/nginx/jobportal/realip.conf;
     return 301 https://$host$request_uri;
 }
 
@@ -23,5 +24,6 @@ server {
     ssl_certificate_key ${TLS_KEY_PATH};
     ssl_protocols TLSv1.2 TLSv1.3;
 
+    include /etc/nginx/jobportal/realip.conf;     # empty unless CLOUDFLARE_PROXY=true
     include /etc/nginx/jobportal/locations.conf;
 }
