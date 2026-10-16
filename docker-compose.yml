@@ -19,8 +19,10 @@ services:
       dockerfile: Dockerfile.dev
     restart: unless-stopped
     mem_limit: ${BACKEND_MEM_LIMIT:-1g}
-    ports:
-      - "8080:8080"
+    # Reachable only on the Compose network, through nginx (GEO-7A). docker-compose.dev.yml re-publishes it on
+    # 127.0.0.1 for local debugging.
+    expose:
+      - "8080"
     volumes:
       - backend-uploads:/app/uploads
     environment:
@@ -64,7 +66,7 @@ services:
       RESUME_MAX_BYTES: ${RESUME_MAX_BYTES:-5242880}
       CANDIDATE_RESUME_MAX_BYTES: ${CANDIDATE_RESUME_MAX_BYTES:-5242880}
       CANDIDATE_RESUME_ALLOWED_FORMATS: ${CANDIDATE_RESUME_ALLOWED_FORMATS:-pdf,docx}
-      SWAGGER_ENABLED: ${SWAGGER_ENABLED:-true}
+      SWAGGER_ENABLED: ${SWAGGER_ENABLED:-false}
       JOB_AGGREGATION_SCHEDULING_ENABLED: ${JOB_AGGREGATION_SCHEDULING_ENABLED:-true}
       GREENHOUSE_SYNC_DELAY_MS: ${GREENHOUSE_SYNC_DELAY_MS:-21600000}
       LEVER_SYNC_DELAY_MS: ${LEVER_SYNC_DELAY_MS:-21600000}

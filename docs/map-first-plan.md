@@ -47,7 +47,11 @@ Attribution required: © OpenStreetMap contributors, GeoNames (CC-BY 4.0).
 - [x] GEO-4 — self-hosted India basemap (.pmtiles + fonts/sprites in a volume, served by nginx) and a MapLibre base map with no borders or country/state labels (PR #19)
 - [x] GEO-5 — `/jobs/map`: clustered city markers, place/near-me/this-area job lists, Remote and Anywhere-in-India tabs, linked from the header and Jobs page (PR #20)
 - [x] GEO-6 — foreign-only remote listings are `FOREIGN`; ADMIN office pins (audited, 60 km guard) applied at read time to the snapshot, office job lists and nearby; `/admin/offices` editor and office markers (PR #21)
-- [ ] GEO-7
+- [x] GEO-7A — trust only nginx's `X-Real-IP` for client IPs (`shared.web.ClientIp`), backend port no longer published, Swagger off in Compose by default
+- [ ] GEO-7B — domain-templated nginx, `limit_req` rate limits with a JSON 429, security headers
+- [ ] GEO-7C — Cloudflare real IP (`CLOUDFLARE_PROXY`), Origin CA cert support, own-domain runbook
+- [ ] GEO-7D — k6 capacity runs inside the Compose network and a rate-limit check through nginx
+- [ ] GEO-7E — tiles to Cloudflare R2: trigger and target design (decision only)
 
 ---
 
@@ -216,6 +220,19 @@ unused.
 - nginx `limit_req` on `/api/`, tighter on `/jobs/nearby`.
 - Tiles to Cloudflare R2 + Worker (Protomaps' documented path) when bandwidth justifies it.
 - k6 load tests for snapshot, nearby, and place endpoints.
+
+Rate limits and Cloudflare are pointless while the backend can be reached directly or trusts a client-supplied IP,
+so GEO-7 starts by closing those bypasses.
+
+**7A — close the bypasses (done).**
+- The login/refresh limiter keyed on the *first* `X-Forwarded-For` entry, which the client controls (nginx's
+  `$proxy_add_x_forwarded_for` appends to it). `shared.web.ClientIp.of(request)` now trusts only `X-Real-IP`, which
+  nginx overwrites with `$remote_addr`, and only when it is an IPv4/IPv6 literal of at most 45 characters (validated
+  without DNS); otherwise it uses the socket address. `X-Forwarded-For` is ignored. nginx now sends
+  `X-Forwarded-For $remote_addr` instead of forwarding the client's chain.
+- The backend is `expose`d on the Compose network only; `docker-compose.dev.yml` publishes `127.0.0.1:8080` for local
+  debugging. The smoke test checks health from inside the network and that host port 8080 refuses connections.
+- `SWAGGER_ENABLED` defaults to `false` in Compose (the properties default stays `true` for `./mvnw spring-boot:run`).
 
 ---
 

@@ -5,6 +5,7 @@ import com.example.backend.auth.api.dto.LoginRequest;
 import com.example.backend.auth.api.dto.RegisterRequest;
 import com.example.backend.auth.api.dto.RegisterResponse;
 import com.example.backend.auth.application.AuthService;
+import com.example.backend.shared.web.ClientIp;
 import com.example.backend.user.domain.UserRole;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
@@ -63,14 +64,14 @@ public class AuthController {
     @PostMapping("/sessions")
     @Operation(summary = "Create an authenticated session", description = "Returns a short-lived bearer token and sets an HttpOnly refresh cookie")
     public ResponseEntity<AuthResponse> login(@Valid @RequestBody LoginRequest request, HttpServletRequest httpRequest) {
-        return session(auth.login(request, clientIp(httpRequest)));
+        return session(auth.login(request, ClientIp.of(httpRequest)));
     }
 
     @PostMapping("/sessions/refresh")
     @SecurityRequirement(name = "refreshCookie")
     @Operation(summary = "Rotate the refresh token", description = "Uses and replaces the HttpOnly refresh cookie")
     public ResponseEntity<AuthResponse> refresh(HttpServletRequest request) {
-        return session(auth.refresh(cookie(request), clientIp(request)));
+        return session(auth.refresh(cookie(request), ClientIp.of(request)));
     }
 
     @DeleteMapping("/sessions/current")
@@ -100,10 +101,5 @@ public class AuthController {
         if (request.getCookies() == null) return null;
         for (Cookie cookie : request.getCookies()) if (COOKIE_NAME.equals(cookie.getName())) return cookie.getValue();
         return null;
-    }
-
-    private String clientIp(HttpServletRequest request) {
-        String forwarded = request.getHeader("X-Forwarded-For");
-        return forwarded == null || forwarded.isBlank() ? request.getRemoteAddr() : forwarded.split(",", 2)[0].trim();
     }
 }

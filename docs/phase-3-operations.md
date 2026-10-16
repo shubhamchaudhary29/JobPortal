@@ -54,7 +54,7 @@ Indexes consume storage and make writes slower. These are limited to current rep
 
 Backend unit/contract tests do not call Adzuna: `cd backend/backend && ./mvnw test`.
 
-For Compose, create a local ignored `.env` with placeholders for `MONGODB_URI`, `JWT_SECRET`, `ADZUNA_APP_ID`, `ADZUNA_APP_KEY`, and `CORS_ALLOWED_ORIGINS`, then run `docker compose config` followed by `docker compose build`. Do not commit `.env` files. `bash backend/backend/scripts/compose-smoke-test.sh` starts an isolated project with scheduling disabled, waits for MongoDB/backend/frontend health, verifies the direct and proxied health APIs and ADMIN SPA fallback, and removes its disposable volumes. The harness uses ports 80 and 8080 and must not share a project name or database with a persistent environment.
+For Compose, create a local ignored `.env` with placeholders for `MONGODB_URI`, `JWT_SECRET`, `ADZUNA_APP_ID`, `ADZUNA_APP_KEY`, and `CORS_ALLOWED_ORIGINS`, then run `docker compose config` followed by `docker compose build`. Do not commit `.env` files. `bash backend/backend/scripts/compose-smoke-test.sh` starts an isolated project with scheduling disabled, waits for MongoDB/backend/frontend health, verifies the backend health API from inside the Compose network and through nginx, that port 8080 is not published on the host, that Swagger is 404 by default, and the ADMIN SPA fallback, and removes its disposable volumes. The harness uses port 80 and must not share a project name or database with a persistent environment.
 ## Employer ingestion operations
 
 ### Source-listing backfill (M1A)

@@ -283,6 +283,16 @@ test the city picker. To test denial, block location in the site settings. With 
 `scripts/seed-map-jobs.py` (see *Load tests* above) and remove them afterwards
 (`db.jobs.deleteMany({seedBatch: "geo-load"})`).
 
+## Edge and hardening (GEO-7)
+
+### Client IP and direct access (GEO-7A)
+
+- nginx is the only way in: the backend has no published port. For local debugging publish it on loopback with
+  `docker compose -f docker-compose.yml -f docker-compose.dev.yml up -d` (never on the server).
+- Rate-limit keys use `shared.web.ClientIp`: `X-Real-IP` (set by nginx to `$remote_addr`) when it is a valid IP literal,
+  else the socket address. `X-Forwarded-For` is ignored; nginx sends only `$remote_addr` in it.
+- Swagger (`/swagger-ui.html`, `/v3/api-docs`) is 404 under Compose unless `SWAGGER_ENABLED=true` is set in `.env`.
+
 ## Attribution
 
 GeoNames data is CC BY 4.0 (see `src/main/resources/geo/ATTRIBUTION.md`). Any page that shows resolved
