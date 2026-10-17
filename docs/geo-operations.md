@@ -332,7 +332,7 @@ docker run --rm --add-host backend:127.0.0.1 jobportal-frontend:test \
   sh -c '/docker-entrypoint.d/05-select-jobportal-config.sh && nginx -t'          # HTTP branch
 ```
 
-### Rate limits (GEO-7B)
+### Rate limits (GEO-7B, GEO-7F)
 
 Per client IP (`$binary_remote_addr`), `nodelay` (a burst is answered at once, then excess requests are rejected):
 
@@ -340,12 +340,37 @@ Per client IP (`$binary_remote_addr`), `nodelay` (a burst is answered at once, t
 |---|---|---|---|
 | `/api/` (everything else, including `/jobs/map/snapshot`) | `api` | 20 r/s | 40 |
 | `/api/v1/jobs/map/{nearby, places/*/jobs, offices/*/jobs, unplaced}` | `map_list` | 5 r/s | 10 |
-| `/api/v1/auth/{sessions, sessions/refresh, registrations, recruiter-registrations}` | `auth` | 10 r/min | 5 |
+| `/api/v1/auth/{sessions, registrations, recruiter-registrations}` (login, sign-up) | `auth` | 30 r/min | 20 |
+| `/api/v1/auth/sessions/refresh` | `refresh` | 120 r/min | 60 |
 | Swagger (when enabled) | `api` | 20 r/s | 40 |
 | `/tiles/`, static files, `/ws` | none | | |
 
 - The snapshot stays in the general zone: it is precomputed and answered with ETag/304.
-- The backend's login limiter (5 attempts per IP and email per minute) still applies behind the `auth` zone.
+- Logout (`DELETE /api/v1/auth/sessions/current`) is in the general `api` zone.
+- Behind nginx the backend has its own limits (429 with `code: RATE_LIMITED`, `detail` "Too many authentication
+  attempts"):
+
+  | Backend limit | Key | Default | Variables |
+  |---|---|---|---|
+  | Login | client IP + email | 5 / 60 s, reset on success | `LOGIN_RATE_LIMIT_*` |
+  | Refresh | `refresh:` + first 16 hex of SHA-256(refresh token) | 20 / 60 s | `REFRESH_RATE_LIMIT_*` |
+
+  Every successful refresh rotates the token, so the refresh limit caps replays of one cookie (for example a burst of
+  tabs before the first rotation lands), not a user's refreshes over time.
+- **Reuse grace (`REFRESH_REUSE_GRACE_SECONDS`, 30):** a refresh token reused within 30 s of being rotated gets 401 but
+  keeps the session (two tabs racing). Later reuse, or reuse of a logged-out/expired token, revokes the whole family.
+
+#### Shared IPs (campus Wi-Fi, CGNAT)
+
+Many of our users are students on college Wi-Fi or Jio/Airtel mobile data, where carrier-grade NAT puts hundreds of
+people behind one public IP. Anything keyed per IP is shared by all of them, so:
+- Limits that protect an account are keyed on the account or session in the backend (login: IP + email; refresh:
+  per session), never on the IP alone.
+- nginx's per-IP zones are coarse flood guards with room for a lab full of users: refresh (every page load and every
+  new tab) has its own 120 r/min zone, and login/sign-up 30 r/min with a burst of 20.
+- The SPA never logs a user out because of a 429, a network error or a 5xx on refresh: it retries 429s with
+  `Retry-After` and clears the session only on 401/403 (GEO-7F-3). Tabs refresh one at a time (Web Locks) and share
+  the new token over a `BroadcastChannel`, so ten open tabs cost one refresh, not ten.
 - A rejected request gets `429` with `Retry-After: 1` and a body in the backend's ProblemDetail shape:
   `{"type":".../problems/rate-limit","title":"Too many requests","status":429,"detail":"Too many requests, slow down
   and try again shortly.","code":"RATE_LIMITED"}`. The map list panel shows "You're browsing a little fast…" with
@@ -353,7 +378,7 @@ Per client IP (`$binary_remote_addr`), `nodelay` (a burst is answered at once, t
 - Rejections are logged at `warn` in the nginx error log (`limiting requests, excess: … by zone "map_list", client:
   …`). The access log format is unchanged (it does contain the request line, as before GEO-7).
 - **Tune:** edit `frontend/nginx-limits.conf` (rates) or `frontend/jobportal-locations.conf` (bursts), rebuild the
-  frontend image. Everyone behind one NAT shares one key, so raise `burst` before `rate` if offices report 429s.
+  frontend image. Everyone behind one NAT shares one key, so raise `burst` before `rate` if campuses report 429s.
 
 ### Security headers (GEO-7B)
 

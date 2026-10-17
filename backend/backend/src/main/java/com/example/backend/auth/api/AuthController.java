@@ -71,7 +71,7 @@ public class AuthController {
     @SecurityRequirement(name = "refreshCookie")
     @Operation(summary = "Rotate the refresh token", description = "Uses and replaces the HttpOnly refresh cookie")
     public ResponseEntity<AuthResponse> refresh(HttpServletRequest request) {
-        return session(auth.refresh(cookie(request), ClientIp.of(request)));
+        return session(auth.refresh(cookie(request)));
     }
 
     @DeleteMapping("/sessions/current")

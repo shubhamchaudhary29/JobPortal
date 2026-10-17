@@ -25,7 +25,8 @@ describe("refresh coordination", () => {
     expect(first).toBe("new");
     expect(second).toBe("new");
     expect(authPost).toHaveBeenCalledTimes(1);
-    expect(authPost).toHaveBeenCalledWith("/api/v1/auth/sessions/refresh");
+    expect(authPost).toHaveBeenCalledWith("/api/v1/auth/sessions/refresh", undefined,
+      { adapter: "fetch", fetchOptions: { keepalive: true } });
   });
 
   it("configures both API clients to send credential cookies", async () => {
@@ -35,9 +36,9 @@ describe("refresh coordination", () => {
     expect(axios.create).toHaveBeenNthCalledWith(2, { baseURL: "", withCredentials: true });
   });
 
-  it("clears memory state when refresh fails", async () => {
+  it("clears memory state when the server rejects the refresh", async () => {
     setAuthSession({ accessToken: "old", role: "USER", email: "user@example.test" });
-    authPost.mockRejectedValue(new Error("refresh rejected"));
+    authPost.mockRejectedValue(Object.assign(new Error("refresh rejected"), { response: { status: 401 } }));
     const { refreshAccessToken } = await import("./helper");
     await expect(refreshAccessToken()).rejects.toThrow("refresh rejected");
     expect(getSession().accessToken).toBeNull();
