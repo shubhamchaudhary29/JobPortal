@@ -8,9 +8,14 @@ import com.example.backend.user.infrastructure.UserRepository;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
+import org.springframework.dao.OptimisticLockingFailureException;
 
 import java.security.SecureRandom;
 import java.time.Clock;
+import java.time.Duration;
+import java.time.Instant;
+import java.time.ZoneOffset;
+import java.util.List;
 import java.util.Optional;
 
 import static org.junit.jupiter.api.Assertions.*;
@@ -18,44 +23,91 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.*;
 
 class RefreshTokenServiceTest {
+    private static final long GRACE_SECONDS = 30;
     private RefreshTokenRepository tokens;
     private UserRepository users;
     private RefreshTokenService service;
     private UserDocument user;
+    private MutableClock clock;
 
     @BeforeEach
     void setUp() {
         tokens = mock(RefreshTokenRepository.class);
         users = mock(UserRepository.class);
-        service = new RefreshTokenService(tokens, users, 14, Clock.systemUTC(), new SecureRandom());
+        clock = new MutableClock(Instant.parse("2026-10-17T10:00:00Z"));
+        service = new RefreshTokenService(tokens, users, 14, clock, new SecureRandom(), GRACE_SECONDS);
         user = new UserDocument(); user.setId("user1"); user.setEmail("user@example.test");
         when(tokens.save(any())).thenAnswer(invocation -> invocation.getArgument(0));
+        when(users.findById("user1")).thenReturn(Optional.of(user));
+        when(tokens.findByUserIdAndFamilyIdAndRevokedAtIsNull(any(), any())).thenReturn(List.of());
+    }
+
+    /** Issues a token and makes the repository find it by hash; returns the raw token and its stored document. */
+    private Issued issued() {
+        var raw = service.issue(user).rawToken();
+        ArgumentCaptor<RefreshTokenDocument> stored = ArgumentCaptor.forClass(RefreshTokenDocument.class);
+        verify(tokens, atLeastOnce()).save(stored.capture());
+        RefreshTokenDocument document = stored.getValue();
+        when(tokens.findByTokenHash(document.getTokenHash())).thenReturn(Optional.of(document));
+        return new Issued(raw, document);
     }
 
     @Test
     void storesOnlyHashAndRotatesEveryUse() {
-        var issued = service.issue(user);
-        ArgumentCaptor<RefreshTokenDocument> stored = ArgumentCaptor.forClass(RefreshTokenDocument.class);
-        verify(tokens).save(stored.capture());
-        assertNotEquals(issued.rawToken(), stored.getValue().getTokenHash());
-        reset(tokens);
-        when(tokens.findByTokenHash(stored.getValue().getTokenHash())).thenReturn(Optional.of(stored.getValue()));
-        when(tokens.save(any())).thenAnswer(invocation -> invocation.getArgument(0));
-        when(users.findById("user1")).thenReturn(Optional.of(user));
-        var rotated = service.rotate(issued.rawToken());
-        assertNotEquals(issued.rawToken(), rotated.rawToken());
-        assertNotNull(stored.getValue().getRevokedAt());
+        Issued token = issued();
+        assertNotEquals(token.raw(), token.document().getTokenHash());
+        var rotated = service.rotate(token.raw());
+        assertNotEquals(token.raw(), rotated.rawToken());
+        assertNotNull(token.document().getRevokedAt());
+        assertNotNull(token.document().getReplacedByHash());
     }
 
     @Test
     void reuseRevokesTheActiveTokenFamily() {
-        var issued = service.issue(user);
-        ArgumentCaptor<RefreshTokenDocument> stored = ArgumentCaptor.forClass(RefreshTokenDocument.class);
-        verify(tokens).save(stored.capture());
-        stored.getValue().setRevokedAt(java.time.Instant.now());
-        when(tokens.findByTokenHash(stored.getValue().getTokenHash())).thenReturn(Optional.of(stored.getValue()));
-        when(tokens.findByUserIdAndFamilyIdAndRevokedAtIsNull(any(), any())).thenReturn(java.util.List.of());
-        assertThrows(UnauthorizedException.class, () -> service.rotate(issued.rawToken()));
-        verify(tokens).findByUserIdAndFamilyIdAndRevokedAtIsNull("user1", stored.getValue().getFamilyId());
+        Issued token = issued();
+        service.rotate(token.raw());
+        clock.advance(Duration.ofSeconds(GRACE_SECONDS + 1));
+
+        assertThrows(UnauthorizedException.class, () -> service.rotate(token.raw()));
+        verify(tokens).findByUserIdAndFamilyIdAndRevokedAtIsNull("user1", token.document().getFamilyId());
+    }
+
+    @Test
+    void concurrentReuseWithinGraceIsRejectedWithoutRevokingTheFamily() {
+        Issued token = issued();
+        service.rotate(token.raw());
+        clock.advance(Duration.ofSeconds(GRACE_SECONDS));
+
+        assertThrows(UnauthorizedException.class, () -> service.rotate(token.raw()));
+        verify(tokens, never()).findByUserIdAndFamilyIdAndRevokedAtIsNull(any(), any());
+    }
+
+    @Test
+    void reuseOfALoggedOutTokenRevokesTheFamilyEvenImmediately() {
+        Issued token = issued();
+        service.revoke(token.raw());
+
+        assertThrows(UnauthorizedException.class, () -> service.rotate(token.raw()));
+        verify(tokens).findByUserIdAndFamilyIdAndRevokedAtIsNull("user1", token.document().getFamilyId());
+    }
+
+    @Test
+    void optimisticLockConflictIsABenign401() {
+        Issued token = issued();
+        when(tokens.save(token.document())).thenThrow(new OptimisticLockingFailureException("raced"));
+
+        assertThrows(UnauthorizedException.class, () -> service.rotate(token.raw()));
+        verify(tokens, never()).findByUserIdAndFamilyIdAndRevokedAtIsNull(any(), any());
+    }
+
+    private record Issued(String raw, RefreshTokenDocument document) { }
+
+    private static final class MutableClock extends Clock {
+        private Instant now;
+        MutableClock(Instant now) { this.now = now; }
+        void advance(Duration duration) { now = now.plus(duration); }
+        @Override public Instant instant() { return now; }
+        @Override public java.time.ZoneId getZone() { return ZoneOffset.UTC; }
+        @Override public Clock withZone(java.time.ZoneId zone) { return this; }
     }
 }

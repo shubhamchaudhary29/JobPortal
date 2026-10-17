@@ -11,7 +11,7 @@ import java.util.Iterator;
 import java.util.LinkedHashMap;
 import java.util.Map;
 
-@Component
+@Component("loginRateLimiter")
 public class LoginRateLimiter {
     private final int limit;
     private final long windowSeconds;

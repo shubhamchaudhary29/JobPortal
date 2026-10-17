@@ -27,20 +27,23 @@ public class RefreshTokenService {
     private final SecureRandom random;
     private final Duration lifetime;
     private final Clock clock;
+    private final Duration reuseGrace;
 
     @Autowired
     public RefreshTokenService(RefreshTokenRepository tokens, UserRepository users,
-                               @Value("${security.refresh-token-days:14}") long days) {
-        this(tokens, users, days, Clock.systemUTC(), new SecureRandom());
+                               @Value("${security.refresh-token-days:14}") long days,
+                               @Value("${security.refresh-token.reuse-grace-seconds:30}") long reuseGraceSeconds) {
+        this(tokens, users, days, Clock.systemUTC(), new SecureRandom(), reuseGraceSeconds);
     }
 
     public RefreshTokenService(RefreshTokenRepository tokens, UserRepository users, long days,
-                               Clock clock, SecureRandom random) {
+                               Clock clock, SecureRandom random, long reuseGraceSeconds) {
         this.tokens = tokens;
         this.users = users;
         this.lifetime = Duration.ofDays(days);
         this.clock = clock;
         this.random = random;
+        this.reuseGrace = Duration.ofSeconds(reuseGraceSeconds);
     }
 
     public IssuedToken issue(UserDocument user) { return issue(user, UUID.randomUUID().toString()); }
@@ -49,7 +52,9 @@ public class RefreshTokenService {
         RefreshTokenDocument current = find(rawToken);
         Instant now = clock.instant();
         if (current.getRevokedAt() != null) {
-            revokeFamily(current.getUserId(), current.getFamilyId(), now);
+            // A token rotated moments ago is a second tab racing the first (same cookie), not theft: answer 401
+            // and keep the family. A late replay, or reuse of a logged-out/expired token, still revokes it.
+            if (!rotatedWithinGrace(current, now)) revokeFamily(current.getUserId(), current.getFamilyId(), now);
             throw invalid();
         }
         if (!current.getExpiresAt().isAfter(now)) {
@@ -61,7 +66,7 @@ public class RefreshTokenService {
         current.setRevokedAt(now);
         try { tokens.save(current); }
         catch (OptimisticLockingFailureException conflict) {
-            revokeFamily(current.getUserId(), current.getFamilyId(), now);
+            // Two rotations of the same token racing right now: the other one wins, this one is a benign 401.
             throw invalid();
         }
         IssuedToken replacement = issue(user, current.getFamilyId());
@@ -97,6 +102,10 @@ public class RefreshTokenService {
     private RefreshTokenDocument find(String raw) {
         if (raw == null || raw.length() < 40 || raw.length() > 200) throw invalid();
         return tokens.findByTokenHash(hash(raw)).orElseThrow(this::invalid);
+    }
+
+    private boolean rotatedWithinGrace(RefreshTokenDocument token, Instant now) {
+        return token.getReplacedByHash() != null && !token.getRevokedAt().plus(reuseGrace).isBefore(now);
     }
 
     private void revokeFamily(String userId, String familyId, Instant now) {

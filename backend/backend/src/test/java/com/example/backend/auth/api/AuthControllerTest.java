@@ -9,6 +9,7 @@ import com.example.backend.shared.error.RateLimitException;
 import com.example.backend.shared.error.UnauthorizedException;
 import com.example.backend.shared.security.JwtUtil;
 import com.example.backend.user.application.UserService;
+import com.example.backend.user.infrastructure.UserDocument;
 import com.example.backend.user.domain.UserRole;
 import jakarta.servlet.http.HttpServletRequest;
 import org.junit.jupiter.api.Test;
@@ -48,7 +49,7 @@ class AuthControllerTest {
         when(users.authenticate(anyString(), anyString())).thenThrow(new UnauthorizedException("Invalid credentials"));
         int limit = 5;
         AuthService auth = new AuthService(users, mock(JwtUtil.class), mock(RefreshTokenService.class),
-                new LoginRateLimiter(limit, 60, 100, Clock.systemUTC()));
+                new LoginRateLimiter(limit, 60, 100, Clock.systemUTC()), new LoginRateLimiter(20, 60, 100, Clock.systemUTC()));
         AuthController controller = new AuthController(auth, true, "Strict", 14);
         LoginRequest login = new LoginRequest("victim@example.test", "guess");
 
@@ -58,6 +59,46 @@ class AuthControllerTest {
         }
         MockHttpServletRequest request = proxied("10.9.8.99");
         assertThrows(RateLimitException.class, () -> controller.login(login, request));
+    }
+
+    @Test
+    void refreshIsLimitedPerSessionNotPerIp() {
+        RefreshTokenService refreshTokens = mock(RefreshTokenService.class);
+        UserDocument user = new UserDocument(); user.setEmail("user@example.test"); user.setRole(UserRole.USER);
+        when(refreshTokens.rotate(anyString())).thenAnswer(call -> new RefreshTokenService.RotatedToken(user, "rotated"));
+        AuthService auth = new AuthService(mock(UserService.class), mock(JwtUtil.class), refreshTokens,
+                new LoginRateLimiter(5, 60, 100, Clock.systemUTC()), new LoginRateLimiter(20, 60, 100, Clock.systemUTC()));
+        AuthController controller = new AuthController(auth, true, "Strict", 14);
+
+        // Five sessions behind one shared IP (campus Wi-Fi / CGNAT), five refreshes each: no shared bucket.
+        for (int session = 0; session < 5; session++) {
+            for (int attempt = 0; attempt < 5; attempt++) {
+                assertEquals(200, controller.refresh(withCookie(token(session))).getStatusCode().value());
+            }
+        }
+        // One cookie replayed: 20 per minute, then 429 for that session only.
+        for (int attempt = 5; attempt < 20; attempt++) controller.refresh(withCookie(token(0)));
+        assertThrows(RateLimitException.class, () -> controller.refresh(withCookie(token(0))));
+        assertEquals(200, controller.refresh(withCookie(token(1))).getStatusCode().value());
+    }
+
+    @Test
+    void missingRefreshCookieIs401WithoutTouchingTheLimiter() {
+        LoginRateLimiter refreshLimiter = mock(LoginRateLimiter.class);
+        AuthService auth = new AuthService(mock(UserService.class), mock(JwtUtil.class), mock(RefreshTokenService.class),
+                new LoginRateLimiter(5, 60, 100, Clock.systemUTC()), refreshLimiter);
+        AuthController controller = new AuthController(auth, true, "Strict", 14);
+
+        assertThrows(UnauthorizedException.class, () -> controller.refresh(proxied("1.1.1.1")));
+        verifyNoInteractions(refreshLimiter);
+    }
+
+    private static String token(int session) { return ("session-" + session + "-").repeat(8); }
+
+    private static MockHttpServletRequest withCookie(String token) {
+        MockHttpServletRequest request = proxied("6.6.6.6");
+        request.setCookies(new jakarta.servlet.http.Cookie("refresh_token", token));
+        return request;
     }
 
     /** A request as nginx forwards it: X-Real-IP is the visitor, X-Forwarded-For carries a fresh forged value. */

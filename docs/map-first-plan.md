@@ -52,6 +52,7 @@ Attribution required: © OpenStreetMap contributors, GeoNames (CC-BY 4.0).
 - [x] GEO-7C — Cloudflare real IP (`CLOUDFLARE_PROXY`), Origin CA cert support, own-domain runbook (code and runbook done; **cutover pending**: domain purchase and DNS are manual)
 - [x] GEO-7D — k6 capacity runs inside the Compose network and a rate-limit check through nginx
 - [ ] GEO-7E — tiles to Cloudflare R2: trigger and target design (decision only)
+- [ ] GEO-7F — session resilience behind shared IPs: refresh limited per session, reuse grace window, separate nginx `refresh` zone, HTTP/2, one refresh across tabs, no logout on transient errors
 
 ---
 
@@ -295,6 +296,21 @@ API, SPA and snapshot also use), or tiles above half of total egress. Measure it
 - Cost guard (zero paid cost): free R2 is 10 GB storage and 10 M reads/month; the free Workers plan allows
   **100,000 requests/day**. CDN-cached tiles do not invoke the Worker, but a cold cache does; check Worker request
   counts for the first week and keep the nginx path as the fallback if the free plan would be exceeded.
+
+**7F — session resilience behind shared IPs.** Students reach us through campus Wi-Fi and Jio/Airtel carrier-grade
+NAT, so many users share one public IP. After GEO-7 two bugs logged real users out:
+1. Refresh (called on every page load and new tab) was limited per IP: the backend login limiter (5/min, never reset
+   on success) plus nginx's `auth` zone. The SPA cleared the session on *any* refresh error, so one user reloading six
+   times, or ten students on one Wi-Fi, were logged out.
+2. Two tabs refreshing with the same cookie: the second saw an already-rotated token, treated it as theft and revoked
+   the whole token family.
+
+*7F-1 backend.* Refresh is limited by a separate limiter keyed `refresh:<first 16 hex of SHA-256(token)>`, 20/min
+(`REFRESH_RATE_LIMIT_*`). Because every refresh rotates the token, this caps replays of one cookie (a tab storm before
+the first rotation lands); IP floods are nginx's job. A missing cookie is 401 before the limiter. Login keeps IP + email,
+5/min. Reusing a token that was *rotated* (has `replacedByHash`) at most `REFRESH_REUSE_GRACE_SECONDS` (30) ago is a 401
+without revoking the family; a later replay, or reuse of a logged-out or expired token, still revokes it. An optimistic-lock
+conflict (two rotations racing) is a plain 401.
 
 ---
 
