@@ -159,8 +159,7 @@ is not in the Remote list. Any open or India-scoped remote marker in the locatio
 Indian place keeps it PLACE. Postings can still restrict eligibility in their description, which the resolver does not
 read, so the Remote tab asks candidates to check each posting.
 
-**Load tests (local only):** seed with `python3 backend/backend/scripts/seed-map-jobs.py | docker compose exec
--T mongodb mongosh --quiet jobportal`, restart the backend, then run `scripts/k6/map-jobs.js`.
+**Load tests (local only):** see "Load tests (GEO-7D)" below.
 
 ## Map tiles
 
@@ -282,6 +281,257 @@ from that city.
 test the city picker. To test denial, block location in the site settings. With an empty database, seed jobs with
 `scripts/seed-map-jobs.py` (see *Load tests* above) and remove them afterwards
 (`db.jobs.deleteMany({seedBatch: "geo-load"})`).
+
+## Edge and hardening (GEO-7)
+
+### Client IP and direct access (GEO-7A)
+
+- nginx is the only way in: the backend has no published port. For local debugging publish it on loopback with
+  `docker compose -f docker-compose.yml -f docker-compose.dev.yml up -d` (never on the server).
+- Rate-limit keys use `shared.web.ClientIp`: `X-Real-IP` (set by nginx to `$remote_addr`) when it is a valid IP literal,
+  else the socket address. `X-Forwarded-For` is ignored; nginx sends only `$remote_addr` in it.
+- Swagger (`/swagger-ui.html`, `/v3/api-docs`) is 404 under Compose unless `SWAGGER_ENABLED=true` is set in `.env`.
+
+### nginx configuration (GEO-7B)
+
+| File in `frontend/` | Installed as | Purpose |
+|---|---|---|
+| `nginx.conf.template` | rendered to `conf.d/default.conf` | HTTPS server (when the certificate is readable) |
+| `nginx-http.conf` | copied to `conf.d/default.conf` | Plain HTTP server for local runs |
+| `jobportal-locations.conf` | `jobportal/locations.conf` | All locations, shared by both servers |
+| `proxy-backend.conf` | `jobportal/proxy-backend.conf` | Proxy settings for every `/api/` location |
+| `security-headers.conf` | `jobportal/security-headers.conf` | Security headers |
+| `nginx-limits.conf` | `conf.d/00-limits.conf` | `limit_req` zones (http context) |
+| `select-nginx-config.sh` | `/docker-entrypoint.d/05-…` | Picks HTTPS/HTTP and renders the template |
+
+The template is rendered with `envsubst '${APP_SERVER_NAMES} ${TLS_CERT_PATH} ${TLS_KEY_PATH}'`, so nginx variables
+such as `$host` are untouched. The script rejects values that are not plain host names or absolute paths, and the
+container then fails to start instead of running a broken config.
+
+| Variable (frontend) | Default | Meaning |
+|---|---|---|
+| `APP_DOMAIN` | `54-236-126-94.sslip.io` | Canonical host; Let's Encrypt directory name |
+| `APP_SERVER_NAMES` | `$APP_DOMAIN` | Space-separated `server_name` list |
+| `TLS_CERT_PATH` | `/etc/letsencrypt/live/$APP_DOMAIN/fullchain.pem` | Certificate inside the container |
+| `TLS_KEY_PATH` | `/etc/letsencrypt/live/$APP_DOMAIN/privkey.pem` | Private key inside the container |
+| `TLS_DIR` | `/etc/letsencrypt` | Host certificate directory, mounted read-only at the same path (GEO-7C) |
+| `CLOUDFLARE_PROXY` | `false` | `true` restores the visitor IP from `CF-Connecting-IP` (GEO-7C) |
+
+With no new variables in `.env`, the rendered server names and certificate paths are exactly those of the pre-GEO-7
+`nginx.conf`.
+
+**Check a config change** before deploying (dummy certificate; `--add-host` because nginx resolves the upstream):
+
+```bash
+docker build -t jobportal-frontend:test frontend
+mkdir -p /tmp/le/live/54-236-126-94.sslip.io && openssl req -x509 -newkey rsa:2048 -nodes -days 1 -subj /CN=test \
+  -keyout /tmp/le/live/54-236-126-94.sslip.io/privkey.pem -out /tmp/le/live/54-236-126-94.sslip.io/fullchain.pem
+docker run --rm --add-host backend:127.0.0.1 -v /tmp/le:/etc/letsencrypt:ro jobportal-frontend:test \
+  sh -c '/docker-entrypoint.d/05-select-jobportal-config.sh && nginx -t'          # HTTPS branch
+docker run --rm --add-host backend:127.0.0.1 jobportal-frontend:test \
+  sh -c '/docker-entrypoint.d/05-select-jobportal-config.sh && nginx -t'          # HTTP branch
+```
+
+### Rate limits (GEO-7B)
+
+Per client IP (`$binary_remote_addr`), `nodelay` (a burst is answered at once, then excess requests are rejected):
+
+| Location | Zone | Rate | Burst |
+|---|---|---|---|
+| `/api/` (everything else, including `/jobs/map/snapshot`) | `api` | 20 r/s | 40 |
+| `/api/v1/jobs/map/{nearby, places/*/jobs, offices/*/jobs, unplaced}` | `map_list` | 5 r/s | 10 |
+| `/api/v1/auth/{sessions, sessions/refresh, registrations, recruiter-registrations}` | `auth` | 10 r/min | 5 |
+| Swagger (when enabled) | `api` | 20 r/s | 40 |
+| `/tiles/`, static files, `/ws` | none | | |
+
+- The snapshot stays in the general zone: it is precomputed and answered with ETag/304.
+- The backend's login limiter (5 attempts per IP and email per minute) still applies behind the `auth` zone.
+- A rejected request gets `429` with `Retry-After: 1` and a body in the backend's ProblemDetail shape:
+  `{"type":".../problems/rate-limit","title":"Too many requests","status":429,"detail":"Too many requests, slow down
+  and try again shortly.","code":"RATE_LIMITED"}`. The map list panel shows "You're browsing a little fast…" with
+  Retry; login shows the detail inline.
+- Rejections are logged at `warn` in the nginx error log (`limiting requests, excess: … by zone "map_list", client:
+  …`). The access log format is unchanged (it does contain the request line, as before GEO-7).
+- **Tune:** edit `frontend/nginx-limits.conf` (rates) or `frontend/jobportal-locations.conf` (bursts), rebuild the
+  frontend image. Everyone behind one NAT shares one key, so raise `burst` before `rate` if offices report 429s.
+
+### Security headers (GEO-7B)
+
+Set by nginx on every response (HTML, API, tiles, 429s) via `security-headers.conf`, which is included at server
+level and again in each location with its own `add_header` (an `add_header` in a location drops the inherited ones).
+Spring Security's copies are hidden on proxied responses so there are no duplicates.
+
+| Header | Value |
+|---|---|
+| `Strict-Transport-Security` | `max-age=31536000` (HTTPS only; no `includeSubDomains`/`preload` while on shared sslip.io) |
+| `X-Content-Type-Options` | `nosniff` |
+| `Referrer-Policy` | `strict-origin-when-cross-origin` |
+| `X-Frame-Options` | `DENY` |
+| `Permissions-Policy` | `geolocation=(self), camera=(), microphone=()` (the map's "Near me" needs geolocation) |
+| `Content-Security-Policy-Report-Only` | `default-src 'self'`, blob workers allowed, … (see the file) |
+
+The CSP is **report-only**: browsers log violations in the console but block nothing. MapLibre runs blob workers, and a
+wrong enforcing policy breaks the map silently. Promote it to `Content-Security-Policy` in a later phase, once the map,
+chat, resume upload/download and admin pages show no violations.
+
+### Load tests (GEO-7D)
+
+Local only, never against production. Since GEO-7B, nginx caps one IP at 5 r/s on map lists and 20 r/s on the rest of
+`/api/`, so capacity runs bypass nginx and target the backend **inside the Compose network**; a separate script checks
+the limits through nginx.
+
+```bash
+# Seed ~2,000 jobs and 3 "Acme" offices, then restart the backend so the snapshot includes them.
+python3 backend/backend/scripts/seed-map-jobs.py --offices 3 | docker compose exec -T mongodb mongosh --quiet jobportal
+docker compose restart backend
+
+# Capacity (network = <Compose project>_default, e.g. jobportal_default; check with `docker network ls`).
+docker run --rm -i --network jobportal_default -e BASE_URL=http://backend:8080 grafana/k6 run - < backend/backend/scripts/k6/map-snapshot.js
+docker run --rm -i --network jobportal_default -e BASE_URL=http://backend:8080 grafana/k6 run - < backend/backend/scripts/k6/map-jobs.js
+
+# Rate limits, through nginx from one IP.
+docker run --rm -i --network host -e BASE_URL=http://localhost grafana/k6 run - < backend/backend/scripts/k6/rate-limits.js
+
+# Clean up.
+docker compose exec -T mongodb mongosh --quiet jobportal --eval \
+  'db.jobs.deleteMany({seedBatch: "geo-load"}); db.company_offices.deleteMany({seedBatch: "geo-load"})'
+```
+
+| Script | Mix |
+|---|---|
+| `map-snapshot.js` | 200 VUs × 60 s; half revalidate with `If-None-Match` (304), all gzip |
+| `map-jobs.js` | 200 VUs × 60 s; 65% place lists, 20% nearby, 10% place + `q`, 5% office lists (place lists when the snapshot has no offices) |
+| `rate-limits.js` | 20 s at fixed rates through nginx: nearby 15 r/s, snapshot 10 r/s, `/tiles/manifest.json` 50 r/s |
+
+**Results, 2026-10-17.** Laptop: Intel Core i5-1240P (16 threads), 7.4 GiB RAM, Linux 7.0, Docker 29.1, k6 2.3.0 in
+Docker on the same machine (so k6 competes with the stack for CPU). Default Compose memory limits (GEO-0: backend
+1 GiB, Mongo 768 MiB, WiredTiger 0.25 GB). Data: 2,000 seeded jobs (1,813 placed over 30 places), 3 offices.
+Peak memory is the highest `docker stats` sample during the run.
+
+| Run | VUs | Requests/s | p95 | p99 | Errors | Peak backend | Peak Mongo |
+|---|---|---|---|---|---|---|---|
+| `map-snapshot.js` (backend direct) | 200 | 13,047 | 33.6 ms | 58.6 ms | 0.00% | 482 MiB | 250 MiB |
+| `map-jobs.js` (backend direct) | 200 | 10,756 | 34.4 ms | 91.3 ms | 0.00% | 513 MiB | 234 MiB |
+| `rate-limits.js` (through nginx) | ≤ 20 | 75 | 3.7 ms | 4.4 ms | 0.00% unexpected | 512 MiB | 238 MiB |
+
+`rate-limits.js` thresholds all passed: nearby 63.1% 429 (190 of 301; the expected share is ≈ 1 − 111/300), every 429
+had the `RATE_LIMITED` body, the snapshot was 200/304 for 201 of 201, and `/tiles/manifest.json` had 0 429s.
+These are laptop numbers for regressions, not a production capacity promise: the EC2 box has less CPU and RAM.
+
+## Own domain and Cloudflare (GEO-7C)
+
+Cloudflare cannot proxy `*.sslip.io`, so the edge needs an own domain. The code is ready; the cutover is manual.
+
+### How the client IP flows
+
+```
+visitor ──▶ Cloudflare edge ──▶ nginx ──▶ backend
+            adds CF-Connecting-IP   realip: if the TCP peer is in a Cloudflare range,   ClientIp.of():
+                                    $remote_addr := CF-Connecting-IP                     X-Real-IP (= $remote_addr)
+                                    limit_req keys on $binary_remote_addr                login limiter key
+                                    X-Real-IP / X-Forwarded-For := $remote_addr
+```
+
+- `CLOUDFLARE_PROXY=true` makes `select-nginx-config.sh` install `frontend/cloudflare-realip.conf`
+  (`set_real_ip_from` for every Cloudflare range, `real_ip_header CF-Connecting-IP`, `real_ip_recursive on`) into both
+  servers; with `false` (default) the include is empty and the header is ignored.
+- A `CF-Connecting-IP` from any address outside those ranges is ignored even when the flag is on, so a visitor that
+  reaches the origin directly cannot pick its own rate-limit key. The security group (step 6) makes that moot anyway.
+- **Local proof** (2026-10-17, stack up with `CLOUDFLARE_PROXY=true`, Compose project `geo7`):
+
+  ```bash
+  docker run --rm --network geo7_default curlimages/curl:8.10.1 -s -o /dev/null \
+    -H 'CF-Connecting-IP: 1.2.3.4' -A cf-spoof http://frontend/api/v1/health
+  docker compose -p geo7 logs frontend | grep cf-spoof
+  # 172.19.0.5 - - [...] "GET /api/v1/health HTTP/1.1" 200 ... "cf-spoof"   ← the docker peer, not 1.2.3.4
+  ```
+
+  Eight logins with a different `CF-Connecting-IP` each still hit 429 after five. As a positive control, a container
+  whose realip file also trusts `172.16.0.0/12` logged `1.2.3.4`, and the backend limiter then counted each forged
+  visitor separately, which shows the header reaches `ClientIp` only through a trusted proxy.
+- **Refresh the ranges** when Cloudflare announces a change: `bash frontend/scripts/update-cloudflare-ips.sh`, commit
+  the diff, rebuild the frontend, and update the security group (step 6).
+
+### Runbook
+
+1. **Domain and Cloudflare.** Buy the domain. In Cloudflare (free plan) *Add a site*, pick Free, and set the two
+   nameservers it shows at the registrar. Wait until the site shows *Active*.
+2. **DNS.** `A  @  → <EC2 Elastic IP>` and `CNAME  www  → @`, both **Proxied** (orange cloud).
+3. **TLS.** SSL/TLS → Overview → **Full (strict)**. SSL/TLS → Origin Server → *Create Certificate*: RSA (2048),
+   hostnames `<domain>` and `*.<domain>`, 15 years. On EC2:
+
+   ```bash
+   sudo mkdir -p /etc/ssl/cloudflare
+   sudo nano /etc/ssl/cloudflare/origin.pem   # paste the Origin Certificate
+   sudo nano /etc/ssl/cloudflare/origin.key   # paste the Private Key (shown once)
+   sudo chmod 600 /etc/ssl/cloudflare/origin.key && sudo chmod 644 /etc/ssl/cloudflare/origin.pem
+   ```
+
+   nginx's master process runs as root and reads the key before dropping privileges, so `600 root` is fine.
+   The Origin CA certificate is trusted only by Cloudflare, never by browsers: it only works behind the orange cloud.
+4. **`.env`** on EC2 (keep a copy of the old file: `cp .env .env.before-cloudflare`):
+
+   ```bash
+   APP_DOMAIN=<domain>
+   APP_SERVER_NAMES="<domain> www.<domain>"
+   TLS_DIR=/etc/ssl/cloudflare
+   TLS_CERT_PATH=/etc/ssl/cloudflare/origin.pem
+   TLS_KEY_PATH=/etc/ssl/cloudflare/origin.key
+   CLOUDFLARE_PROXY=true
+   CORS_ALLOWED_ORIGINS=https://<domain>,https://www.<domain>
+   REFRESH_COOKIE_SECURE=true
+   ```
+
+   CORS origins need the `https://` scheme. Then deploy:
+   `git pull && docker compose down && docker compose up -d --build`, and check
+   `docker compose logs frontend | grep select-nginx` shows "Cloudflare real IP enabled" and "HTTPS for <domain> www.<domain>".
+5. **WebSockets.** Network → WebSockets **On** (free plan). `/ws` (SockJS chat) depends on it.
+6. **Security group.** Inbound 80 and 443 **only from Cloudflare's ranges**, 22 only from your own IP, nothing on 8080
+   or 27017 (neither is published by Compose anyway). The ranges are the ones in `frontend/cloudflare-realip.conf`.
+   Optional AWS CLI loop (replace `sg-…`; then delete the old `0.0.0.0/0` and `::/0` rules for 80/443 in the console):
+
+   ```bash
+   SG=sg-0123456789abcdef0
+   for cidr in $(sed -n 's/^set_real_ip_from \(.*\);$/\1/p' frontend/cloudflare-realip.conf); do
+     for port in 80 443; do
+       case "$cidr" in
+         *:*) range="Ipv6Ranges=[{CidrIpv6=$cidr,Description=cloudflare}]" ;;
+         *)   range="IpRanges=[{CidrIp=$cidr,Description=cloudflare}]" ;;
+       esac
+       aws ec2 authorize-security-group-ingress --group-id "$SG" \
+         --ip-permissions "IpProtocol=tcp,FromPort=$port,ToPort=$port,$range"
+     done
+   done
+   ```
+
+   Security groups allow 60 inbound rules per address family by default; 14 IPv4 × 2 ports fits.
+   Once 80 is closed to the world, Let's Encrypt HTTP-01 renewals for the sslip.io fallback stop working; the Origin CA
+   certificate does not need renewing for 15 years.
+7. **Cache.** Caching → Cache Rules → *Create rule* "API bypass": URI Path starts with `/api/` → **Bypass cache**
+   (Cloudflare does not cache JSON by default; the rule makes it explicit). Add `/ws` to the same rule. `/assets/*`
+   (hashed Vite files) can be cached; nothing else needs a rule. `.pmtiles` is not a default cached extension, so tile
+   range requests pass through to nginx. Serving tiles from R2 is GEO-7E.
+8. **Verify.**
+   - `curl -sI https://<domain>` shows `server: cloudflare` and `strict-transport-security: max-age=31536000`.
+   - In a browser: login, `/jobs/map` (markers and base map), "Near me", chat over WebSocket (DevTools → Network → WS
+     shows `101`), resume PDF download, `/admin/offices`.
+   - `docker compose logs --tail 20 frontend` shows real visitor IPs, not `172.x` or Cloudflare addresses.
+   - `curl -m 10 -k https://<EC2 Elastic IP>` from outside AWS **times out** (security group).
+   - Rate limits still bite per visitor: run the `nearby` loop from GEO-7B against `https://<domain>`.
+9. **Rollback.**
+   - Restore the old `.env` (`cp .env.before-cloudflare .env`, which has `CLOUDFLARE_PROXY=false` and the sslip.io
+     values), re-open 80/443 to `0.0.0.0/0` and `::/0` in the security group, and redeploy
+     (`docker compose down && docker compose up -d --build`). The site is back on `https://54-236-126-94.sslip.io`.
+   - Setting the DNS records to **DNS only** (grey cloud) sends visitors straight to EC2, where the Origin CA certificate
+     is **not** browser-trusted. Grey cloud with the own domain therefore needs a Let's Encrypt certificate for it first
+     (`certbot certonly` for `<domain>` and `www.<domain>`, then `APP_DOMAIN=<domain>`, `TLS_DIR=/etc/letsencrypt`, empty
+     `TLS_CERT_PATH`/`TLS_KEY_PATH`, `CLOUDFLARE_PROXY=false`).
+
+### Fallback: sslip.io with Let's Encrypt
+
+With no GEO-7 variables in `.env`, the frontend serves `54-236-126-94.sslip.io` with the Let's Encrypt certificate from
+`/etc/letsencrypt/live/54-236-126-94.sslip.io/`, exactly as before GEO-7. Renewal stays as it is today (port 80 must be
+reachable for HTTP-01).
 
 ## Attribution
 

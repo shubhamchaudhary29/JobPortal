@@ -1,0 +1,7 @@
+# Local debugging only: publishes the backend on the loopback interface so tools on the host can reach it
+# directly. Never use this file on the server.
+#   docker compose -f docker-compose.yml -f docker-compose.dev.yml up -d --build
+services:
+  backend:
+    ports:
+      - "127.0.0.1:8080:8080"

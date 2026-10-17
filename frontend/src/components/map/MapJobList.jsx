@@ -20,9 +20,11 @@ export function PanelError({ message, onRetry }) {
   );
 }
 
-const errorMessage = (error) => error?.kind === "unavailable"
-  ? "Job lists are still warming up. Please try again in a few seconds."
-  : "We couldn't load these jobs right now.";
+const errorMessage = (error) => {
+  if (error?.kind === "unavailable") return "Job lists are still warming up. Please try again in a few seconds.";
+  if (error?.kind === "rateLimited") return "You're browsing a little fast. Wait a moment, then try again.";
+  return "We couldn't load these jobs right now.";
+};
 
 /** Cards for a {@link useJobList} result, with skeletons, errors, an empty state and "Load more". */
 export default function MapJobList({ list, empty, distanceOf, label }) {

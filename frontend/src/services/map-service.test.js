@@ -51,6 +51,11 @@ describe("map service", () => {
       { params: { kind: "india", q: "java", page: 1, size: 10 }, signal: undefined });
   });
 
+  it("turns an nginx 429 into a rate-limited error", async () => {
+    apiGet.mockRejectedValue(httpError(429, { "retry-after": "1" }));
+    await expect(getNearbyJobs({ lat: 12.97, lng: 77.59 })).rejects.toMatchObject({ kind: "rateLimited", status: 429 });
+  });
+
   it("turns 503 into an unavailable error carrying Retry-After", async () => {
     apiGet.mockRejectedValue(httpError(503, { "retry-after": "5" }));
     await expect(getPlaceJobs("1")).rejects.toMatchObject({ kind: "unavailable", retryAfterSeconds: 5 });

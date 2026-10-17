@@ -1,10 +1,13 @@
 // Load check for GET /api/v1/jobs/map/snapshot (local, not CI).
-// docker run --rm -i --network host -e BASE_URL=http://localhost grafana/k6 run - < backend/backend/scripts/k6/map-snapshot.js
+// Capacity runs target the backend INSIDE the Compose network: through nginx, 200 VUs from one IP would only measure
+// GEO-7B's per-IP rate limits (scripts/k6/rate-limits.js checks those). <project> is the Compose project name
+// (default: the repo directory name, e.g. jobportal → network jobportal_default; see `docker network ls`).
+// docker run --rm -i --network <project>_default -e BASE_URL=http://backend:8080 grafana/k6 run - < backend/backend/scripts/k6/map-snapshot.js
 // Half the iterations revalidate with If-None-Match (expect 304), all ask for gzip (expect the precomputed body).
 import http from 'k6/http';
 import { check } from 'k6';
 
-const BASE_URL = __ENV.BASE_URL || 'http://localhost';
+const BASE_URL = __ENV.BASE_URL || 'http://backend:8080';
 const URL = `${BASE_URL}/api/v1/jobs/map/snapshot`;
 
 export const options = {

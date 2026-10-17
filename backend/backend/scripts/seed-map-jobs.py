@@ -7,6 +7,9 @@ Usage (from the repo root, with the Compose stack running):
 Prints a mongosh script that removes earlier seed jobs (seedBatch "geo-load") and inserts jobs across the 30 most
 populous gazetteer places, with a few remote and India-wide jobs. Place ids come from in-places.tsv, so they
 are real gazetteer ids. Restart the backend (or wait for the snapshot refresh) afterwards.
+
+--offices N also pins one "Acme" office (1 km from the centre) in each of the N biggest places, so the GEO-7D k6
+office leg has offices to request. Seeded offices carry seedBatch "geo-load" and are replaced on every run.
 """
 import argparse
 import json
@@ -29,7 +32,7 @@ def top_places(count):
         if row[2] in seen:
             continue
         seen.add(row[2])
-        places.append((row[0], row[2]))
+        places.append((row[0], row[2], float(row[4]), float(row[5])))
         if len(places) == count:
             break
     return places
@@ -39,6 +42,7 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument("--jobs", type=int, default=2000)
     parser.add_argument("--places", type=int, default=30)
+    parser.add_argument("--offices", type=int, default=0)
     args = parser.parse_args()
     random.seed(42)
     places = top_places(args.places)
@@ -52,7 +56,7 @@ def main():
             geo, location = {"status": "COUNTRY", "placeIds": [], "remote": False, "version": "seed"}, "India"
         else:
             # Weight towards the biggest cities, like real listings.
-            place_id, name = places[min(int(random.expovariate(0.15)), len(places) - 1)]
+            place_id, name, _, _ = places[min(int(random.expovariate(0.15)), len(places) - 1)]
             geo, location = {"status": "PLACE", "placeIds": [place_id], "remote": False, "version": "seed"}, name
         jobs.append({
             "title": title, "description": f"{title} role. Seeded for local load tests.",
@@ -67,6 +71,17 @@ def main():
           "delete j.createdAtOffsetMinutes; });")
     print("const result = db.jobs.insertMany(jobs);")
     print("print('seeded ' + Object.keys(result.insertedIds).length + ' jobs');")
+    offices = [{
+        "companyKey": "acme", "company": "Acme", "label": f"Acme {name} seed office", "placeId": place_id,
+        "lat": round(lat + 0.009, 5), "lng": lng, "enabled": True, "createdBy": "seed", "updatedBy": "seed",
+        "seedBatch": "geo-load",
+    } for place_id, name, lat, lng in places[:args.offices]]
+    print("db.company_offices.deleteMany({seedBatch: 'geo-load'});")
+    if offices:
+        print(f"const offices = {json.dumps(offices)};")
+        print("offices.forEach(o => { o.createdAt = new Date(now); o.updatedAt = new Date(now); });")
+        print("db.company_offices.insertMany(offices);")
+        print(f"print('seeded {len(offices)} offices');")
 
 
 if __name__ == "__main__":

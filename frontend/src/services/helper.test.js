@@ -64,3 +64,12 @@ describe("refresh coordination", () => {
     expect(authPost).not.toHaveBeenCalled();
   });
 });
+
+describe("safeApiMessage", () => {
+  it("explains rate limiting from nginx or the login limiter", async () => {
+    const { safeApiMessage, RATE_LIMIT_MESSAGE } = await import("./helper");
+    const problem = { status: 429, code: "RATE_LIMITED", detail: "Too many requests, slow down and try again shortly." };
+    expect(safeApiMessage({ response: { status: 429, data: problem } }, "fallback")).toBe(RATE_LIMIT_MESSAGE);
+    expect(safeApiMessage({ response: { status: 401, data: {} } }, "fallback")).toBe("fallback");
+  });
+});
