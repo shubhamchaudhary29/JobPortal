@@ -312,6 +312,9 @@ the first rotation lands); IP floods are nginx's job. A missing cookie is 401 be
 without revoking the family; a later replay, or reuse of a logged-out or expired token, still revokes it. An optimistic-lock
 conflict (two rotations racing) is a plain 401.
 
+*7F-2 nginx.* `auth` (login, registrations) is now 30 r/min, burst 20; refresh has its own `refresh` zone, 120 r/min,
+burst 60. Logout stays in `api`. The HTTPS server has `http2 on` (tiles' parallel range requests share a connection).
+
 ---
 
 ## Scaling path (only when load demands it)
