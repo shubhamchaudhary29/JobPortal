@@ -52,7 +52,7 @@ Attribution required: © OpenStreetMap contributors, GeoNames (CC-BY 4.0).
 - [x] GEO-7C — Cloudflare real IP (`CLOUDFLARE_PROXY`), Origin CA cert support, own-domain runbook (code and runbook done; **cutover pending**: domain purchase and DNS are manual)
 - [x] GEO-7D — k6 capacity runs inside the Compose network and a rate-limit check through nginx
 - [ ] GEO-7E — tiles to Cloudflare R2: trigger and target design (decision only)
-- [ ] GEO-7F — session resilience behind shared IPs: refresh limited per session, reuse grace window, separate nginx `refresh` zone, HTTP/2, one refresh across tabs, no logout on transient errors
+- [x] GEO-7F — session resilience behind shared IPs: refresh limited per session, reuse grace window, separate nginx `refresh` zone, HTTP/2, one refresh across tabs, no logout on transient errors
 
 ---
 
@@ -314,6 +314,29 @@ conflict (two rotations racing) is a plain 401.
 
 *7F-2 nginx.* `auth` (login, registrations) is now 30 r/min, burst 20; refresh has its own `refresh` zone, 120 r/min,
 burst 60. Logout stays in `api`. The HTTPS server has `http2 on` (tiles' parallel range requests share a connection).
+
+*7F-3 frontend (`services/helper.js`, `user-service.js`, `auth-store.js`, `AuthContext.jsx`).*
+- Tabs refresh one at a time under the Web Lock `jobportal-auth-refresh` (with the in-tab promise dedupe kept, and
+  used alone when `navigator.locks` is missing). After a refresh the tab broadcasts the new access token on
+  `BroadcastChannel("jobportal-auth")`; a tab that receives one while waiting for the lock uses it and sends nothing.
+  Logout broadcasts `{type: "logout"}` and every tab clears. Tokens stay in memory; nothing is written to web storage.
+- The session is cleared only on 401/403. A 429 is retried twice after `Retry-After` (clamped 1–10 s, default 2); a
+  network error or 5xx rejects without clearing. On page load a transient failure marks the session `unknown`: the
+  header shows logged out and protected pages offer Retry instead of redirecting to login. A non-401 refresh failure in
+  the 401 interceptor reaches the UI as that error (e.g. the rate-limit message), not a silent logout.
+- Found by the browser check, not in the original plan:
+  - A reload while a refresh was in flight dropped the response that carried the rotated cookie (nginx 499), leaving
+    the browser with a token the server had already rotated: logged out. The refresh now uses a `keepalive` fetch, so
+    the browser still stores the new cookie after the page unloads. Because the unloading tab releases the lock before
+    that response lands, a tab that had to wait for another tab's lock and then gets a 401 retries once after 1 s
+    (still inside the 30 s reuse grace, so nothing is revoked). Single-tab and anonymous loads never retry.
+  - `AuthProvider` copied the store into React state and subscribed in an effect, so a session set between the first
+    render and the subscription (a token broadcast while the tab was loading) never reached the UI. It now uses
+    `useSyncExternalStore`.
+- Manual check (headless Chrome against the Compose stack, run three times): 8 tabs of `/jobs/map` reloaded twice
+  each stay logged in (24 page loads, 2 refresh requests: the rest came by broadcast); a job opened in a new tab while
+  the map tab reloads keeps both logged in (24/24 races); five reloads with the refresh on the wire stay logged in;
+  signing out in one tab logs out the other nine without a reload.
 
 ---
 

@@ -13,6 +13,6 @@ describe("in-memory authentication state", () => {
   it("clears all authentication state on logout or refresh failure", () => {
     setAuthSession({ accessToken: "access", role: "RECRUITER", email: "recruiter@example.test" });
     clearAuthSession();
-    expect(getSession()).toEqual({ accessToken: null, role: null, email: null, initialized: true });
+    expect(getSession()).toEqual({ accessToken: null, role: null, email: null, initialized: true, unknown: false });
   });
 });

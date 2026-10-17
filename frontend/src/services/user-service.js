@@ -1,5 +1,5 @@
-import apiClient, { refreshAccessToken } from "./helper";
-import { clearAuthSession, getSession, setAuthSession } from "../auth/auth-store";
+import apiClient, { broadcastLogout, isSessionRejected, refreshAccessToken } from "./helper";
+import { clearAuthSession, getSession, markAuthUnknown, setAuthSession } from "../auth/auth-store";
 import { apiRoutes } from "./api-routes";
 
 export const loginUser = async (email, password) => {
@@ -8,14 +8,26 @@ export const loginUser = async (email, password) => {
   return data;
 };
 
+/** Restores the session from the refresh cookie on load; also the Retry for an unconfirmed (unknown) session. */
 export const restoreSession = async () => {
-  if (getSession().initialized) return getSession();
-  try { await refreshAccessToken(); } catch { clearAuthSession(); }
+  const current = getSession();
+  if (current.initialized && !current.unknown) return current;
+  try {
+    await refreshAccessToken();
+  } catch (error) {
+    // Only a 401/403 means there is no session. A 429, network error or 5xx must not log the user out.
+    if (isSessionRejected(error)) clearAuthSession(); else markAuthUnknown();
+  }
   return getSession();
 };
 
 export const logout = async () => {
-  try { await apiClient.delete(apiRoutes.auth.currentSession); } finally { clearAuthSession(); }
+  try {
+    await apiClient.delete(apiRoutes.auth.currentSession);
+  } finally {
+    clearAuthSession();
+    broadcastLogout();
+  }
 };
 
 export const signUpUser = async (userData, recruiter = false) => {

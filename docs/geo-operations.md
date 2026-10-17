@@ -369,7 +369,8 @@ people behind one public IP. Anything keyed per IP is shared by all of them, so:
 - nginx's per-IP zones are coarse flood guards with room for a lab full of users: refresh (every page load and every
   new tab) has its own 120 r/min zone, and login/sign-up 30 r/min with a burst of 20.
 - The SPA never logs a user out because of a 429, a network error or a 5xx on refresh: it retries 429s with
-  `Retry-After` and clears the session only on 401/403 (GEO-7F-3).
+  `Retry-After` and clears the session only on 401/403 (GEO-7F-3). Tabs refresh one at a time (Web Locks) and share
+  the new token over a `BroadcastChannel`, so ten open tabs cost one refresh, not ten.
 - A rejected request gets `429` with `Retry-After: 1` and a body in the backend's ProblemDetail shape:
   `{"type":".../problems/rate-limit","title":"Too many requests","status":429,"detail":"Too many requests, slow down
   and try again shortly.","code":"RATE_LIMITED"}`. The map list panel shows "You're browsing a little fast…" with
