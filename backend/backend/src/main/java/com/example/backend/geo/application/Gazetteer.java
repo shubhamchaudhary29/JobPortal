@@ -1,8 +1,10 @@
 package com.example.backend.geo.application;
 
 import com.example.backend.geo.domain.Place;
+import java.io.ByteArrayInputStream;
 import java.io.IOException;
 import java.io.InputStream;
+import java.lang.management.ManagementFactory;
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
@@ -18,13 +20,15 @@ import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
 import java.util.regex.Pattern;
+import java.util.zip.GZIPInputStream;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Component;
 
 /**
- * Offline India gazetteer (GeoNames, CC BY 4.0) plus hand-maintained alias, state and country files.
- * Loaded once at startup and immutable afterwards, so lookups are safe from any thread.
+ * Offline India gazetteer (GeoNames, CC BY 4.0) plus hand-maintained alias, state and country files, and the
+ * OpenStreetMap localities of its cities (ODbL, GEO-8). Loaded once at startup and immutable afterwards, so lookups
+ * are safe from any thread. The locality file is part of {@link #dataHash()} because it changes resolutions.
  */
 @Component
 public class Gazetteer {
@@ -34,6 +38,8 @@ public class Gazetteer {
     static final String PLACE_ALIASES = "geo/place-aliases.tsv";
     static final String STATE_ALIASES = "geo/state-aliases.tsv";
     static final String COUNTRIES = "geo/countries.tsv";
+    /** Written as {@code .tsv.gz} instead when it exceeds 4 MB; either form is read. */
+    static final String LOCALITIES = "geo/in-localities.tsv";
     private static final List<String> DATA_FILES = List.of(PLACES, ADMIN1, PLACE_ALIASES, STATE_ALIASES, COUNTRIES);
     private static final Pattern DROPPED = Pattern.compile("['.’]");
     private static final Pattern SEPARATORS = Pattern.compile("[^\\p{L}\\p{N}]+");
@@ -48,10 +54,17 @@ public class Gazetteer {
     private final Set<String> foreign;
     private final Set<String> india;
     private final String dataHash;
+    private final LocalityIndex localities;
+    private final long localityHeapBytes;
 
     public Gazetteer() {
         Map<String, byte[]> raw = new LinkedHashMap<>();
         for (String file : DATA_FILES) raw.put(file, read(file));
+        long heapBefore = usedHeapAfterGc();
+        OsmFile localityFile = readOsm(LOCALITIES);
+        raw.put(localityFile.name(), localityFile.raw());
+        this.localities = LocalityIndex.fromRows(localityFile.rows());
+        this.localityHeapBytes = Math.max(0, usedHeapAfterGc() - heapBefore);
         Map<String, Place> places = new LinkedHashMap<>();
         Map<String, List<Place>> primaryIndex = new HashMap<>();
         Map<String, List<Place>> alternateIndex = new HashMap<>();
@@ -93,8 +106,8 @@ public class Gazetteer {
         this.foreign = Set.copyOf(foreignKeys);
         this.india = Set.copyOf(indiaKeys);
         this.dataHash = hash(raw);
-        log.info("event=geo_gazetteer_loaded places={} aliases={} states={} data_hash={}",
-                byId.size(), aliases.size(), states.size(), dataHash);
+        log.info("event=geo_gazetteer_loaded places={} aliases={} states={} localities={} data_hash={}",
+                byId.size(), aliases.size(), states.size(), localities.size(), dataHash);
     }
 
     /** Lowercase, strip diacritics, {@code &} to "and", punctuation to spaces, collapsed whitespace. */
@@ -119,6 +132,51 @@ public class Gazetteer {
     public Optional<String> admin1Name(String code) { return Optional.ofNullable(code == null ? null : admin1Names.get(code)); }
     public boolean isForeign(String key) { return foreign.contains(key); }
     public boolean isIndia(String key) { return india.contains(key); }
+
+    public LocalityIndex localities() { return localities; }
+    public Optional<LocalityIndex.Locality> localityById(String id) { return localities.byId(id); }
+    public List<LocalityIndex.Locality> localitiesInPlace(String placeId) { return localities.inPlace(placeId); }
+    /** Localities of {@code placeId} with this {@link #key} as name, English name or alternate name, best first. */
+    public List<LocalityIndex.Locality> localityMatches(String key, String placeId) { return localities.matches(key, placeId); }
+    public Optional<LocalityIndex.Locality> nearestLocality(String placeId, double lat, double lng, double maxKm) {
+        return localities.nearest(placeId, lat, lng, maxKm);
+    }
+    /** Heap retained by the locality index at startup (after GC), for the GEO-8 memory budget log. */
+    long localityHeapBytes() { return localityHeapBytes; }
+
+    /**
+     * An OpenStreetMap-derived TSV: {@code <base>.gz} when present, else {@code <base>}. {@code #} comment lines
+     * and the column header are dropped from {@code rows}; {@code raw} is the file as stored (for hashing).
+     */
+    static OsmFile readOsm(String base) {
+        String zipped = base + ".gz";
+        boolean gz = Gazetteer.class.getClassLoader().getResource(zipped) != null;
+        String name = gz ? zipped : base;
+        byte[] raw = read(name);
+        byte[] text = raw;
+        if (gz) {
+            try (InputStream input = new GZIPInputStream(new ByteArrayInputStream(raw))) {
+                text = input.readAllBytes();
+            } catch (IOException failure) {
+                throw new IllegalStateException("Geo data file could not be read: " + name, failure);
+            }
+        }
+        List<String[]> rows = new ArrayList<>();
+        boolean header = true;
+        for (String line : new String(text, StandardCharsets.UTF_8).split("\n")) {
+            if (line.isBlank() || line.startsWith("#")) continue;
+            if (header) { header = false; continue; }
+            rows.add(line.split("\t", -1));
+        }
+        return new OsmFile(name, raw, rows);
+    }
+
+    record OsmFile(String name, byte[] raw, List<String[]> rows) { }
+
+    static long usedHeapAfterGc() {
+        System.gc();
+        return ManagementFactory.getMemoryMXBean().getHeapMemoryUsage().getUsed();
+    }
 
     private static byte[] read(String file) {
         try (InputStream input = Gazetteer.class.getClassLoader().getResourceAsStream(file)) {

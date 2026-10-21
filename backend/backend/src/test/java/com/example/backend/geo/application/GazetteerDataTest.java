@@ -50,6 +50,33 @@ class GazetteerDataTest {
         assertEquals(new GeoResolver(GAZETTEER).version(), new GeoResolver(second).version());
     }
 
+    @Test
+    void osmLocalitiesBelongToKnownCitiesAndCoverTheTechHubs() {
+        assertTrue(GAZETTEER.localities().size() > 1000, "only " + GAZETTEER.localities().size() + " localities");
+        List<String> problems = new ArrayList<>();
+        for (String[] row : Gazetteer.readOsm(Gazetteer.LOCALITIES).rows()) {
+            if (!row[0].matches("osm-[nwr]\\d{1,15}")) problems.add("bad id " + row[0]);
+            Place city = GAZETTEER.byId(row[4]).orElse(null);
+            if (city == null) { problems.add(row[0] + " has unknown place " + row[4]); continue; }
+            double km = MapJobService.haversineKm(city.lat(), city.lng(), Double.parseDouble(row[5]), Double.parseDouble(row[6]));
+            if (km > 40.5) problems.add(row[0] + " is " + Math.round(km) + " km from " + city.name());
+        }
+        assertTrue(problems.isEmpty(), "locality rows: " + problems.subList(0, Math.min(20, problems.size())));
+        String bengaluru = GeoTestJobs.placeId(GAZETTEER, "Bengaluru");
+        for (String hub : List.of("whitefield", "koramangala")) {
+            assertFalse(GAZETTEER.localityMatches(hub, bengaluru).isEmpty(), hub + " is missing from Bengaluru");
+        }
+    }
+
+    @Test
+    void osmOfficesBelongToKnownCities() {
+        OsmOfficeDirectory offices = new OsmOfficeDirectory(GAZETTEER);
+        assertTrue(offices.size() > 1000, "only " + offices.size() + " offices");
+        assertEquals(Gazetteer.readOsm(OsmOfficeDirectory.OFFICES).rows().size(), offices.size(),
+                "every office row must have a gazetteer city");
+        assertTrue(offices.offices().stream().allMatch(office -> office.osmRef().matches("osm-[nwr]\\d{1,15}")));
+    }
+
     private static List<String[]> rows(String resource) throws IOException {
         try (InputStream input = GazetteerDataTest.class.getClassLoader().getResourceAsStream(resource)) {
             assertNotNull(input, resource);

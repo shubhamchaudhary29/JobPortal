@@ -10,6 +10,12 @@ are real gazetteer ids. Restart the backend (or wait for the snapshot refresh) a
 
 --offices N also pins one "Acme" office (1 km from the centre) in each of the N biggest places, so the GEO-7D k6
 office leg has offices to request. Seeded offices carry seedBatch "geo-load" and are replaced on every run.
+
+--realistic N (GEO-8) adds N jobs (default 0) cycling through hand-written location strings shaped like real ATS and
+Adzuna listings ("Whitefield, Bengaluru, Karnataka, India", "Noida Sector 62", ...). They are stored unresolved
+(listing `rawLocation`, geo version "seed"; Adzuna ones keep a provider point), so the backend's own resolver places them
+through the re-resolution job. Locally that job only runs with scheduling on; see docs/geo-operations.md, "Precision
+report", for a Compose override that enables it without calling any provider.
 """
 import argparse
 import json
@@ -21,6 +27,22 @@ ROLES = ["Java Engineer", "Python Developer", "Data Analyst", "Product Manager",
          "QA Engineer", "Business Analyst", "Sales Executive", "Support Specialist"]
 LEVELS = ["Junior", "Senior", "Lead", "Staff", "Associate"]
 COMPANIES = ["Acme", "Globex", "Initech", "Umbrella", "Hooli", "Stark", "Wayne", "Wonka"]
+# (location, provider, company, Adzuna point or None): strings as providers send them.
+REALISTIC = [
+    ("Whitefield, Bengaluru, Karnataka, India", "greenhouse", "Infosys", None),
+    ("Bengaluru, Karnataka, India", "greenhouse", "Globex", None),
+    ("Koramangala, Bangalore", "lever", "Hooli", None),
+    ("Electronic City, Bengaluru", "lever", "Wipro", None),
+    ("Gachibowli, Hyderabad, Telangana", "greenhouse", "Initech", None),
+    ("Hyderabad, Telangana, India", "ashby", "Stark", None),
+    ("Hinjewadi, Pune", "workable", "Wayne", None),
+    ("Noida Sector 62", "smartrecruiters", "Umbrella", None),
+    ("Gurgaon, Haryana", "lever", "Wonka", None),
+    ("Delhi NCR", "workable", "Acme", None),
+    ("Powai, Mumbai, Maharashtra", "greenhouse", "Globex", None),
+    ("Bangalore", "adzuna", "Initech", (12.9790, 77.7480)),
+    ("Bangalore", "adzuna", "Hooli", (12.9716, 77.5946)),
+]
 
 
 def top_places(count):
@@ -43,6 +65,7 @@ def main():
     parser.add_argument("--jobs", type=int, default=2000)
     parser.add_argument("--places", type=int, default=30)
     parser.add_argument("--offices", type=int, default=0)
+    parser.add_argument("--realistic", type=int, default=0)
     args = parser.parse_args()
     random.seed(42)
     places = top_places(args.places)
@@ -63,6 +86,18 @@ def main():
             "company": random.choice(COMPANIES), "location": location, "source": "seed", "active": True,
             "seedBatch": "geo-load", "createdAtOffsetMinutes": index,
             "sourceListings": [{"identity": f"seed:{index}", "provider": "seed", "active": True, "geo": geo}],
+        })
+    for index in range(args.realistic):
+        location, provider, company, point = REALISTIC[index % len(REALISTIC)]
+        listing = {"identity": f"seed-real:{index}", "provider": provider, "active": True, "rawLocation": location,
+                   "geo": {"status": "UNRESOLVED", "placeIds": [], "remote": False, "version": "seed"}}
+        if point:
+            listing["geo"]["point"] = {"lat": point[0], "lng": point[1]}
+        title = f"{random.choice(LEVELS)} {random.choice(ROLES)}"
+        jobs.append({
+            "title": title, "description": f"{title} role. Seeded for local geo checks.", "company": company,
+            "location": location, "source": provider, "active": True, "seedBatch": "geo-load",
+            "createdAtOffsetMinutes": args.jobs + index, "sourceListings": [listing],
         })
     print("db.jobs.deleteMany({seedBatch: 'geo-load'});")
     print("const now = Date.now();")

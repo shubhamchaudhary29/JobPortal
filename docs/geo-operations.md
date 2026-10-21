@@ -14,6 +14,8 @@ All under `backend/backend/src/main/resources/geo/`:
 | `place-aliases.tsv` | hand | Old or alternate spellings → gazetteer place (`Bangalore` → `Bengaluru`) |
 | `state-aliases.tsv` | hand | State/UT names and abbreviations → admin1 code |
 | `countries.tsv` | hand | India markers and foreign countries/regions |
+| `in-localities.tsv` | `scripts/build-osm-geo.py` | OpenStreetMap suburbs, neighbourhoods, quarters and tech hubs per city (GEO-8, ODbL) |
+| `in-osm-offices.tsv` | `scripts/build-osm-geo.py` | OpenStreetMap company offices and office buildings per city (GEO-8, ODbL) |
 
 ### Regenerate the gazetteer
 
@@ -33,6 +35,40 @@ afterwards: every alias must still resolve to exactly one place.
 2. Run `GazetteerDataTest` and commit.
 3. Deploy. Editing any data file changes the resolver version (`GeoResolver.PARSER_VERSION` + data hash),
    so every listing on the old version is re-resolved automatically on the next scheduled run.
+
+### Rebuild the OpenStreetMap localities and offices (GEO-8)
+
+Run on a laptop, never on EC2 (it reads a 1.7 GB file and needs about 2 GB of RAM):
+
+```bash
+cd backend/backend
+pip install osmium==4.3.2        # or the docker one-liner in the script header
+python3 scripts/build-osm-geo.py # downloads india-latest.osm.pbf to ~/.cache/jobportal-osm, or pass --pbf PATH
+./mvnw test -Dtest='GazetteerDataTest,LocalityIndexTest'
+```
+
+It writes `in-localities.tsv` and `in-osm-offices.tsv` (gzipped as `.tsv.gz` if either passes 4 MB) with the source
+URL, the extract's replication timestamp and the ODbL notice in their header comments, and prints row counts. Output is
+sorted, so the diff shows only real OpenStreetMap changes. Monthly is plenty.
+
+- **Parent city.** Each object belongs to the nearest gazetteer place of 100,000+ people within 40 km, in its own
+  state when the candidates span states (OpenStreetMap state boundaries), skipping places absorbed into a bigger city:
+  city sections (`PPLX`), names that `place-aliases.tsv` sends elsewhere (New Delhi → Delhi), towns within 30 km of a
+  1M+ city at least 1.5× their size, and places within 10 km of a same-state alias target (Kanayannur → Kochi);
+  district/state seats and alias targets are never absorbed. Listings name the big city, so this keeps HITEC City in
+  Hyderabad, Dwarka in Delhi and Hinjawadi in Pune rather than in GeoNames sub-places. The script prints the absorbed
+  list; check it after a gazetteer or alias change.
+- **Cost of a rebuild.** `in-localities.tsv` is part of the gazetteer data hash, so a rebuild changes the resolver
+  version and every active job is re-resolved by the job below. At the defaults (200 × 25 jobs every 10 minutes,
+  30,000 jobs per hour) that takes about N hours for N × 30,000 active jobs; `GET /api/v1/admin/geo/precision` shows
+  the figure for the current job count (`reResolution.hoursForAllActiveJobs`). Map counts are right throughout: old
+  resolutions keep their places until they are replaced. `in-osm-offices.tsv` is applied at read time and does not
+  trigger re-resolution.
+- **Memory.** Both files are loaded once at startup. The backend logs
+  `event=geo_osm_loaded localities=… offices=… heap_delta_mb=…`; the budget is 80 MB of the 1 GiB container. If a
+  rebuild exceeds it, rebuild with `--min-population 300000` (fewer parent cities) and note it here.
+- **Licence.** The files are OpenStreetMap data under ODbL 1.0 (see `src/main/resources/geo/ATTRIBUTION.md`); keep them
+  separate from our own data and keep "© OpenStreetMap contributors" on the map.
 
 ## Re-resolution job
 
@@ -65,6 +101,49 @@ event=geo_reresolution_completed scanned=… updated=… remaining_estimate=… 
 - `staleJobs`: active jobs still on an old resolver version. It should fall to 0 after re-resolution.
 - `topUnresolved`: the 50 most frequent strings the resolver could not place (from `unresolved_locations`,
   kept 90 days after last sighting). These are the best candidates for new aliases.
+
+## Precision report
+
+`GET /api/v1/admin/geo/precision` (ADMIN, cached 5 minutes, every aggregation bounded by `maxTimeMS` 15 s with
+`allowDiskUse`) says how precisely visible jobs can be shown:
+
+| Field | Meaning |
+|---|---|
+| `byPrecision` | Jobs by best placement: `office` (a pinned office in one of its cities) > `locality` > `city` (city centre); jobs without a place by status: `state`, `country`, `remote`, `foreign`, `unresolved` (includes EMPTY and not yet resolved) |
+| `topCityCentreStrings` | The 50 most common location strings of `city` jobs: text the resolver could still learn from |
+| `topCities[]` | The 10 cities with most jobs: `centreJobs`, and of their top 500 centre strings how many (`stringsWithLocality`, `jobsWithLocality`) name a locality the city has (`knownLocalities`) |
+| `adzuna` | Adzuna jobs with a stored point, points ≥ 1.5 km from their city centre, of those within 2 km of a known locality, and how many already have a locality |
+| `ncr` | Jobs whose location is exactly "NCR", "Delhi NCR" or "Delhi-NCR" versus all jobs placed in Delhi |
+| `reResolution` | Re-resolution throughput at the current settings and the hours a full pass takes |
+
+**Check it locally.** Locally `.env` keeps scheduling off, so nothing re-resolves seeded jobs. This override turns
+scheduling on but points every provider host at the container's own closed port, so no provider is called and only the
+re-resolution job does real work:
+
+```bash
+python3 backend/backend/scripts/seed-map-jobs.py --offices 3 --realistic 60 \
+  | docker compose exec -T mongodb mongosh --quiet jobportal
+cat > /tmp/geo-local.yml <<'YML'
+services:
+  backend:
+    environment:
+      JOB_AGGREGATION_SCHEDULING_ENABLED: "true"
+      GEO_RERESOLUTION_DELAY_MS: "20000"
+    extra_hosts:
+      - "api.adzuna.com:127.0.0.1"
+      - "in.jooble.org:127.0.0.1"
+      - "boards-api.greenhouse.io:127.0.0.1"
+      - "api.lever.co:127.0.0.1"
+      - "api.ashbyhq.com:127.0.0.1"
+      - "api.smartrecruiters.com:127.0.0.1"
+      - "apply.workable.com:127.0.0.1"
+YML
+docker compose -f docker-compose.yml -f /tmp/geo-local.yml up -d backend
+docker compose logs -f backend | grep -m1 'geo_reresolution_completed.*remaining_estimate=0'
+curl -s -H "Authorization: Bearer $ADMIN_TOKEN" http://localhost/api/v1/admin/geo/precision | jq
+```
+
+Restart without the override file afterwards (`docker compose up -d backend`).
 
 ## Map snapshot
 

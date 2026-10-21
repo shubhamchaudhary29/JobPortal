@@ -1,4 +1,4 @@
-# Map-First Job Discovery Plan (GEO-0 … GEO-7)
+# Map-First Job Discovery Plan (GEO-0 … GEO-8)
 
 Goal: show job openings on a map, let candidates find openings near them and apply from there.
 
@@ -53,6 +53,10 @@ Attribution required: © OpenStreetMap contributors, GeoNames (CC-BY 4.0).
 - [x] GEO-7D — k6 capacity runs inside the Compose network and a rate-limit check through nginx
 - [ ] GEO-7E — tiles to Cloudflare R2: trigger and target design (decision only)
 - [x] GEO-7F — session resilience behind shared IPs: refresh limited per session, reuse grace window, separate nginx `refresh` zone, HTTP/2, one refresh across tabs, no logout on transient errors
+- [x] GEO-8A — offline OpenStreetMap extract (localities and offices per city, ODbL) loaded at startup, ADMIN precision report
+- [ ] GEO-8B — resolver v3: localities inside the resolved city, curated locality aliases, Adzuna point snapping; `localityIds` on every write path
+- [ ] GEO-8C — locality markers and "office not listed" city bubbles on `/jobs/map`, locality job lists, NCR decision
+- [ ] GEO-8D — OpenStreetMap office suggestions for admins, opt-in auto-apply behind `GEO_OSM_OFFICE_AUTO_APPLY`
 
 ---
 
@@ -337,6 +341,42 @@ burst 60. Logout stays in `api`. The HTTPS server has `http2 on` (tiles' paralle
   each stay logged in (24 page loads, 2 refresh requests: the rest came by broadcast); a job opened in a new tab while
   the map tab reloads keeps both logged in (24/24 races); five reloads with the refresh on the wire stay logged in;
   signing out in one tab logs out the other nine without a reload.
+
+---
+
+## GEO-8 — Office-level job locations
+
+Almost every job sat on its city centre, so Bengaluru or Delhi was one pile. Feeds only send city text, the gazetteer
+only knows cities, and the only precise source was ADMIN office pins. GEO-8 shows a job at its office, else its
+locality (neighbourhood or tech park), else its city with an honest "office not listed" label. Nothing is invented: no
+jitter, no spreading, no raw provider points as pins. Offline open data only (OpenStreetMap, ODbL); no geocoding API.
+
+Precision order everywhere (snapshot, job pages, nearby, distances): **office** (GEO-6 pin or GEO-8D OSM match) >
+**locality** > **city centre**.
+
+**8A — extract and measure (done).**
+- `scripts/build-osm-geo.py` (laptop only, pyosmium) reads Geofabrik's India extract in three memory-light passes and
+  writes `in-localities.tsv` (suburbs, neighbourhoods, quarters and named tech hubs) and `in-osm-offices.tsv` (named
+  company offices and office/commercial buildings), each row with its gazetteer parent city. 2026-10-20 extract:
+  17,542 localities (6,084 suburbs, 10,245 neighbourhoods, 960 quarters, 253 tech hubs) and 14,768 offices; 1.5 MB and
+  1.2 MB, so no gzip. Build time 6 minutes, about 1.7 GB peak memory.
+- **Parent city, measured and changed from the plan.** "Nearest 100k+ city within 40 km" alone gave HITEC City to
+  Kukatpally, Dwarka to Gurugram, Hinjawadi to Pimpri-Chinchwad and Delhi's localities to the "New Delhi" place, while
+  listings say Hyderabad, Delhi, Pune. The script therefore skips places absorbed into a bigger city (city sections,
+  aliased-away names such as New Delhi, towns within 30 km of a 1M+ city 1.5× their size, places within 10 km of a
+  same-state alias target, except district/state seats and alias targets) and prefers a parent in the object's own
+  state (OpenStreetMap `admin_level=4` boundaries, consulted only when candidates span states). 446 parent cities remain.
+- Loaded at startup into `Gazetteer` (`LocalityIndex`: by id, by place, by name/English/alternate name key per place,
+  nearest within a radius) and `OsmOfficeDirectory`. Heap delta 15.1 MB in the 1 GiB container (budget 80 MB):
+  `event=geo_osm_loaded localities=17542 offices=14768 heap_delta_mb=15.1`. The locality file is part of the data
+  hash, so a rebuild re-resolves every job (30,000 jobs/hour at the defaults); the office file is read-time only.
+- `GET /api/v1/admin/geo/precision` (ADMIN, cached 5 min, aggregations bounded at 15 s with `allowDiskUse`): jobs by
+  precision, top 50 city-centre strings, locality potential for the top 10 cities, Adzuna points, NCR share and the
+  re-resolution time. Runbook in `docs/geo-operations.md`.
+- Local report before GEO-8B (2,000 seeded jobs + 60 hand-written ATS/Adzuna strings, 3 pinned offices):
+  office 94, locality 0, city 1,774, country 97, remote 90, unresolved 5. NCR strings are 4 of 225 Delhi jobs (1.8%).
+- Found while measuring: re-resolution resolved without the provider hint, so every version bump erased stored
+  Adzuna points (`withPoint` 0 of 8 after the run). Fixed in 8B.
 
 ---
 
