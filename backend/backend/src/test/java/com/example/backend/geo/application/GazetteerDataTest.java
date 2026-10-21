@@ -69,6 +69,18 @@ class GazetteerDataTest {
     }
 
     @Test
+    void everyLocalityAliasResolvesToALocality() throws IOException {
+        assertEquals(List.of(), GAZETTEER.danglingLocalityAliases(), "dangling locality aliases");
+        List<String[]> aliases = rows(Gazetteer.LOCALITY_ALIASES);
+        assertTrue(aliases.size() >= 40, "only " + aliases.size() + " locality aliases");
+        for (String[] row : aliases) {
+            assertTrue(GAZETTEER.localityAlias(Gazetteer.key(row[0])).isPresent(), row[0]);
+            assertTrue(GAZETTEER.primaryMatches(Gazetteer.key(row[0])).stream().noneMatch(place -> place.population() >= 100_000),
+                    row[0] + " is also a city name; a bare alias would shadow it");
+        }
+    }
+
+    @Test
     void osmOfficesBelongToKnownCities() {
         OsmOfficeDirectory offices = new OsmOfficeDirectory(GAZETTEER);
         assertTrue(offices.size() > 1000, "only " + offices.size() + " offices");

@@ -2,6 +2,7 @@ package com.example.backend.integration.aggregation;
 
 import com.example.backend.geo.application.GeoResolver;
 import com.example.backend.job.domain.GeoResolution;
+import com.example.backend.job.domain.LocationHint;
 import java.time.Clock;
 import java.util.ArrayList;
 import java.util.List;
@@ -22,6 +23,9 @@ import org.springframework.stereotype.Service;
  * array filters that only match listings still on an old version, so a concurrent ingestion that already wrote
  * a current resolution is never overwritten. Lives with the other lease-locked maintenance jobs because
  * {@code geo} cannot depend on this package without a cycle.
+ *
+ * <p>The stored provider point (Adzuna) is passed back to the resolver, so re-resolution keeps it and can snap it to a
+ * locality (GEO-8B); before GEO-8 every version bump dropped it until the next sync.
  */
 @Service
 public class GeoReResolutionService {
@@ -80,7 +84,8 @@ public class GeoReResolutionService {
 
     private List<Document> staleBatch(String version, Object afterId) {
         Document projection = new Document("_id", 1).append("location", 1).append("sourceListings.identity", 1)
-                .append("sourceListings.rawLocation", 1).append("sourceListings.geo.version", 1).append("geo.version", 1);
+                .append("sourceListings.rawLocation", 1).append("sourceListings.geo.version", 1).append("geo.version", 1)
+                .append("sourceListings.geo.point", 1).append("geo.point", 1);
         return mongo.getCollection(JOBS).find(staleFilter(version, afterId)).projection(projection)
                 .sort(new Document("_id", 1)).limit(batchSize).into(new ArrayList<>());
     }
@@ -106,7 +111,7 @@ public class GeoReResolutionService {
         String location = job.getString("location");
         List<Document> listings = job.getList("sourceListings", Document.class);
         if (listings == null || listings.isEmpty()) {
-            Update update = new Update().set("geo", mapped(resolver.resolve(location, null)));
+            Update update = new Update().set("geo", mapped(resolver.resolve(location, pointHint(job.get("geo", Document.class)))));
             return (int) mongo.updateFirst(Query.query(Criteria.where("_id").is(job.get("_id"))
                     .and("geo.version").ne(version)), update, JOBS).getModifiedCount();
         }
@@ -116,7 +121,8 @@ public class GeoReResolutionService {
             if (geo != null && version.equals(geo.getString("version"))) continue;
             String raw = listing.getString("rawLocation");
             boolean seeded = raw == null && location != null;
-            Update update = new Update().set("sourceListings.$[l].geo", mapped(resolver.resolve(seeded ? location : raw, null)))
+            Update update = new Update().set("sourceListings.$[l].geo", mapped(resolver.resolve(seeded ? location : raw,
+                            pointHint(geo))))
                     .filterArray(Criteria.where("l.identity").is(listing.getString("identity")).and("l.geo.version").ne(version));
             if (seeded) {
                 update.set("sourceListings.$[l].rawLocation", location).set("sourceListings.$[l].rawLocationInferred", true);
@@ -124,6 +130,13 @@ public class GeoReResolutionService {
             updated += (int) mongo.updateFirst(byId, update, JOBS).getModifiedCount();
         }
         return updated;
+    }
+
+    /** The stored provider point as a hint without area (the area is not stored), or null. */
+    private static LocationHint pointHint(Document geo) {
+        Document point = geo == null ? null : geo.get("point", Document.class);
+        if (point == null || !(point.get("lat") instanceof Number lat) || !(point.get("lng") instanceof Number lng)) return null;
+        return new LocationHint(List.of(), lat.doubleValue(), lng.doubleValue());
     }
 
     private Object mapped(GeoResolution resolution) {

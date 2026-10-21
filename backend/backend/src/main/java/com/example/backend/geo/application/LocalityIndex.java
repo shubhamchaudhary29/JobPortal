@@ -7,6 +7,9 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.Set;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
 /**
  * OpenStreetMap localities (suburbs, neighbourhoods, quarters and named tech hubs, ODbL) per gazetteer city, from
@@ -15,6 +18,9 @@ import java.util.Optional;
  */
 public final class LocalityIndex {
     public static final LocalityIndex EMPTY = new LocalityIndex(List.of());
+    private static final Set<String> NUMBERED = Set.of("sector", "phase", "block", "stage");
+    private static final Map<String, String> ROMAN = Map.of("i", "1", "ii", "2", "iii", "3", "iv", "4", "v", "5");
+    private static final Pattern FUSED_NUMBER = Pattern.compile("^(sec|sector|ph|phase|block|stage)(\\d+[a-z]?)$");
     /** Name matches first, then English name, then alternate names; suburbs before smaller kinds; then id. */
     private static final Comparator<Match> ORDER = Comparator.comparingInt(Match::tier)
             .thenComparingInt(match -> match.locality().kind().equals("suburb") ? 0 : 1)
@@ -61,10 +67,45 @@ public final class LocalityIndex {
 
     public List<Locality> inPlace(String placeId) { return placeId == null ? List.of() : byPlace.getOrDefault(placeId, List.of()); }
 
-    /** Localities of {@code placeId} whose name, English name or alternate name has this {@link Gazetteer#key}. */
+    /**
+     * Localities of {@code placeId} whose name, English name or alternate name has this {@link Gazetteer#key}, compared
+     * after {@link #localityKey}, best first.
+     */
     public List<Locality> matches(String key, String placeId) {
         if (key == null || key.isEmpty() || placeId == null) return List.of();
-        return byPlaceKey.getOrDefault(placeId + '\u0001' + key, List.of());
+        return byPlaceKey.getOrDefault(placeId + '\u0001' + localityKey(key), List.of());
+    }
+
+    /**
+     * A {@link Gazetteer#key} with locality spellings unified: "sec" → "sector", "ph" → "phase", "sector62" →
+     * "sector 62", and roman numerals I–V after sector/phase/block/stage → 1–5 ("Phase II" = "Phase 2"). Hyphens
+     * are already spaces ("Sector-62" = "Sector 62").
+     */
+    public static String localityKey(String key) {
+        if (key == null || key.isEmpty()) return "";
+        List<String> words = new ArrayList<>();
+        for (String word : key.split(" ")) {
+            Matcher fused = FUSED_NUMBER.matcher(word);
+            if (fused.matches()) {
+                words.add(fused.group(1));
+                words.add(fused.group(2));
+            } else {
+                words.add(word);
+            }
+        }
+        StringBuilder normalized = new StringBuilder();
+        String previous = "";
+        for (String word : words) {
+            String value = switch (word) {
+                case "sec" -> "sector";
+                case "ph" -> "phase";
+                default -> NUMBERED.contains(previous) && ROMAN.containsKey(word) ? ROMAN.get(word) : word;
+            };
+            if (normalized.length() > 0) normalized.append(' ');
+            normalized.append(value);
+            previous = value;
+        }
+        return normalized.toString();
     }
 
     /** The locality of {@code placeId} nearest to the point, if one is within {@code maxKm}; ties go to the lower id. */
@@ -84,7 +125,7 @@ public final class LocalityIndex {
     public int size() { return byId.size(); }
 
     private static void index(Map<String, List<Match>> keys, Locality locality, String name, int tier) {
-        String key = Gazetteer.key(name);
+        String key = localityKey(Gazetteer.key(name));
         if (key.isEmpty()) return;
         keys.computeIfAbsent(locality.placeId() + '\u0001' + key, ignored -> new ArrayList<>()).add(new Match(locality, tier));
     }

@@ -134,6 +134,12 @@ printjson({applicationHeldFingerprintVersions, applicationHeldFingerprintVersion
 printjson({malformedConflicts});
 printjson({orphanedReconciliations});
 printjson({jobIndexes: db.jobs.getIndexes()});
+// Informational: geo indexes the backend creates at startup (MongoIndexInitializer). Missing ones mean the backend has
+// not started against this database since the geo release that added them (GEO-1 places, GEO-8 localities).
+const EXPECTED_GEO_INDEXES = ["jobs_listing_geo_place_idx", "jobs_geo_place_idx", "jobs_listing_geo_version_idx",
+  "jobs_geo_version_idx", "jobs_listing_geo_locality_idx", "jobs_geo_locality_idx"];
+const jobIndexNames = new Set(db.jobs.getIndexes().map(index => index.name));
+printjson({missingGeoIndexes: EXPECTED_GEO_INDEXES.filter(name => !jobIndexNames.has(name))});
 if (duplicates.length || fingerprintDuplicates.length || crossDocumentSourceIdentityDuplicates.length
     || malformedSourceListings.length || duplicateListingIdentities.length
     || sourceIdentityCompatibilityMismatches.length || applicationUrlCompatibilityMismatches.length

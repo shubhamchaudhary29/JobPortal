@@ -16,6 +16,7 @@ All under `backend/backend/src/main/resources/geo/`:
 | `countries.tsv` | hand | India markers and foreign countries/regions |
 | `in-localities.tsv` | `scripts/build-osm-geo.py` | OpenStreetMap suburbs, neighbourhoods, quarters and tech hubs per city (GEO-8, ODbL) |
 | `in-osm-offices.tsv` | `scripts/build-osm-geo.py` | OpenStreetMap company offices and office buildings per city (GEO-8, ODbL) |
+| `locality-aliases.tsv` | hand | Localities that resolve without a city, and spellings OSM lacks (`Electronic City` → `Electronics City Phase 1`) |
 
 ### Regenerate the gazetteer
 
@@ -70,6 +71,16 @@ sorted, so the diff shows only real OpenStreetMap changes. Monthly is plenty.
 - **Licence.** The files are OpenStreetMap data under ODbL 1.0 (see `src/main/resources/geo/ATTRIBUTION.md`); keep them
   separate from our own data and keep "© OpenStreetMap contributors" on the map.
 
+### Add a locality alias
+
+A locality alone ("Whitefield") resolves only through `locality-aliases.tsv`, so keep it to unambiguous, well-known
+hubs. Add `alias<TAB>localityId` (an `osm-…` id from `in-localities.tsv`) or `alias<TAB>name|placeId`, then run
+`./mvnw test -Dtest=GazetteerDataTest`: it fails on a target that is not in the locality file, or on an alias that is
+also the name of a 100k+ city. An OSM rebuild can change ids (rarely for nodes); the same test catches it. Like every
+data file, an edit changes the resolver version and re-resolves all jobs.
+
+Inside a resolved city no alias is needed: "Hinjawadi, Pune" matches by name, "Hinjewadi, Pune" through the alias.
+
 ## Re-resolution job
 
 A lease-locked (`geo-reresolution`) background job re-resolves active jobs whose `geo.version` is not
@@ -84,6 +95,10 @@ current. It runs on the global scheduler, so it only runs when `JOB_AGGREGATION_
 
 Listings imported before GEO-1 have no `rawLocation`. The job seeds it from the canonical `location` and
 sets `rawLocationInferred: true`; the next sync of that listing replaces it with the provider's own value.
+
+Since GEO-8B the job passes a listing's stored provider point (Adzuna) back to the resolver, so it is kept and can
+snap to a locality. Earlier releases dropped the point on every version bump until the next Adzuna sync, so after the
+first GEO-8 deploy some Adzuna jobs have no point until Adzuna lists them again.
 
 Each run logs one line:
 

@@ -41,6 +41,18 @@ class LocalityIndexTest {
         assertTrue(INDEX.nearest("200", 12.9698, 77.7500, 2).isEmpty(), "a Pune locality never matches a Bengaluru point");
     }
 
+    @Test
+    void localityKeysUnifyCommonSpellings() {
+        assertEquals("sector 62", LocalityIndex.localityKey(Gazetteer.key("Sec-62")));
+        assertEquals("sector 62", LocalityIndex.localityKey(Gazetteer.key("sec. 62")));
+        assertEquals("sector 62", LocalityIndex.localityKey(Gazetteer.key("Sector62")));
+        assertEquals("hinjewadi phase 2", LocalityIndex.localityKey(Gazetteer.key("Hinjewadi Ph. II")));
+        assertEquals("sector 5", LocalityIndex.localityKey(Gazetteer.key("Sector V")));
+        assertEquals("phase 3 block 1", LocalityIndex.localityKey(Gazetteer.key("Phase III Block I")));
+        assertEquals("i park", LocalityIndex.localityKey(Gazetteer.key("I Park")), "numerals only after sector/phase/block/stage");
+        assertEquals("", LocalityIndex.localityKey(""));
+    }
+
     private static List<String> ids(List<LocalityIndex.Locality> localities) {
         return localities.stream().map(LocalityIndex.Locality::id).toList();
     }

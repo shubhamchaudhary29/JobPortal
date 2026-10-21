@@ -40,6 +40,7 @@ public class Gazetteer {
     static final String COUNTRIES = "geo/countries.tsv";
     /** Written as {@code .tsv.gz} instead when it exceeds 4 MB; either form is read. */
     static final String LOCALITIES = "geo/in-localities.tsv";
+    static final String LOCALITY_ALIASES = "geo/locality-aliases.tsv";
     private static final List<String> DATA_FILES = List.of(PLACES, ADMIN1, PLACE_ALIASES, STATE_ALIASES, COUNTRIES);
     private static final Pattern DROPPED = Pattern.compile("['.’]");
     private static final Pattern SEPARATORS = Pattern.compile("[^\\p{L}\\p{N}]+");
@@ -55,6 +56,8 @@ public class Gazetteer {
     private final Set<String> india;
     private final String dataHash;
     private final LocalityIndex localities;
+    private final Map<String, LocalityIndex.Locality> localityAliases;
+    private final List<String> danglingLocalityAliases;
     private final long localityHeapBytes;
 
     public Gazetteer() {
@@ -65,6 +68,17 @@ public class Gazetteer {
         raw.put(localityFile.name(), localityFile.raw());
         this.localities = LocalityIndex.fromRows(localityFile.rows());
         this.localityHeapBytes = Math.max(0, usedHeapAfterGc() - heapBefore);
+        raw.put(LOCALITY_ALIASES, read(LOCALITY_ALIASES));
+        Map<String, LocalityIndex.Locality> localityAliasIndex = new HashMap<>();
+        List<String> dangling = new ArrayList<>();
+        for (String[] row : rows(raw.get(LOCALITY_ALIASES), false)) {
+            LocalityIndex.Locality target = row.length < 2 ? null : localityTarget(row[1].trim());
+            if (target == null) { dangling.add(String.join(" -> ", row)); continue; }
+            localityAliasIndex.put(LocalityIndex.localityKey(key(row[0])), target);
+        }
+        if (!dangling.isEmpty()) log.warn("event=geo_locality_alias_dangling aliases={}", dangling);
+        this.localityAliases = Map.copyOf(localityAliasIndex);
+        this.danglingLocalityAliases = List.copyOf(dangling);
         Map<String, Place> places = new LinkedHashMap<>();
         Map<String, List<Place>> primaryIndex = new HashMap<>();
         Map<String, List<Place>> alternateIndex = new HashMap<>();
@@ -141,6 +155,16 @@ public class Gazetteer {
     public Optional<LocalityIndex.Locality> nearestLocality(String placeId, double lat, double lng, double maxKm) {
         return localities.nearest(placeId, lat, lng, maxKm);
     }
+    /**
+     * The curated locality for an alias key ({@code locality-aliases.tsv}), compared after
+     * {@link LocalityIndex#localityKey}. The only way a locality is found without its city.
+     */
+    public Optional<LocalityIndex.Locality> localityAlias(String key) {
+        return Optional.ofNullable(key == null ? null : localityAliases.get(LocalityIndex.localityKey(key)));
+    }
+    /** Alias rows whose target is not in the locality file (must be empty; checked by a test). */
+    List<String> danglingLocalityAliases() { return danglingLocalityAliases; }
+
     /** Heap retained by the locality index at startup (after GC), for the GEO-8 memory budget log. */
     long localityHeapBytes() { return localityHeapBytes; }
 
@@ -148,6 +172,17 @@ public class Gazetteer {
      * An OpenStreetMap-derived TSV: {@code <base>.gz} when present, else {@code <base>}. {@code #} comment lines
      * and the column header are dropped from {@code rows}; {@code raw} is the file as stored (for hashing).
      */
+    /** {@code osm-…} id, or {@code name|placeId} naming exactly one locality of that place. */
+    private LocalityIndex.Locality localityTarget(String target) {
+        if (target.startsWith("osm-")) return localities.byId(target).orElse(null);
+        int bar = target.lastIndexOf('|');
+        if (bar <= 0) return null;
+        String name = target.substring(0, bar).trim();
+        List<LocalityIndex.Locality> named = localities.inPlace(target.substring(bar + 1).trim()).stream()
+                .filter(locality -> locality.name().equals(name)).toList();
+        return named.size() == 1 ? named.get(0) : null;
+    }
+
     static OsmFile readOsm(String base) {
         String zipped = base + ".gz";
         boolean gz = Gazetteer.class.getClassLoader().getResource(zipped) != null;

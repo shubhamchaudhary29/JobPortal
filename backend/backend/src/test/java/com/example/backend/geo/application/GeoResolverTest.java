@@ -1,6 +1,7 @@
 package com.example.backend.geo.application;
 
 import com.example.backend.geo.domain.Place;
+import com.example.backend.job.domain.GeoPoint;
 import com.example.backend.job.domain.GeoResolution;
 import com.example.backend.job.domain.GeoStatus;
 import com.example.backend.job.domain.LocationHint;
@@ -116,7 +117,7 @@ class GeoResolverTest {
     @Test
     void parserVersionIsPartOfTheResolutionVersion() {
         assertTrue(RESOLVER.version().startsWith(GeoResolver.PARSER_VERSION + "-"));
-        assertEquals(2, GeoResolver.PARSER_VERSION);
+        assertEquals(3, GeoResolver.PARSER_VERSION);
     }
 
     @ParameterizedTest
@@ -211,6 +212,140 @@ class GeoResolverTest {
     void coordinatesOutsideIndiaAreDropped() {
         GeoResolution result = RESOLVER.resolve("London", new LocationHint(List.of(), 51.5, -0.12));
         assertNull(result.point());
+    }
+
+    // GEO-8B localities ---------------------------------------------------------------------------------------------
+
+    @Test
+    void localityInsideTheResolvedCity() {
+        GeoResolution result = resolve("Whitefield, Bengaluru, Karnataka, India");
+        assertNear(single(result), BENGALURU, 25);
+        assertEquals(List.of("Whitefield"), localityNames(result));
+        assertEquals(List.of("Whitefield"), localityNames(resolve("Bengaluru, Whitefield")), "a locality may follow the city");
+        assertEquals(List.of("Koramangala 5th Block"), localityNames(resolve("Koramangala 5th Block, Bangalore")),
+                "an exact block wins");
+        assertEquals(List.of("Koramangala"), localityNames(resolve("Koramangala 12th Block, Bangalore")),
+                "an unknown block falls back to the locality");
+        assertEquals(List.of("Electronics City Phase 1"), localityNames(resolve("Electronic City, Bengaluru")),
+                "curated spelling inside the city");
+    }
+
+    @Test
+    void localityMustBelongToTheResolvedCity() {
+        GeoResolution pune = resolve("Whitefield, Pune");
+        assertNear(single(pune), PUNE, 25);
+        assertTrue(pune.localityIds().isEmpty(), "Whitefield is a Bengaluru locality");
+        GeoResolution foreign = resolve("Delhi, NY");
+        assertNotEquals(GeoStatus.PLACE, foreign.status());
+        assertTrue(foreign.localityIds().isEmpty());
+        assertTrue(resolve("Bengaluru, Karnataka, India").localityIds().isEmpty());
+        assertTrue(resolve("New Delhi").localityIds().isEmpty(), "a city name is never read as a locality");
+        GeoResolution kolkata = resolve("Sector V, Salt Lake, Kolkata");
+        assertEquals("Kolkata", GAZETTEER.byId(single(kolkata)).orElseThrow().name(), "an unknown middle part is tolerated");
+        assertEquals(List.of("Sector V"), localityNames(kolkata));
+        assertNotEquals(GeoStatus.PLACE, resolve("Delhi, Springfield").status(), "but not an unknown last part");
+    }
+
+    @Test
+    void noidaSectorsInEveryCommonShape() {
+        for (String input : List.of("Noida Sector 62", "Sector-62, Noida", "Sec 62 Noida", "Sector 62, Noida, Uttar Pradesh",
+                "sec. 62, noida")) {
+            GeoResolution result = resolve(input);
+            assertEquals("Noida", GAZETTEER.byId(single(result)).orElseThrow().name(), input);
+            assertEquals(List.of("Sector 62"), localityNames(result), input);
+        }
+        assertEquals(List.of("DLF Cyber City"), localityNames(resolve("Gurgaon Cyber City")));
+        assertNear(single(resolve("Gurgaon Cyber City")), GURUGRAM, 25);
+    }
+
+    @Test
+    void phasesNormaliseAndFallBack() {
+        assertEquals(List.of("Hinjawadi Phase 2"), localityNames(resolve("Hinjewadi Phase 2, Pune")));
+        assertEquals(List.of("Hinjawadi Phase 2"), localityNames(resolve("Hinjewadi Ph. II, Pune")));
+        assertEquals(List.of("Hinjawadi"), localityNames(resolve("Hinjewadi Phase 7, Pune")), "unknown phase → Hinjawadi");
+        assertEquals(List.of("Okhla Phase II"), localityNames(resolve("Okhla Phase 2, New Delhi")));
+    }
+
+    @Test
+    void bareLocalitiesNeedACuratedAlias() {
+        GeoResolution whitefield = resolve("Whitefield");
+        assertNear(single(whitefield), BENGALURU, 25);
+        assertEquals(List.of("Whitefield"), localityNames(whitefield));
+        assertEquals(List.of("HITEC City"), localityNames(resolve("HITEC City")));
+        assertNear(single(resolve("HITEC City")), HYDERABAD, 25);
+        assertEquals(List.of("Electronics City Phase 1"), localityNames(resolve("Electronic City")));
+        assertEquals(List.of("HITEC City"), localityNames(resolve("Hitech City, Telangana, India")));
+        assertTrue(resolve("HITEC City, Karnataka").localityIds().isEmpty(), "the state must match the alias's city");
+        assertEquals(GeoStatus.UNRESOLVED, resolve("Sector 18").status(), "a bare locality never matches the gazetteer");
+        assertTrue(resolve("Sector 18").placeIds().isEmpty());
+    }
+
+    @Test
+    void smallLeadingPlaceGivesWayToTheNamedCity() {
+        GeoResolution powai = resolve("Powai, Mumbai, Maharashtra");
+        assertNear(single(powai), MUMBAI, 30);
+        assertEquals(List.of("Powai"), localityNames(powai));
+    }
+
+    @Test
+    void everyCandidateKeepsItsOwnLocalities() {
+        GeoResolution pune = resolve("Hinjewadi / Kharadi, Pune");
+        assertNear(single(pune), PUNE, 25);
+        assertEquals(List.of("Hinjawadi", "Kharadi"), localityNames(pune));
+        GeoResolution sibling = resolve("Aundh / Kharadi, Pune");
+        assertEquals(List.of("Kharadi", "Aundh"), localityNames(sibling), "a bare candidate is tried in the named city");
+        assertTrue(resolve("Aundh").placeIds().isEmpty(), "Aundh alone has no alias");
+        GeoResolution two = resolve("Whitefield, Bengaluru; Gachibowli, Hyderabad");
+        assertEquals(2, two.placeIds().size());
+        assertEquals(List.of("Whitefield", "Gachibowli"), localityNames(two));
+        for (String id : two.localityIds()) {
+            assertTrue(two.placeIds().contains(GAZETTEER.localityById(id).orElseThrow().placeId()));
+        }
+    }
+
+    @Test
+    void adzunaAreaHintCarriesItsLocality() {
+        GeoResolution result = RESOLVER.resolve("Bangalore", new LocationHint(List.of("India", "Karnataka", "Bangalore",
+                "Whitefield"), null, null));
+        assertNear(single(result), BENGALURU, 25);
+        assertEquals(List.of("Whitefield"), localityNames(result));
+    }
+
+    @Test
+    void adzunaPointsSnapOnlyWhenOffCentreAndNearALocality() {
+        Place bengaluru = GAZETTEER.byId(single(resolve("Bengaluru"))).orElseThrow();
+        GeoResolution centre = RESOLVER.resolve("Bangalore", new LocationHint(List.of(), bengaluru.lat(), bengaluru.lng()));
+        assertTrue(centre.localityIds().isEmpty(), "Adzuna's city centroid is not an office");
+        assertEquals(new GeoPoint(bengaluru.lat(), bengaluru.lng()), centre.point());
+        LocalityIndex.Locality whitefield = GAZETTEER.localityMatches("whitefield", bengaluru.id()).get(0);
+        // About 1 km north of Whitefield and well over 1.5 km from the centre.
+        double lat = whitefield.lat() + 0.009;
+        assertTrue(GeoResolverTest.haversineKm(lat, whitefield.lng(), bengaluru.lat(), bengaluru.lng()) > 3);
+        GeoResolution near = RESOLVER.resolve("Bangalore", new LocationHint(List.of(), lat, whitefield.lng()));
+        assertEquals(1, near.localityIds().size());
+        LocalityIndex.Locality snapped = GAZETTEER.localityById(near.localityIds().get(0)).orElseThrow();
+        assertTrue(GeoResolverTest.haversineKm(lat, whitefield.lng(), snapped.lat(), snapped.lng()) <= GeoResolver.SNAP_MAX_KM);
+        // In the sea west of Bengaluru's localities: off-centre, but no locality within 2 km.
+        GeoResolution far = RESOLVER.resolve("Bangalore", new LocationHint(List.of(), 12.80, 77.30));
+        assertTrue(far.localityIds().isEmpty());
+        assertTrue(GAZETTEER.nearestLocality(bengaluru.id(), 12.80, 77.30, 5).isEmpty(), "test point must be 5 km from any locality");
+        GeoResolution textWins = RESOLVER.resolve("Koramangala, Bangalore", new LocationHint(List.of(), lat, whitefield.lng()));
+        assertEquals(List.of("Koramangala"), localityNames(textWins), "a locality from the text is not overridden by the point");
+    }
+
+    @Test
+    void localitiesAreCappedAndOnlyFromResolvedPlaces() {
+        String many = String.join(" / ", List.of("Whitefield", "Koramangala", "Marathahalli", "Bellandur", "HSR Layout",
+                "Electronic City", "Manyata Tech Park", "Gachibowli", "Madhapur", "Kondapur", "Kharadi", "Powai"));
+        GeoResolution result = resolve(many);
+        assertEquals(GeoResolver.MAX_LOCALITIES, result.localityIds().size());
+        for (String id : result.localityIds()) {
+            assertTrue(result.placeIds().contains(GAZETTEER.localityById(id).orElseThrow().placeId()));
+        }
+    }
+
+    private static List<String> localityNames(GeoResolution result) {
+        return result.localityIds().stream().map(id -> GAZETTEER.localityById(id).orElseThrow().name()).toList();
     }
 
     private static GeoResolution resolve(String input) { return RESOLVER.resolve(input, null); }

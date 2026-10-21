@@ -59,6 +59,10 @@ public class MongoIndexInitializer implements ApplicationRunner {
         jobs.ensureIndex(new Index().on("sourceListings.geo.version", Sort.Direction.ASC)
                 .named("jobs_listing_geo_version_idx"));
         jobs.ensureIndex(new Index().on("geo.version", Sort.Direction.ASC).named("jobs_geo_version_idx"));
+        // GEO-8C locality job lists: multikey, like the place indexes.
+        jobs.ensureIndex(new Index().on("sourceListings.geo.localityIds", Sort.Direction.ASC)
+                .named("jobs_listing_geo_locality_idx"));
+        jobs.ensureIndex(new Index().on("geo.localityIds", Sort.Direction.ASC).named("jobs_geo_locality_idx"));
         jobs.ensureIndex(new TextIndexDefinition.TextIndexDefinitionBuilder().onField("title").onField("description")
                 .onField("company").named("jobs_search_text_idx").build());
         mongo.indexOps("aggregation_conflicts").ensureIndex(new Index()

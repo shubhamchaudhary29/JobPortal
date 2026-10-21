@@ -54,7 +54,7 @@ Attribution required: © OpenStreetMap contributors, GeoNames (CC-BY 4.0).
 - [ ] GEO-7E — tiles to Cloudflare R2: trigger and target design (decision only)
 - [x] GEO-7F — session resilience behind shared IPs: refresh limited per session, reuse grace window, separate nginx `refresh` zone, HTTP/2, one refresh across tabs, no logout on transient errors
 - [x] GEO-8A — offline OpenStreetMap extract (localities and offices per city, ODbL) loaded at startup, ADMIN precision report
-- [ ] GEO-8B — resolver v3: localities inside the resolved city, curated locality aliases, Adzuna point snapping; `localityIds` on every write path
+- [x] GEO-8B — resolver v3: localities inside the resolved city, curated locality aliases, Adzuna point snapping; `localityIds` on every write path
 - [ ] GEO-8C — locality markers and "office not listed" city bubbles on `/jobs/map`, locality job lists, NCR decision
 - [ ] GEO-8D — OpenStreetMap office suggestions for admins, opt-in auto-apply behind `GEO_OSM_OFFICE_AUTO_APPLY`
 
@@ -377,6 +377,48 @@ Precision order everywhere (snapshot, job pages, nearby, distances): **office** 
   office 94, locality 0, city 1,774, country 97, remote 90, unresolved 5. NCR strings are 4 of 225 Delhi jobs (1.8%).
 - Found while measuring: re-resolution resolved without the provider hint, so every version bump erased stored
   Adzuna points (`withPoint` 0 of 8 after the run). Fixed in 8B.
+
+**8B — locality resolution (done, parser version 3).**
+- Once a candidate has a city, its other segments are looked up as localities **of that city only** (name, `name:en`,
+  alternate names, then a curated alias of a locality in that city), with a trailing block/stage/phase/sector part
+  stripped only when the full name is unknown ("Koramangala 12th Block" → Koramangala; "Koramangala 5th Block" exists
+  and wins). Locality keys unify `sec`/`sector`, `ph`/`phase`, roman I–V after those words and `sector62`.
+- A city fused with a locality is split, longest city name first, only when the rest is one of its localities
+  ("Noida Sector 62", "Sec 62 Noida", "Gurgaon Cyber City"). A locality may also follow the city ("Bengaluru,
+  Whitefield"), and an unknown middle part is tolerated when a place follows it ("Sector V, Salt Lake, Kolkata"); an
+  unknown last part still blocks ("Delhi, NY").
+- A small GeoNames place first gives way to a later city that has it as a locality ("Powai, Mumbai" → Mumbai + Powai,
+  not the 20,000-person "Powai" place). A whole-string city match ("New Delhi") never yields a locality.
+- **Bare localities** resolve only through `locality-aliases.tsv` (47 hand-checked aliases for unambiguous hubs; a
+  test fails on a dangling alias or an alias that is also a 100k+ city name). "Sector 18" alone stays unresolved.
+  Not aliased because OpenStreetMap has no matching row: Magarpatta, Golf Course Road, Outer Ring Road, OMR, Tidel
+  Park, Technopark, Noida Sectors 63/125/135.
+- Multi-candidate input keeps every locality with its own city; a candidate that placed nothing is tried as a locality
+  of a city another candidate named ("Aundh / Kharadi, Pune").
+- **Adzuna:** with one place, no text locality and a point ≥ 1.5 km from the centre, the point snaps to the nearest
+  locality within 2 km; a centre point (Adzuna's own centroid) never does, and the raw point is never a pin. More
+  specific `location.area[]` elements after the city are tried as its localities. Re-resolution now passes the stored
+  point back, so it is kept (and snapped) instead of erased.
+- Model: `GeoResolution.localityIds` (last component, defensive copy, empty for old documents; a 5-argument
+  constructor keeps old call sites). Every locality belongs to one of `placeIds`; at most 10. Every GEO-1B write path
+  stores the whole resolution, so all of them carry localities (tests: import store, Adzuna, lifecycle `updateMulti`,
+  conflict copy, fingerprint migration, feature-store bulk update, manual jobs, re-resolution).
+  `GeoPipelines.localityIds()` mirrors `placeIds()`. Indexes `jobs_listing_geo_locality_idx` and
+  `jobs_geo_locality_idx`; `audit-mongo-indexes.js` lists missing geo indexes.
+- Local before/after on the same data (2,000 seeded + 216 realistic jobs from 54 ATS/Adzuna strings, 3 offices):
+
+  | Precision | Before (v2) | After (v3) |
+  |---|---|---|
+  | office | 98 | 102 |
+  | locality | 0 | 140 |
+  | city | 1,887 | 1,771 |
+  | state | 4 | 0 |
+  | country | 97 | 97 |
+  | remote | 94 | 94 |
+  | unresolved | 36 | 12 |
+  | Adzuna jobs with a point | 0 of 16 | 16 of 16 (8 snapped) |
+
+  The remaining unresolved strings are the deliberate negatives ("Sector 18", "Delhi, NY", "Multiple Locations").
 
 ---
 
