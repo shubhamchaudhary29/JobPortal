@@ -168,7 +168,7 @@ public class MapJobService {
 
     /** Company spellings the last snapshot counted toward pinned offices in this city (sorted, for stable cache keys). */
     private List<String> officeCompaniesAt(OfficeIndex index, String placeId) {
-        return index.resolvable().stream().filter(office -> office.placeId().equals(placeId))
+        return index.resolvableIn(placeId).stream()
                 .flatMap(office -> snapshots.officeCompanies(office.id()).stream()).distinct().sorted().toList();
     }
 

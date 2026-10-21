@@ -1,0 +1,12 @@
+# Synthetic OpenStreetMap office rows for GEO-8D tests only (not OSM data). Same columns as geo/in-osm-offices.tsv.
+osmRef	name	nameEn	brand	operator	kind	placeId	lat	lng
+osm-n101	Acme Campus				office=company	1277333	12.9352	77.6245
+osm-n102	Globex Office				office=company	1277333	12.9500	77.7000
+osm-n103	Globex Tower B				office=it	1277333	12.9800	77.6000
+osm-n104	Globex Office				building=office	1277333	12.9501	77.7001
+osm-n105	Initech Development Centre				office=company	1277333	12.9100	77.6500
+osm-n106	Hooli				office=it	1277333	12.9300	77.6800
+osm-n107	Info Edge				office=company	1277333	12.9400	77.6100
+osm-n108	IT Park				office=company	1277333	12.9450	77.6150
+osm-n109	Wonka Campus				office=company	1277333	13.6000	77.5900
+osm-w110			Stark		office=it	1259229	18.5300	73.8600

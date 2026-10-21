@@ -9,8 +9,11 @@ import {
   createOffice,
   getOfficeAudit,
   getOfficeCandidates,
+  getOsmReport,
   listOffices,
   officeError,
+  pickOsmOffice,
+  rejectOsmOffice,
   updateOffice,
 } from "../services/office-admin-service";
 
@@ -24,11 +27,26 @@ function dateTime(value) {
 }
 
 const coordinates = (pin) => `${pin.lat.toFixed(COORDINATE_DIGITS)}, ${pin.lng.toFixed(COORDINATE_DIGITS)}`;
+const NO_SUGGESTIONS = Object.freeze([]);
+const OSM_CAVEAT = "OpenStreetMap suggestions come from volunteer map data and can be wrong. An admin pin always wins, and "
+  + "a disabled pin keeps OpenStreetMap off for that company and city.";
+const VIEWS = [["pins", "Pins"], ["osm", "OpenStreetMap matches"]];
+const matchCount = (count) => `${count} OpenStreetMap ${count === 1 ? "match" : "matches"}`;
+
+function OsmLink({ url, children }) {
+  return (
+    <a href={url} target="_blank" rel="noopener noreferrer" className="font-bold text-indigo-700 underline-offset-2 hover:underline">
+      {children}
+    </a>
+  );
+}
 const round = (value) => Number(value.toFixed(6));
 
 /**
  * ADMIN office pins: a worklist of (company, city) pairs with the most jobs and no office, a click-to-pin editor and
  * the existing offices. Pins apply to every provider's jobs for that company and city at the next snapshot refresh.
+ * GEO-8D adds OpenStreetMap matches: suggested in the worklist and editor ("Use this office" / "Not this company") and
+ * listed with the jobs they would move in the "OpenStreetMap matches" tab.
  */
 export default function OfficeAdmin() {
   const [candidates, setCandidates] = useState([]);
@@ -45,6 +63,9 @@ export default function OfficeAdmin() {
   const [notice, setNotice] = useState("");
   const [busy, setBusy] = useState("");
   const [history, setHistory] = useState(null);
+  const [view, setView] = useState("pins");
+  const [report, setReport] = useState(null);
+  const [reportError, setReportError] = useState("");
 
   const loadCandidates = useCallback(async () => {
     setCandidatesError("");
@@ -69,7 +90,17 @@ export default function OfficeAdmin() {
     }
   }, [page, query]);
 
+  const loadReport = useCallback(async () => {
+    setReportError("");
+    try {
+      setReport(await getOsmReport());
+    } catch (error) {
+      setReportError(officeError(error, "Could not load the OpenStreetMap matches."));
+    }
+  }, []);
+
   useEffect(() => { loadCandidates(); }, [loadCandidates]);
+  useEffect(() => { if (view === "osm") loadReport(); }, [view, loadReport]);
   useEffect(() => { loadOffices(); }, [loadOffices]);
   useEffect(() => {
     // City centres for the worklist come from the public snapshot; without it the editor starts on all of India.
@@ -88,7 +119,7 @@ export default function OfficeAdmin() {
   const startCandidate = (candidate) => {
     setSaveError("");
     setEditor({ mode: "create", company: candidate.company, label: "", placeId: candidate.placeId,
-      placeName: candidate.placeName, pin: null });
+      placeName: candidate.placeName, pin: null, candidate });
   };
 
   const startNew = () => {
@@ -154,6 +185,43 @@ export default function OfficeAdmin() {
     }
   };
 
+  const pickOsm = async (match) => {
+    const candidate = editor?.candidate;
+    if (!candidate || busy) return;
+    setBusy(`pick-${match.osmRef}`);
+    setSaveError("");
+    try {
+      const label = editor.label.trim();
+      const saved = await pickOsmOffice(match.osmRef, { companyKey: candidate.companyKey, placeId: candidate.placeId,
+        ...(label ? { label } : {}) });
+      setEditor(null);
+      setNotice(`Saved ${saved.company} · ${saved.label} (${saved.placeName}) from OpenStreetMap. The map updates within a minute.`);
+      await Promise.all([loadOffices(), loadCandidates(), ...(report ? [loadReport()] : [])]);
+    } catch (error) {
+      setSaveError(officeError(error));
+    } finally {
+      setBusy("");
+    }
+  };
+
+  const rejectOsm = async (pair, osmRef, name) => {
+    if (busy) return;
+    setBusy(`reject-${osmRef}`);
+    setNotice("");
+    try {
+      await rejectOsmOffice(osmRef, { companyKey: pair.companyKey, placeId: pair.placeId });
+      setNotice(`${name} will not be used for ${pair.company} in ${pair.placeName}.`);
+      setEditor((current) => (current?.candidate ? { ...current, candidate: { ...current.candidate,
+        osmCandidates: current.candidate.osmCandidates.filter((item) => item.osmRef !== osmRef) } } : current));
+      await Promise.all([loadCandidates(), ...(report ? [loadReport()] : [])]);
+    } catch (error) {
+      setNotice(officeError(error));
+    } finally {
+      setBusy("");
+    }
+  };
+
+  const suggestions = editor?.candidate?.osmCandidates ?? NO_SUGGESTIONS;
   const canSave = editor?.pin && editor.label.trim().length >= 2 && editor.company.trim() && !busy;
 
   return (
@@ -171,6 +239,65 @@ export default function OfficeAdmin() {
 
         {notice && <div role="status" className="rounded-xl border border-indigo-200 bg-indigo-50 p-4 text-indigo-900">{notice}</div>}
 
+        <div role="tablist" aria-label="Office views" className="flex gap-2">
+          {VIEWS.map(([id, label]) => (
+            <button key={id} type="button" role="tab" id={`office-view-${id}`} aria-selected={view === id}
+              aria-controls={`office-panel-${id}`} onClick={() => setView(id)}
+              className={`rounded-full px-4 py-2 text-sm font-bold ${view === id ? "bg-indigo-600 text-white" : "bg-white text-slate-700 ring-1 ring-slate-200"}`}>
+              {label}
+            </button>
+          ))}
+        </div>
+
+        {view === "osm" && (
+          <section id="office-panel-osm" role="tabpanel" aria-labelledby="office-view-osm" className="rounded-2xl border bg-white p-6 overflow-x-auto">
+            <h2 className="text-xl font-extrabold">OpenStreetMap matches</h2>
+            <p className="mt-1 text-sm text-slate-600">{OSM_CAVEAT}</p>
+            {reportError ? (
+              <div role="alert" className="mt-4 rounded-xl border border-red-200 bg-red-50 p-4 text-red-800">
+                <p>{reportError}</p>
+                <button type="button" onClick={loadReport} className="mt-2 rounded-lg bg-red-700 px-3 py-1.5 font-bold text-white">Retry</button>
+              </div>
+            ) : !report ? (
+              <p role="status" className="mt-4 text-slate-600">Loading matches…</p>
+            ) : (
+              <>
+                <p className="mt-4 rounded-xl bg-slate-50 p-3 text-sm text-slate-700">
+                  {report.autoApply
+                    ? "Auto-apply is on: these matches show as offices on the map."
+                    : "Auto-apply is off: nothing below is on the map yet. Review it, then set GEO_OSM_OFFICE_AUTO_APPLY=true."}
+                  {" "}{formatCount(report.jobsMovedByAutoApply)} jobs {report.autoApply ? "are" : "would be"} placed at an
+                  OpenStreetMap office. Company and city pairs without a pin: {formatCount(report.oneMatch.pairs)} with one match,
+                  {" "}{formatCount(report.severalMatches.pairs)} with several (never applied), {formatCount(report.noMatch.pairs)} with none.
+                </p>
+                {report.topMatches.length === 0 ? <p className="mt-4 text-slate-500">No matches to review.</p> : (
+                  <table className="mt-4 w-full text-left text-sm">
+                    <caption className="sr-only">OpenStreetMap office matches by jobs</caption>
+                    <thead><tr className="border-b"><th className="py-2">Company</th><th>City</th><th>OpenStreetMap object</th><th className="text-right">Jobs</th><th><span className="sr-only">Action</span></th></tr></thead>
+                    <tbody>
+                      {report.topMatches.map((match) => (
+                        <tr key={`${match.companyKey}-${match.placeId}`} className="border-b last:border-0">
+                          <td className="py-2.5 font-bold">{match.company}</td>
+                          <td>{match.placeName}</td>
+                          <td><OsmLink url={match.url}>{match.osmName}</OsmLink></td>
+                          <td className="text-right">{formatCount(match.jobs)}</td>
+                          <td className="pl-3 text-right">
+                            <button type="button" disabled={Boolean(busy)} onClick={() => rejectOsm(match, match.osmRef, match.osmName)}
+                              aria-label={`Reject ${match.osmName} for ${match.company} in ${match.placeName}`}
+                              className="font-bold text-red-700 disabled:opacity-40">Reject</button>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                )}
+              </>
+            )}
+          </section>
+        )}
+
+        {view === "pins" && (
+        <div id="office-panel-pins" role="tabpanel" aria-labelledby="office-view-pins" className="space-y-6">
         <div className="grid gap-6 lg:grid-cols-[minmax(0,2fr)_minmax(0,3fr)]">
           <section aria-labelledby="worklist-heading" className="rounded-2xl border bg-white p-6">
             <div className="flex items-center justify-between gap-3">
@@ -193,7 +320,15 @@ export default function OfficeAdmin() {
                   <tbody>
                     {candidates.map((candidate) => (
                       <tr key={`${candidate.companyKey}-${candidate.placeId}`} className="border-b last:border-0">
-                        <td className="py-2.5 font-bold">{candidate.company}</td>
+                        <td className="py-2.5">
+                          <span className="font-bold">{candidate.company}</span>
+                          {candidate.osmCandidates?.length > 0 && (
+                            <span className="block text-xs text-slate-500">
+                              {matchCount(candidate.osmCandidates.length)}
+                              {candidate.autoApplied && <span className="ml-1 rounded bg-indigo-50 px-1.5 py-0.5 font-bold text-indigo-700">Auto-applied</span>}
+                            </span>
+                          )}
+                        </td>
                         <td>{candidate.placeName}</td>
                         <td className="text-right">{formatCount(candidate.jobs)}</td>
                         <td className="pl-3 text-right">
@@ -233,8 +368,33 @@ export default function OfficeAdmin() {
                   City: <strong>{editor.placeName || "nearest large city to the pin"}</strong>
                   {" · "}Pin: <strong data-testid="pin-coordinates">{editor.pin ? coordinates(editor.pin) : "click the map to drop it"}</strong>
                 </p>
-                <OfficePinEditor center={center} pin={editor.pin} onPin={setPin}
+                <OfficePinEditor center={center} pin={editor.pin} onPin={setPin} suggestions={suggestions}
                   className="h-80 rounded-2xl ring-1 ring-slate-200 bg-slate-100" />
+                {suggestions.length > 0 && (
+                  <div className="rounded-xl border border-slate-200 bg-slate-50 p-4">
+                    <h3 className="text-sm font-extrabold text-slate-900">{matchCount(suggestions.length)} (grey markers)</h3>
+                    <p className="mt-1 text-xs text-slate-600">{OSM_CAVEAT}</p>
+                    <ul className="mt-3 space-y-2 text-sm" aria-label="OpenStreetMap matches">
+                      {suggestions.map((match) => (
+                        <li key={match.osmRef} className="flex flex-wrap items-center justify-between gap-2 rounded-lg bg-white p-2.5 ring-1 ring-slate-200">
+                          <span>
+                            <OsmLink url={match.url}>{match.name}</OsmLink>
+                            <span className="block text-xs text-slate-500">{match.distanceKm} km from the city centre</span>
+                          </span>
+                          <span className="flex gap-2">
+                            <button type="button" disabled={Boolean(busy)} onClick={() => pickOsm(match)}
+                              aria-label={`Use ${match.name} as the office`}
+                              className="rounded-lg bg-indigo-600 px-3 py-1.5 font-bold text-white disabled:opacity-50">Use this office</button>
+                            <button type="button" disabled={Boolean(busy)}
+                              onClick={() => rejectOsm(editor.candidate, match.osmRef, match.name)}
+                              aria-label={`${match.name} is not this company`}
+                              className="rounded-lg border px-3 py-1.5 font-bold text-slate-700 disabled:opacity-50">Not this company</button>
+                          </span>
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                )}
                 {saveError && <p role="alert" className="rounded-xl border border-red-200 bg-red-50 p-3 text-sm text-red-800">{saveError}</p>}
                 <div className="flex gap-2">
                   <button disabled={!canSave} className="rounded-lg bg-indigo-600 px-5 py-2.5 font-bold text-white disabled:opacity-50">
@@ -299,6 +459,9 @@ export default function OfficeAdmin() {
             </nav>
           )}
         </section>
+
+        </div>
+        )}
 
         {history && (
           <section aria-labelledby="history-heading" className="rounded-2xl border border-indigo-200 bg-indigo-50 p-6">

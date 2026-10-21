@@ -82,7 +82,7 @@ class GazetteerDataTest {
 
     @Test
     void osmOfficesBelongToKnownCities() {
-        OsmOfficeDirectory offices = new OsmOfficeDirectory(GAZETTEER);
+        OsmOfficeDirectory offices = new OsmOfficeDirectory(GAZETTEER, OsmOfficeDirectory.OFFICES);
         assertTrue(offices.size() > 1000, "only " + offices.size() + " offices");
         assertEquals(Gazetteer.readOsm(OsmOfficeDirectory.OFFICES).rows().size(), offices.size(),
                 "every office row must have a gazetteer city");

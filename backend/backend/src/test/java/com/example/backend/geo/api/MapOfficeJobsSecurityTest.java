@@ -36,6 +36,10 @@ class MapOfficeJobsSecurityTest {
                 .andExpect(jsonPath("$.content[0].places[0].officeLabel").value("Bellandur"))
                 .andExpect(jsonPath("$.content[0].places[0].officeId").value("o1"));
         mvc.perform(get("/api/v1/jobs/map/offices/missing/jobs")).andExpect(status().isNotFound());
+        // An auto-applied OpenStreetMap office (GEO-8D) has an osm-… id on the same public endpoint.
+        when(jobs.office(eq("osm-n101"), any(), any(), any())).thenReturn(new MapJobService.MapJobSlice(List.of(job), 0, 20, false, 1L));
+        mvc.perform(get("/api/v1/jobs/map/offices/osm-n101/jobs")).andExpect(status().isOk())
+                .andExpect(jsonPath("$.content[0].id").value("job-1"));
         mvc.perform(get("/api/v1/jobs/map/offices")).andExpect(status().isUnauthorized());
         mvc.perform(get("/api/v1/jobs/map/offices/o1")).andExpect(status().isUnauthorized());
         mvc.perform(get("/api/v1/jobs/map/offices/o1/jobs/extra")).andExpect(status().isUnauthorized());

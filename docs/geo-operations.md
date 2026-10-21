@@ -360,6 +360,35 @@ punctuation removed, legal suffixes (`pvt ltd`, `limited`, `technologies`, `indi
 former names mapped by `backend/backend/src/main/resources/aggregation/company-aliases.json`. Changing that file
 changes fingerprints too, so it needs a new `JobFingerprint.VERSION` and the fingerprint migration.
 
+## OpenStreetMap offices (GEO-8D)
+
+OpenStreetMap (`in-osm-offices.tsv`) suggests where a company's office is in a city. Suggestions can be wrong (the data
+is volunteer-made and the match is by name only), so they are off the map until reviewed.
+
+**How a match is made:** exact equality of the company matching key with the key of an office's name, English name,
+brand or operator, as is or without trailing generic words (office, campus, India, HQ, development/technology/innovation
+/delivery centre, IDC, GDC, R&D, SEZ, "tower B", "phase 2", the city's own names). Never fuzzy or by prefix. Generic,
+short or city-name keys never match. Two objects of one company within 150 m are one office.
+
+**Precedence for a (company, city) pair:** an ADMIN office (enabled *or disabled*) → OSM ignored; a rejected object is
+ignored; exactly one object left and auto-apply on → it is the office (60 km guard); several → suggestion only.
+
+**Review workflow (ADMIN, `/admin/offices`):**
+1. Open the "OpenStreetMap matches" tab (`GET /api/v1/admin/geo/offices/osm-report`). It shows how many (company,
+   city) pairs have one, several or no match, how many jobs auto-apply would move, and the 50 matches with most jobs.
+2. Open each link on openstreetmap.org and check the object is that company's office. **Reject** the wrong ones.
+3. In the worklist, "Pin office" shows a pair's matches as grey markers: **Use this office** makes it a normal pin
+   (audited, `source: "OSM"`), **Not this company** rejects it. An admin pin always wins over OSM.
+4. When the top matches look right, set `GEO_OSM_OFFICE_AUTO_APPLY=true` in `.env` and redeploy. Single matches then
+   show as offices within about a minute; turning the flag off removes them again (no data is written).
+
+Decisions are in `osm_office_decisions` (one per company key, city and object; a later decision replaces it) and in
+`company_office_audit` (`OSM_PICK` on the new office, `OSM_REJECT` with the `osm-…` reference as `officeId`).
+
+| Variable | Default | Meaning |
+|---|---|---|
+| `GEO_OSM_OFFICE_AUTO_APPLY` | `false` | Apply single, unrejected OSM matches as offices (after reviewing the report) |
+
 ## Map page
 
 `/jobs/map` (GEO-5) is the user-facing map: clustered city markers from the snapshot, a list panel, "Near me", "Jobs in

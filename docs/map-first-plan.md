@@ -56,7 +56,7 @@ Attribution required: © OpenStreetMap contributors, GeoNames (CC-BY 4.0).
 - [x] GEO-8A — offline OpenStreetMap extract (localities and offices per city, ODbL) loaded at startup, ADMIN precision report
 - [x] GEO-8B — resolver v3: localities inside the resolved city, curated locality aliases, Adzuna point snapping; `localityIds` on every write path
 - [x] GEO-8C — locality markers and "office not listed" city bubbles on `/jobs/map`, locality job lists, NCR decision
-- [ ] GEO-8D — OpenStreetMap office suggestions for admins, opt-in auto-apply behind `GEO_OSM_OFFICE_AUTO_APPLY`
+- [x] GEO-8D — OpenStreetMap office suggestions for admins, opt-in auto-apply behind `GEO_OSM_OFFICE_AUTO_APPLY`
 
 ---
 
@@ -441,6 +441,29 @@ Precision order everywhere (snapshot, job pages, nearby, distances): **office** 
   `ncr.percentOfDelhi` gives the real share after deploy, and the decision is revisited only if it is 5% or more (then:
   an "Anywhere in India"-style region with a "Delhi NCR" label is the smaller change, since it needs no new place id).
 
+**8D — company offices from OpenStreetMap (done; suggest by default, auto-apply behind a flag).**
+- `OsmOfficeDirectory` indexes `in-osm-offices.tsv` by company key: the `CompanyNames.key` of a row's name, English
+  name, brand and operator, as is and with trailing generic words removed ("Infosys Campus", "Google Office Bengaluru",
+  "Amazon Development Centre" → infosys, google, amazon). Exact equality only (no fuzzy, prefix or edit distance: "Info
+  Edge" never matches Infosys); empty, short, generic ("IT Park") or city-name keys never match; rows of one company
+  within 150 m are one office (lower id).
+- Effective offices are built at read time with the GEO-6 index: any ADMIN office for the pair, enabled or disabled,
+  wins; a REJECT removes that object from the pair; exactly one remaining candidate within the 60 km guard becomes an
+  office (`osm-…` id, source "OSM", named after the company's most common job spelling) only when
+  `GEO_OSM_OFFICE_AUTO_APPLY=true`. Several candidates are never applied. Nothing is written to `company_offices`
+  unless an ADMIN picks a match; `/api/v1/jobs/map/offices/{id}/jobs` accepts `osm-…` ids in the index.
+- ADMIN API under `/api/v1/admin/geo/offices`: `POST osm/{osmRef}/pick` (a normal audited office via the same
+  validation and guard, `source: "OSM"`, `osmRef`; PICK decision), `POST osm/{osmRef}/reject` (REJECT decision, index
+  rebuild and debounced snapshot refresh), worklist rows with `osmCandidates` (≤ 10, nearest the centre first) and
+  `autoApplied`, and `GET osm-report` (pairs with 0/1/many matches and their jobs, jobs auto-apply would move, the top
+  50 matches with openstreetmap.org links). Decisions live in `osm_office_decisions` (unique per company key, place
+  and object) and are audited in `company_office_audit` as `OSM_PICK`/`OSM_REJECT`.
+- `/admin/offices`: "N OpenStreetMap matches" in the worklist, grey suggestion markers in the pin editor with "Use this
+  office" and "Not this company", and an "OpenStreetMap matches" tab with Reject and links; the copy says suggestions
+  can be wrong and an admin pin always wins.
+- The flag defaults to false in `application.properties`, Compose and `.env.example`. Turn it on only after reviewing
+  the report on production data.
+
 ---
 
 ## Scaling path (only when load demands it)
@@ -451,8 +474,14 @@ Precision order everywhere (snapshot, job pages, nearby, distances): **office** 
 
 ## Follow-ups
 
-- Investigate Adzuna `"India"`-only listings (31% COUNTRY in the GEO-1 local preview).
+- Adzuna `"India"`-only listings: measure on production with `GET /api/v1/admin/geo/precision` (`byPrecision.country`
+  and `adzuna.jobs`/`withPoint`); the local GEO-8 data has 97 country-level jobs of 2,216 (4.4%), but that is seeded,
+  not real. GEO-8 does not change them: they carry no text to find a locality in. It does stop re-resolution from
+  erasing Adzuna points, so Adzuna jobs that have one keep it and can snap to a locality.
+- Re-check the NCR share (`ncr.percentOfDelhi`) on production; act only at 5% or more (see GEO-8C).
 
 ## Optional later
 
+- GEO-9 — employer-pinned offices: companies claim a page, pin their offices, and recruiters pick an office when
+  posting a job (the exact, long-term source).
 - Feed `placeIds` into `MATCHING_LOCATION_WEIGHT` for distance-aware matching.

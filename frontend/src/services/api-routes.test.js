@@ -27,5 +27,8 @@ describe("versioned API routes", () => {
     expect(apiRoutes.adminOffices.candidates).toBe("/api/v1/admin/geo/offices/candidates");
     expect(apiRoutes.adminOffices.byId("o 1")).toBe("/api/v1/admin/geo/offices/o%201");
     expect(apiRoutes.adminOffices.audit("o1")).toBe("/api/v1/admin/geo/offices/o1/audit");
+    expect(apiRoutes.adminOffices.osmReport).toBe("/api/v1/admin/geo/offices/osm-report");
+    expect(apiRoutes.adminOffices.osmPick("osm-n1")).toBe("/api/v1/admin/geo/offices/osm/osm-n1/pick");
+    expect(apiRoutes.adminOffices.osmReject("osm-w2")).toBe("/api/v1/admin/geo/offices/osm/osm-w2/reject");
   });
 });

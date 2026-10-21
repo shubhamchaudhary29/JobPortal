@@ -50,6 +50,7 @@ public class Gazetteer {
     private final Map<String, List<Place>> primary;
     private final Map<String, List<Place>> alternate;
     private final Map<String, List<Place>> aliases;
+    private final Map<String, Set<String>> cityKeys;
     private final Map<String, String> admin1Names;
     private final Map<String, String> states;
     private final Set<String> foreign;
@@ -115,6 +116,13 @@ public class Gazetteer {
         this.primary = freeze(primaryIndex);
         this.alternate = freeze(alternateIndex);
         this.aliases = freeze(aliasIndex);
+        Map<String, Set<String>> namesByPlace = new HashMap<>();
+        places.values().forEach(place -> namesByPlace.computeIfAbsent(place.id(), id -> new HashSet<>()).add(key(place.name())));
+        aliasIndex.forEach((alias, targets) -> targets.forEach(place ->
+                namesByPlace.computeIfAbsent(place.id(), id -> new HashSet<>()).add(alias)));
+        Map<String, Set<String>> frozenNames = new HashMap<>();
+        namesByPlace.forEach((id, names) -> frozenNames.put(id, Set.copyOf(names)));
+        this.cityKeys = Map.copyOf(frozenNames);
         this.admin1Names = Map.copyOf(admin1);
         this.states = Map.copyOf(stateIndex);
         this.foreign = Set.copyOf(foreignKeys);
@@ -146,6 +154,8 @@ public class Gazetteer {
     public Optional<String> admin1Name(String code) { return Optional.ofNullable(code == null ? null : admin1Names.get(code)); }
     public boolean isForeign(String key) { return foreign.contains(key); }
     public boolean isIndia(String key) { return india.contains(key); }
+    /** {@link #key}s a place is known by: its name and every alias that points to it ("bengaluru", "bangalore"). */
+    public Set<String> cityKeys(String placeId) { return placeId == null ? Set.of() : cityKeys.getOrDefault(placeId, Set.of()); }
 
     public LocalityIndex localities() { return localities; }
     public Optional<LocalityIndex.Locality> localityById(String id) { return localities.byId(id); }

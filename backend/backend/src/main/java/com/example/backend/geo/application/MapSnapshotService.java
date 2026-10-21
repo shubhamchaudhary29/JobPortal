@@ -196,6 +196,7 @@ public class MapSnapshotService {
         Map<String, Long> localityJobsByPlace = new HashMap<>();
         Map<String, Long> jobsByLocality = new TreeMap<>();
         Map<String, Set<String>> companiesByOffice = new HashMap<>();
+        Map<String, Map<String, Long>> spellingsByOffice = new HashMap<>();
         long placedJobs = 0;
         long droppedJobs = 0;
         List<Document> placed = facets == null ? List.of() : facets.getList("placed", Document.class, List.of());
@@ -218,6 +219,8 @@ public class MapSnapshotService {
                     jobsByOffice.merge(office.id(), count, Long::sum);
                     variants.stream().filter(java.util.Objects::nonNull).forEach(variant ->
                             companiesByOffice.computeIfAbsent(office.id(), id -> new LinkedHashSet<>()).add(variant));
+                    variants.stream().filter(java.util.Objects::nonNull).findFirst().ifPresent(variant -> spellingsByOffice
+                            .computeIfAbsent(office.id(), id -> new HashMap<>()).merge(variant.trim(), count, Long::sum));
                     continue;
                 }
                 localities.stream().filter(locality -> locality.placeId().equals(placeId)).findFirst().ifPresent(locality -> {
@@ -242,14 +245,22 @@ public class MapSnapshotService {
         jobsByLocality.forEach((id, jobs) -> gazetteer.localityById(id).ifPresent(locality -> mapLocalities.add(
                 new MapLocality(id, locality.name(), locality.placeId(), locality.lat(), locality.lng(), jobs))));
         List<MapOffice> mapOffices = new ArrayList<>();
+        // An OpenStreetMap office is named after the company's most common spelling in its jobs, not the OSM name.
         jobsByOffice.forEach((id, jobs) -> officeIndex.byId(id).ifPresent(office -> mapOffices.add(new MapOffice(id,
-                office.company(), office.label(), office.placeId(), office.lat(), office.lng(), jobs))));
+                office.fromOsm() ? mostCommon(spellingsByOffice.get(id), office.company()) : office.company(), office.label(),
+                office.placeId(), office.lat(), office.lng(), jobs, office.source()))));
         Map<String, Set<String>> companies = new HashMap<>();
         companiesByOffice.forEach((id, variants) -> companies.put(id, Set.copyOf(variants)));
         officeCompanies.set(Map.copyOf(companies));
         // unmodifiableMap, not Map.copyOf: the status order is part of the payload.
         return new Content(placedJobs, Collections.unmodifiableMap(unplaced), List.copyOf(places), List.copyOf(mapOffices),
                 List.copyOf(mapLocalities));
+    }
+
+    private static String mostCommon(Map<String, Long> spellings, String fallback) {
+        if (spellings == null || spellings.isEmpty()) return fallback;
+        return spellings.entrySet().stream().max(Map.Entry.<String, Long>comparingByValue()
+                .thenComparing(Map.Entry.comparingByKey(java.util.Comparator.reverseOrder()))).map(Map.Entry::getKey).orElse(fallback);
     }
 
     /** Known localities in first-occurrence order (the pipeline concatenates listings, so ids can repeat). */
@@ -344,8 +355,16 @@ public class MapSnapshotService {
     /** An OpenStreetMap locality (GEO-8C) that owns at least one visible job, at its own point. Sorted by id. */
     public record MapLocality(String id, String name, String placeId, double lat, double lng, long jobs) { }
 
-    /** A pinned office that owns at least one visible job. */
-    public record MapOffice(String id, String company, String label, String placeId, double lat, double lng, long jobs) { }
+    /**
+     * An office that owns at least one visible job: an ADMIN pin, or (GEO-8D, {@code source} "OSM", id {@code osm-…}) an
+     * auto-applied OpenStreetMap match, named after the company's most common spelling in its jobs.
+     */
+    public record MapOffice(String id, String company, String label, String placeId, double lat, double lng, long jobs,
+                            String source) {
+        public MapOffice(String id, String company, String label, String placeId, double lat, double lng, long jobs) {
+            this(id, company, label, placeId, lat, lng, jobs, OfficeIndex.SOURCE_ADMIN);
+        }
+    }
 
     public record MapSnapshot(String version, Instant updatedAt, long placedJobs, Map<String, Long> unplaced,
                               List<MapPlace> places, List<MapOffice> offices, List<MapLocality> localities) {

@@ -3,6 +3,7 @@ package com.example.backend.geo.application;
 import com.example.backend.geo.domain.Place;
 import com.example.backend.geo.infrastructure.CompanyOfficeAuditDocument;
 import com.example.backend.geo.infrastructure.CompanyOfficeDocument;
+import com.example.backend.geo.infrastructure.OsmOfficeDecisionDocument;
 import com.example.backend.shared.error.BadRequestException;
 import com.example.backend.shared.error.ResourceNotFoundException;
 import com.example.backend.shared.pagination.PageResponse;
@@ -23,6 +24,7 @@ import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.regex.Pattern;
 import org.bson.Document;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.context.event.ApplicationReadyEvent;
 import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.context.event.EventListener;
@@ -33,6 +35,7 @@ import org.springframework.data.domain.Sort;
 import org.springframework.data.mongodb.core.MongoTemplate;
 import org.springframework.data.mongodb.core.query.Criteria;
 import org.springframework.data.mongodb.core.query.Query;
+import org.springframework.data.mongodb.core.query.Update;
 import org.springframework.stereotype.Service;
 
 /**
@@ -42,6 +45,12 @@ import org.springframework.stereotype.Service;
  * {@link OfficeIndex} and publishes {@link OfficesChangedEvent}.
  *
  * <p>Offices are applied to jobs at read time (snapshot build and per-page mapping), never written into jobs.
+ *
+ * <p>OpenStreetMap offices (GEO-8D) come from {@link OsmOfficeDirectory}. For a (company key, place) pair: any ADMIN office,
+ * enabled or disabled, wins (a disabled one is a deliberate "no"); an ADMIN REJECT removes that OSM object from the pair;
+ * exactly one remaining candidate becomes an office in the index only when {@code geo.osm-offices.auto-apply} is on (id
+ * {@code osm-…}, source "OSM", 60 km guard). Several candidates are ambiguous and only suggested. OSM offices are never
+ * stored unless an ADMIN picks one, which creates a normal audited office with {@code source} "OSM".
  */
 @Service
 public class CompanyOfficeService {
@@ -54,23 +63,38 @@ public class CompanyOfficeService {
     static final Duration CANDIDATES_TTL = Duration.ofMinutes(5);
     static final int MAX_CANDIDATES = 200;
     static final long CANDIDATES_MAX_TIME_MS = 15_000;
+    static final int MAX_OSM_CANDIDATES = 10;
+    static final int OSM_REPORT_TOP = 50;
+    static final Pattern OSM_REF = Pattern.compile("^osm-[nwr]\\d{1,15}$");
 
     private final MongoTemplate mongo;
     private final Gazetteer gazetteer;
     private final Clock clock;
     private final ApplicationEventPublisher events;
+    private final OsmOfficeDirectory osm;
+    private final boolean osmAutoApply;
     private final AtomicReference<OfficeIndex> index = new AtomicReference<>();
     private volatile CachedCandidates candidates;
 
-    public CompanyOfficeService(MongoTemplate mongo, Gazetteer gazetteer, Clock clock, ApplicationEventPublisher events) {
+    public CompanyOfficeService(MongoTemplate mongo, Gazetteer gazetteer, Clock clock, ApplicationEventPublisher events,
+                                OsmOfficeDirectory osm, @Value("${geo.osm-offices.auto-apply:false}") boolean osmAutoApply) {
         this.mongo = mongo;
         this.gazetteer = gazetteer;
         this.clock = clock;
         this.events = events;
+        this.osm = osm;
+        this.osmAutoApply = osmAutoApply;
     }
 
+    /** Whether single OpenStreetMap matches are applied as offices ({@code GEO_OSM_OFFICE_AUTO_APPLY}). */
+    public boolean osmAutoApply() { return osmAutoApply; }
+
+    /** (Re)loads the office index and drops the cached worklist. */
     @EventListener(ApplicationReadyEvent.class)
-    public void loadIndex() { rebuildIndex(); }
+    public void loadIndex() {
+        rebuildIndex();
+        candidates = null;
+    }
 
     /** Current enabled offices; loaded on first use if startup has not done it yet. */
     public OfficeIndex officeIndex() {
@@ -79,6 +103,11 @@ public class CompanyOfficeService {
     }
 
     public OfficeView create(String company, String label, Double lat, Double lng, String placeId, String actor) {
+        return create(company, label, lat, lng, placeId, actor, OfficeIndex.SOURCE_ADMIN, null);
+    }
+
+    private OfficeView create(String company, String label, Double lat, Double lng, String placeId, String actor,
+                              String source, String osmRef) {
         String name = company(company);
         String key = CompanyNames.key(name);
         if (key.isEmpty()) throw new BadRequestException("Company name must contain letters or digits");
@@ -101,6 +130,8 @@ public class CompanyOfficeService {
         office.setCreatedBy(actor(actor));
         office.setUpdatedAt(now);
         office.setUpdatedBy(actor(actor));
+        office.setSource(source);
+        office.setOsmRef(osmRef);
         try {
             mongo.insert(office);
         } catch (DuplicateKeyException duplicate) {
@@ -183,15 +214,80 @@ public class CompanyOfficeService {
      */
     public List<Candidate> candidates(int limit) {
         if (limit < 1 || limit > MAX_CANDIDATES) throw new BadRequestException("Limit must be between 1 and " + MAX_CANDIDATES);
+        List<Candidate> rows = cachedCandidates().rows();
+        return rows.subList(0, Math.min(limit, rows.size()));
+    }
+
+    /**
+     * Pick an OpenStreetMap match as this company's office in this city: creates a normal ADMIN office (same validation,
+     * 60 km guard and audit as {@link #create}) at the OSM point, with {@code source} "OSM", and records a PICK decision.
+     */
+    public OfficeView pickOsm(String osmRef, String companyKey, String placeId, String label, String actor) {
+        OsmOfficeDirectory.OsmOffice row = osmRow(osmRef);
+        String key = companyKey(companyKey);
+        Place place = osmPlace(row, placeId);
+        String company = displayCompany(key, place.id());
+        if (!CompanyNames.key(company).equals(key)) throw new BadRequestException("Unknown company key " + key);
+        String officeLabel = label == null || label.isBlank() ? osmLabel(row) : label;
+        OfficeView office = create(company, officeLabel, row.lat(), row.lng(), place.id(), actor, OfficeIndex.SOURCE_OSM, row.osmRef());
+        decide(key, place.id(), row.osmRef(), OsmOfficeDecisionDocument.Decision.PICK, actor);
+        audit(office.id(), CompanyOfficeAuditDocument.Action.OSM_PICK, actor, null, decisionValues(key, place.id(), row));
+        return office;
+    }
+
+    /** "Not this company": the OSM object is never this company's office in this city (it stays a suggestion elsewhere). */
+    public Decision rejectOsm(String osmRef, String companyKey, String placeId, String actor) {
+        OsmOfficeDirectory.OsmOffice row = osmRow(osmRef);
+        String key = companyKey(companyKey);
+        Place place = osmPlace(row, placeId);
+        Decision decision = decide(key, place.id(), row.osmRef(), OsmOfficeDecisionDocument.Decision.REJECT, actor);
+        audit(row.osmRef(), CompanyOfficeAuditDocument.Action.OSM_REJECT, actor, null, decisionValues(key, place.id(), row));
+        changed();
+        return decision;
+    }
+
+    /**
+     * How OpenStreetMap would place the jobs of (company, city) pairs that have jobs and no ADMIN office: pairs with no,
+     * one or several candidates (after rejections) and their jobs, the jobs auto-apply would move to an office, and the
+     * top matches by jobs with links to check them on openstreetmap.org. Cached with the worklist (5 minutes).
+     */
+    public OsmReport osmReport() {
+        CachedCandidates cached = cachedCandidates();
+        Set<List<String>> pinned = adminPairs();
+        Map<List<String>, OsmOfficeDirectory.OsmOffice> matches = osmMatches(pinned, rejected());
+        long[] pairs = new long[3];
+        long[] jobs = new long[3];
+        List<OsmMatch> top = new ArrayList<>();
+        long wouldMove = 0;
+        for (Candidate row : cached.rows()) {
+            List<String> pair = List.of(row.companyKey(), row.placeId());
+            if (pinned.contains(pair)) continue;
+            int bucket = Math.min(2, row.osmCandidates().size());
+            pairs[bucket]++;
+            jobs[bucket] += row.jobs();
+            OsmOfficeDirectory.OsmOffice match = matches.get(pair);
+            if (match == null) continue;
+            wouldMove += row.jobs();
+            if (top.size() < OSM_REPORT_TOP) {
+                top.add(new OsmMatch(row.company(), row.companyKey(), row.placeId(), row.placeName(), match.displayName(),
+                        match.osmRef(), match.url(), row.jobs()));
+            }
+        }
+        return new OsmReport(osmAutoApply, osm.size(), new OsmBucket(pairs[0], jobs[0]), new OsmBucket(pairs[1], jobs[1]),
+                new OsmBucket(pairs[2], jobs[2]), wouldMove, top);
+    }
+
+    private CachedCandidates cachedCandidates() {
         CachedCandidates cached = candidates;
         Instant now = clock.instant();
         if (cached == null || now.isAfter(cached.expiresAt())) {
             cached = new CachedCandidates(computeCandidates(), now.plus(CANDIDATES_TTL));
             candidates = cached;
         }
-        return cached.rows().subList(0, Math.min(limit, cached.rows().size()));
+        return cached;
     }
 
+    /** Every (company, city) pair with visible jobs and no enabled office, most jobs first, with its OSM candidates. */
     private List<Candidate> computeCandidates() {
         List<Document> pipeline = List.of(
                 new Document("$match", GeoPipelines.visibleJobs()),
@@ -222,6 +318,8 @@ public class CompanyOfficeService {
         Set<List<String>> pinned = new HashSet<>();
         mongo.find(Query.query(Criteria.where("enabled").is(true)), CompanyOfficeDocument.class)
                 .forEach(office -> pinned.add(List.of(office.getCompanyKey(), office.getPlaceId())));
+        Set<List<String>> rejected = rejected();
+        Map<List<String>, OsmOfficeDirectory.OsmOffice> matches = osmAutoApply ? osmMatches(adminPairs(), rejected) : Map.of();
         List<Candidate> rows = new ArrayList<>();
         merged.forEach((pair, tally) -> {
             if (pinned.contains(pair)) return;
@@ -229,21 +327,126 @@ public class CompanyOfficeService {
             String display = tally.variants.entrySet().stream()
                     .max(Map.Entry.<String, Long>comparingByValue().thenComparing(Map.Entry.comparingByKey(Comparator.reverseOrder())))
                     .map(Map.Entry::getKey).orElse(pair.get(0));
+            List<OsmCandidate> suggestions = osm.candidates(pair.get(0), place.id()).stream()
+                    .filter(row -> !rejected.contains(List.of(pair.get(0), place.id(), row.osmRef())))
+                    .map(row -> new OsmCandidate(row.osmRef(), row.displayName(), row.lat(), row.lng(),
+                            Math.round(row.distanceKmTo(place) * 10) / 10.0, row.url()))
+                    .sorted(Comparator.comparingDouble(OsmCandidate::distanceKm).thenComparing(OsmCandidate::osmRef))
+                    .limit(MAX_OSM_CANDIDATES).toList();
+            OsmOfficeDirectory.OsmOffice applied = matches.get(pair);
             rows.add(new Candidate(display, pair.get(0), place.id(), place.name(),
-                    gazetteer.admin1Name(place.admin1()).orElse(null), tally.jobs));
+                    gazetteer.admin1Name(place.admin1()).orElse(null), tally.jobs, suggestions,
+                    applied == null ? null : applied.osmRef()));
         });
         rows.sort(Comparator.comparingLong(Candidate::jobs).reversed().thenComparing(Candidate::companyKey)
                 .thenComparing(Candidate::placeId));
-        return List.copyOf(rows.subList(0, Math.min(MAX_CANDIDATES, rows.size())));
+        return List.copyOf(rows);
     }
 
     private synchronized OfficeIndex rebuildIndex() {
-        List<OfficeIndex.Office> offices = mongo.find(Query.query(Criteria.where("enabled").is(true)), CompanyOfficeDocument.class)
+        List<OfficeIndex.Office> offices = new ArrayList<>(mongo.find(Query.query(Criteria.where("enabled").is(true)),
+                        CompanyOfficeDocument.class)
                 .stream().map(office -> new OfficeIndex.Office(office.getId(), office.getCompanyKey(), office.getCompany(),
-                        office.getLabel(), office.getPlaceId(), office.getLat(), office.getLng())).toList();
+                        office.getLabel(), office.getPlaceId(), office.getLat(), office.getLng())).toList());
+        if (osmAutoApply) {
+            osmMatches(adminPairs(), rejected()).forEach((pair, row) -> offices.add(new OfficeIndex.Office(row.osmRef(),
+                    pair.get(0), row.displayName(), osmLabel(row), pair.get(1), row.lat(), row.lng(), OfficeIndex.SOURCE_OSM)));
+        }
         OfficeIndex rebuilt = new OfficeIndex(offices);
         index.set(rebuilt);
         return rebuilt;
+    }
+
+    /**
+     * Pairs whose OSM office would apply: no ADMIN office of any state, exactly one candidate left after rejections, and
+     * within the 60 km guard. One OSM object can serve several keys ("acme campus" and "acme"); it keeps its one id.
+     */
+    private Map<List<String>, OsmOfficeDirectory.OsmOffice> osmMatches(Set<List<String>> adminPairs, Set<List<String>> rejected) {
+        Map<List<String>, OsmOfficeDirectory.OsmOffice> matches = new LinkedHashMap<>();
+        osm.forEachPair((key, placeId, rows) -> {
+            List<String> pair = List.of(key, placeId);
+            if (adminPairs.contains(pair)) return;
+            List<OsmOfficeDirectory.OsmOffice> remaining = rows.stream()
+                    .filter(row -> !rejected.contains(List.of(key, placeId, row.osmRef()))).toList();
+            if (remaining.size() != 1) return;
+            OsmOfficeDirectory.OsmOffice row = remaining.get(0);
+            Place place = gazetteer.byId(placeId).orElse(null);
+            if (place == null || row.distanceKmTo(place) > MAX_CITY_DISTANCE_KM) return;
+            matches.put(pair, row);
+        });
+        return matches;
+    }
+
+    /** (company key, place) pairs with an ADMIN office, enabled or disabled. */
+    private Set<List<String>> adminPairs() {
+        Query query = new Query();
+        query.fields().include("companyKey", "placeId");
+        Set<List<String>> pairs = new HashSet<>();
+        mongo.find(query, CompanyOfficeDocument.class).forEach(office -> pairs.add(List.of(office.getCompanyKey(), office.getPlaceId())));
+        return pairs;
+    }
+
+    /** (company key, place, osmRef) triples an ADMIN rejected. */
+    private Set<List<String>> rejected() {
+        Set<List<String>> triples = new HashSet<>();
+        mongo.find(Query.query(Criteria.where("decision").is(OsmOfficeDecisionDocument.Decision.REJECT)),
+                OsmOfficeDecisionDocument.class).forEach(decision ->
+                triples.add(List.of(decision.getCompanyKey(), decision.getPlaceId(), decision.getOsmRef())));
+        return triples;
+    }
+
+    private Decision decide(String companyKey, String placeId, String osmRef, OsmOfficeDecisionDocument.Decision decision,
+                            String actor) {
+        Instant now = clock.instant();
+        Query pair = Query.query(Criteria.where("companyKey").is(companyKey).and("placeId").is(placeId).and("osmRef").is(osmRef));
+        mongo.upsert(pair, new Update().set("decision", decision).set("actor", actor(actor)).set("at", now),
+                OsmOfficeDecisionDocument.class);
+        return new Decision(companyKey, placeId, osmRef, decision.name(), actor(actor), now);
+    }
+
+    private OsmOfficeDirectory.OsmOffice osmRow(String osmRef) {
+        if (osmRef == null || !OSM_REF.matcher(osmRef).matches()) throw new BadRequestException("Invalid OpenStreetMap reference");
+        return osm.byRef(osmRef).orElseThrow(() -> new ResourceNotFoundException("OpenStreetMap office not found"));
+    }
+
+    private Place osmPlace(OsmOfficeDirectory.OsmOffice row, String placeId) {
+        if (placeId == null || placeId.isBlank()) throw new BadRequestException("placeId is required");
+        Place place = place(placeId.trim());
+        if (!row.placeId().equals(place.id())) {
+            throw new BadRequestException("This OpenStreetMap office is not in " + place.name());
+        }
+        return place;
+    }
+
+    /** The company's most common spelling in jobs at this place (worklist), else the key itself. */
+    private String displayCompany(String companyKey, String placeId) {
+        return cachedCandidates().rows().stream()
+                .filter(row -> row.companyKey().equals(companyKey) && row.placeId().equals(placeId))
+                .map(Candidate::company).findFirst().orElse(companyKey);
+    }
+
+    private static String companyKey(String companyKey) {
+        String trimmed = companyKey == null ? "" : companyKey.trim();
+        if (trimmed.isEmpty() || trimmed.length() > 200) throw new BadRequestException("companyKey must be 1 to 200 characters");
+        return trimmed;
+    }
+
+    /** OSM name as an office label, cut to the 80-character limit. */
+    private static String osmLabel(OsmOfficeDirectory.OsmOffice row) {
+        String name = row.displayName();
+        String label = name.length() <= 80 ? name : name.substring(0, 80).trim();
+        return label.length() >= 2 ? label : "OpenStreetMap office";
+    }
+
+    private static Map<String, Object> decisionValues(String companyKey, String placeId, OsmOfficeDirectory.OsmOffice row) {
+        Map<String, Object> values = new LinkedHashMap<>();
+        values.put("companyKey", companyKey);
+        values.put("placeId", placeId);
+        values.put("osmRef", row.osmRef());
+        values.put("name", row.displayName());
+        values.put("lat", row.lat());
+        values.put("lng", row.lng());
+        return values;
     }
 
     private void changed() {
@@ -309,6 +512,7 @@ public class CompanyOfficeService {
         values.put("lat", office.getLat());
         values.put("lng", office.getLng());
         values.put("enabled", office.isEnabled());
+        if (office.getOsmRef() != null) values.put("osmRef", office.getOsmRef());
         return values;
     }
 
@@ -317,7 +521,8 @@ public class CompanyOfficeService {
         return new OfficeView(office.getId(), office.getCompany(), office.getCompanyKey(), office.getLabel(),
                 office.getPlaceId(), place == null ? null : place.name(),
                 place == null ? null : gazetteer.admin1Name(place.admin1()).orElse(null), office.getLat(), office.getLng(),
-                office.isEnabled(), office.getCreatedAt(), office.getCreatedBy(), office.getUpdatedAt(), office.getUpdatedBy());
+                office.isEnabled(), office.getCreatedAt(), office.getCreatedBy(), office.getUpdatedAt(), office.getUpdatedBy(),
+                office.getSource() == null ? OfficeIndex.SOURCE_ADMIN : office.getSource(), office.getOsmRef());
     }
 
     private static void checkPage(int page, int size) {
@@ -366,13 +571,54 @@ public class CompanyOfficeService {
     /** Published after any office change; the map snapshot refreshes soon after. */
     public record OfficesChangedEvent() { }
 
+    /** {@code source}: "ADMIN" (a pin) or "OSM" (picked from OpenStreetMap; {@code osmRef} names the object). */
     public record OfficeView(String id, String company, String companyKey, String label, String placeId, String placeName,
                              String state, double lat, double lng, boolean enabled, Instant createdAt, String createdBy,
-                             Instant updatedAt, String updatedBy) { }
+                             Instant updatedAt, String updatedBy, String source, String osmRef) {
+        public OfficeView(String id, String company, String companyKey, String label, String placeId, String placeName,
+                          String state, double lat, double lng, boolean enabled, Instant createdAt, String createdBy,
+                          Instant updatedAt, String updatedBy) {
+            this(id, company, companyKey, label, placeId, placeName, state, lat, lng, enabled, createdAt, createdBy, updatedAt,
+                    updatedBy, OfficeIndex.SOURCE_ADMIN, null);
+        }
+    }
 
-    public record Candidate(String company, String companyKey, String placeId, String placeName, String state, long jobs) { }
+    /**
+     * A worklist row. {@code osmCandidates}: OpenStreetMap matches in this city (at most 10, nearest the city centre
+     * first, rejected ones left out); {@code autoApplied}: the {@code osmRef} applied as this pair's office, when
+     * auto-apply is on and exactly one match remains.
+     */
+    public record Candidate(String company, String companyKey, String placeId, String placeName, String state, long jobs,
+                            List<OsmCandidate> osmCandidates, String autoApplied) {
+        public Candidate(String company, String companyKey, String placeId, String placeName, String state, long jobs) {
+            this(company, companyKey, placeId, placeName, state, jobs, List.of(), null);
+        }
 
-    /** {@code action}: CREATE, UPDATE, ENABLE or DISABLE. */
+        public Candidate {
+            osmCandidates = osmCandidates == null ? List.of() : List.copyOf(osmCandidates);
+        }
+    }
+
+    /** {@code distanceKm} is from the city centre; {@code url} opens the object on openstreetmap.org. */
+    public record OsmCandidate(String osmRef, String name, double lat, double lng, double distanceKm, String url) { }
+
+    public record Decision(String companyKey, String placeId, String osmRef, String decision, String actor, Instant at) { }
+
+    public record OsmBucket(long pairs, long jobs) { }
+
+    /** One auto-match (applied, or would be when the flag is off), with the jobs it moves to an office. */
+    public record OsmMatch(String company, String companyKey, String placeId, String placeName, String osmName,
+                           String osmRef, String url, long jobs) { }
+
+    /**
+     * {@code autoApply}: the current flag; {@code noMatch}/{@code oneMatch}/{@code severalMatches}: (company, city) pairs
+     * with jobs and no ADMIN office, by OpenStreetMap candidates after rejections; {@code jobsMovedByAutoApply}: jobs at
+     * pairs that auto-apply would (or does) give an office; {@code topMatches}: the 50 with most jobs.
+     */
+    public record OsmReport(boolean autoApply, int osmOffices, OsmBucket noMatch, OsmBucket oneMatch, OsmBucket severalMatches,
+                            long jobsMovedByAutoApply, List<OsmMatch> topMatches) { }
+
+    /** {@code action}: CREATE, UPDATE, ENABLE, DISABLE, OSM_PICK or OSM_REJECT. */
     public record AuditView(String id, String action, String actor, Instant at,
                             Map<String, Object> before, Map<String, Object> after) {
         static AuditView from(CompanyOfficeAuditDocument record) {

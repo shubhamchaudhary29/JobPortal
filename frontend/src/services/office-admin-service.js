@@ -16,6 +16,16 @@ export const updateOffice = async (id, changes) =>
 export const getOfficeAudit = async (id, params = { page: 0, size: 20 }) =>
   (await apiClient.get(apiRoutes.adminOffices.audit(id), { params })).data;
 
+/** OpenStreetMap matches: pair buckets, jobs auto-apply would move, and the top matches with openstreetmap.org links. */
+export const getOsmReport = async () => (await apiClient.get(apiRoutes.adminOffices.osmReport)).data;
+
+/** Creates a normal audited office at the OSM point for {@code {companyKey, placeId, label?}}. */
+export const pickOsmOffice = async (osmRef, pair) => (await apiClient.post(apiRoutes.adminOffices.osmPick(osmRef), pair)).data;
+
+/** "Not this company": the match is never applied for {@code {companyKey, placeId}}. */
+export const rejectOsmOffice = async (osmRef, pair) =>
+  (await apiClient.post(apiRoutes.adminOffices.osmReject(osmRef), pair)).data;
+
 /** The server's 400 message ("Pin is far from Bengaluru …") is safe and specific, so it is shown as-is. */
 export const officeError = (error, fallback = "The office request failed.") => {
   const status = error?.response?.status;
@@ -24,6 +34,6 @@ export const officeError = (error, fallback = "The office request failed.") => {
   if (status === 400) return "Check the company, label and pin and try again.";
   if (status === 401) return "Your session has expired. Sign in again.";
   if (status === 403) return "Administrator access is required.";
-  if (status === 404) return "That office no longer exists.";
+  if (status === 404) return "That office or OpenStreetMap match no longer exists.";
   return fallback;
 };
