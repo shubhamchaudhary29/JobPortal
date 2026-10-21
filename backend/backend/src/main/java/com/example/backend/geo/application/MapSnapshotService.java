@@ -59,6 +59,11 @@ import org.springframework.stereotype.Service;
  * <p>Office pins (GEO-6) are applied here, at read time: jobs are grouped by places and lower-cased company, and a
  * group whose company key has exactly one enabled office in a place counts toward that office. City counts
  * ({@code MapPlace.jobs}, {@code placedJobs}) keep their meaning; {@code officeJobs} and {@code offices} are added.
+ *
+ * <p>Localities (GEO-8C): at each place a job counts toward its office there if it has one, else toward its
+ * <em>first</em> locality in that place (resolver order), else the city centre. So per place
+ * {@code jobs = officeJobs + localityJobs + centreJobs} and the place's {@code localities[].jobs} sum to
+ * {@code localityJobs}.
  */
 @Service
 public class MapSnapshotService {
@@ -188,6 +193,8 @@ public class MapSnapshotService {
         Map<String, Long> jobsByPlace = new TreeMap<>();
         Map<String, Long> officeJobsByPlace = new HashMap<>();
         Map<String, Long> jobsByOffice = new TreeMap<>();
+        Map<String, Long> localityJobsByPlace = new HashMap<>();
+        Map<String, Long> jobsByLocality = new TreeMap<>();
         Map<String, Set<String>> companiesByOffice = new HashMap<>();
         long placedJobs = 0;
         long droppedJobs = 0;
@@ -202,13 +209,20 @@ public class MapSnapshotService {
             placedJobs += count;
             String companyKey = CompanyNames.key(group.getString("company"));
             List<String> variants = row.getList("variants", String.class, List.of());
+            List<LocalityIndex.Locality> localities = firstOccurrences(group.getList("localities", String.class, List.of()));
             for (String placeId : known) {
                 jobsByPlace.merge(placeId, count, Long::sum);
-                officeIndex.officeFor(companyKey, placeId).ifPresent(office -> {
+                OfficeIndex.Office office = officeIndex.officeFor(companyKey, placeId).orElse(null);
+                if (office != null) {
                     officeJobsByPlace.merge(placeId, count, Long::sum);
                     jobsByOffice.merge(office.id(), count, Long::sum);
                     variants.stream().filter(java.util.Objects::nonNull).forEach(variant ->
                             companiesByOffice.computeIfAbsent(office.id(), id -> new LinkedHashSet<>()).add(variant));
+                    continue;
+                }
+                localities.stream().filter(locality -> locality.placeId().equals(placeId)).findFirst().ifPresent(locality -> {
+                    localityJobsByPlace.merge(placeId, count, Long::sum);
+                    jobsByLocality.merge(locality.id(), count, Long::sum);
                 });
             }
         }
@@ -222,8 +236,11 @@ public class MapSnapshotService {
         jobsByPlace.forEach((id, jobs) -> {
             Place place = gazetteer.byId(id).orElseThrow();
             places.add(new MapPlace(id, place.name(), gazetteer.admin1Name(place.admin1()).orElse(null),
-                    place.lat(), place.lng(), jobs, officeJobsByPlace.getOrDefault(id, 0L)));
+                    place.lat(), place.lng(), jobs, officeJobsByPlace.getOrDefault(id, 0L), localityJobsByPlace.getOrDefault(id, 0L)));
         });
+        List<MapLocality> mapLocalities = new ArrayList<>();
+        jobsByLocality.forEach((id, jobs) -> gazetteer.localityById(id).ifPresent(locality -> mapLocalities.add(
+                new MapLocality(id, locality.name(), locality.placeId(), locality.lat(), locality.lng(), jobs))));
         List<MapOffice> mapOffices = new ArrayList<>();
         jobsByOffice.forEach((id, jobs) -> officeIndex.byId(id).ifPresent(office -> mapOffices.add(new MapOffice(id,
                 office.company(), office.label(), office.placeId(), office.lat(), office.lng(), jobs))));
@@ -231,7 +248,19 @@ public class MapSnapshotService {
         companiesByOffice.forEach((id, variants) -> companies.put(id, Set.copyOf(variants)));
         officeCompanies.set(Map.copyOf(companies));
         // unmodifiableMap, not Map.copyOf: the status order is part of the payload.
-        return new Content(placedJobs, Collections.unmodifiableMap(unplaced), List.copyOf(places), List.copyOf(mapOffices));
+        return new Content(placedJobs, Collections.unmodifiableMap(unplaced), List.copyOf(places), List.copyOf(mapOffices),
+                List.copyOf(mapLocalities));
+    }
+
+    /** Known localities in first-occurrence order (the pipeline concatenates listings, so ids can repeat). */
+    private List<LocalityIndex.Locality> firstOccurrences(List<String> ids) {
+        if (ids.isEmpty()) return List.of();
+        List<LocalityIndex.Locality> localities = new ArrayList<>();
+        Set<String> seen = new java.util.HashSet<>();
+        for (String id : ids) {
+            if (id != null && seen.add(id)) gazetteer.localityById(id).ifPresent(localities::add);
+        }
+        return localities;
     }
 
     private List<Document> pipeline() {
@@ -241,13 +270,16 @@ public class MapSnapshotService {
         return List.of(
                 new Document("$match", visible),
                 new Document("$project", new Document("_id", 0).append("placeIds", GeoPipelines.placeIds())
+                        .append("localityIds", GeoPipelines.orderedLocalityIds())
                         .append("rank", GeoPipelines.bestRank()).append("company", 1)),
                 new Document("$facet", new Document("placed", List.of(
                         new Document("$match", hasPlace),
                         new Document("$project", new Document("key",
                                 new Document("$sortArray", new Document("input", "$placeIds").append("sortBy", 1)))
-                                .append("lower", GeoPipelines.lowerCompany()).append("company", 1)),
-                        new Document("$group", new Document("_id", new Document("places", "$key").append("company", "$lower"))
+                                .append("lower", GeoPipelines.lowerCompany()).append("company", 1)
+                                .append("localityIds", 1)),
+                        new Document("$group", new Document("_id", new Document("places", "$key").append("company", "$lower")
+                                .append("localities", "$localityIds"))
                                 .append("count", new Document("$sum", 1))
                                 .append("variants", new Document("$addToSet", "$company"))),
                         new Document("$project", new Document("count", 1).append("variants",
@@ -262,7 +294,7 @@ public class MapSnapshotService {
         Published current = published.get();
         if (current != null && current.snapshot().version().equals(version)) return;
         MapSnapshot snapshot = new MapSnapshot(version, clock.instant(), content.placedJobs(), content.unplaced(),
-                content.places(), content.offices());
+                content.places(), content.offices(), content.localities());
         byte[] raw = json.writeValueAsBytes(snapshot);
         published.set(new Published(snapshot, raw, gzip(raw), "\"" + version + "\""));
     }
@@ -287,25 +319,43 @@ public class MapSnapshotService {
     }
 
     /** Everything that defines the snapshot's identity; {@code updatedAt} is deliberately excluded. */
-    record Content(long placedJobs, Map<String, Long> unplaced, List<MapPlace> places, List<MapOffice> offices) { }
+    record Content(long placedJobs, Map<String, Long> unplaced, List<MapPlace> places, List<MapOffice> offices,
+                   List<MapLocality> localities) { }
 
     /**
      * A city with visible jobs. {@code jobs}: all of them (unchanged meaning); {@code officeJobs}: how many of those
-     * belong to a pinned office, so {@code jobs - officeJobs} are shown at the city centre.
+     * belong to a pinned office; {@code localityJobs} (GEO-8C): how many of the rest sit at a locality, so
+     * {@code jobs - officeJobs - localityJobs} are at the city centre ("office not listed").
      */
-    public record MapPlace(String id, String name, String state, double lat, double lng, long jobs, long officeJobs) {
+    public record MapPlace(String id, String name, String state, double lat, double lng, long jobs, long officeJobs,
+                           long localityJobs) {
         public MapPlace(String id, String name, String state, double lat, double lng, long jobs) {
-            this(id, name, state, lat, lng, jobs, 0);
+            this(id, name, state, lat, lng, jobs, 0, 0);
         }
+
+        public MapPlace(String id, String name, String state, double lat, double lng, long jobs, long officeJobs) {
+            this(id, name, state, lat, lng, jobs, officeJobs, 0);
+        }
+
+        /** Jobs at the city centre: no office and no locality in this city. */
+        public long centreJobs() { return jobs - officeJobs - localityJobs; }
     }
+
+    /** An OpenStreetMap locality (GEO-8C) that owns at least one visible job, at its own point. Sorted by id. */
+    public record MapLocality(String id, String name, String placeId, double lat, double lng, long jobs) { }
 
     /** A pinned office that owns at least one visible job. */
     public record MapOffice(String id, String company, String label, String placeId, double lat, double lng, long jobs) { }
 
     public record MapSnapshot(String version, Instant updatedAt, long placedJobs, Map<String, Long> unplaced,
-                              List<MapPlace> places, List<MapOffice> offices) {
+                              List<MapPlace> places, List<MapOffice> offices, List<MapLocality> localities) {
         public MapSnapshot(String version, Instant updatedAt, long placedJobs, Map<String, Long> unplaced, List<MapPlace> places) {
-            this(version, updatedAt, placedJobs, unplaced, places, List.of());
+            this(version, updatedAt, placedJobs, unplaced, places, List.of(), List.of());
+        }
+
+        public MapSnapshot(String version, Instant updatedAt, long placedJobs, Map<String, Long> unplaced, List<MapPlace> places,
+                           List<MapOffice> offices) {
+            this(version, updatedAt, placedJobs, unplaced, places, offices, List.of());
         }
     }
 

@@ -16,8 +16,15 @@ Adzuna listings ("Whitefield, Bengaluru, Karnataka, India", "Noida Sector 62", .
 (listing `rawLocation`, geo version "seed"; Adzuna ones keep a provider point), so the backend's own resolver places them
 through the re-resolution job. Locally that job only runs with scheduling on; see docs/geo-operations.md, "Precision
 report", for a Compose override that enables it without calling any provider.
+
+--ndjson prints only the jobs, one extended-JSON document per line, for large seeds (mongosh slows to a crawl on
+megabytes of script). A normal run with --jobs 0 first removes old seed jobs and seeds the offices; then import:
+    python3 backend/backend/scripts/seed-map-jobs.py --jobs 0 --offices 3 | docker compose exec -T mongodb mongosh --quiet jobportal
+    python3 backend/backend/scripts/seed-map-jobs.py --jobs 20000 --realistic 1080 --ndjson \
+      | docker compose exec -T mongodb mongoimport --quiet --db jobportal --collection jobs
 """
 import argparse
+import datetime
 import json
 import os
 import random
@@ -26,6 +33,7 @@ PLACES = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "src", "
 ROLES = ["Java Engineer", "Python Developer", "Data Analyst", "Product Manager", "DevOps Engineer", "React Developer",
          "QA Engineer", "Business Analyst", "Sales Executive", "Support Specialist"]
 LEVELS = ["Junior", "Senior", "Lead", "Staff", "Associate"]
+CHUNK = 1000
 COMPANIES = ["Acme", "Globex", "Initech", "Umbrella", "Hooli", "Stark", "Wayne", "Wonka"]
 # (location, provider, company, Adzuna point or None): strings as providers send them.
 REALISTIC = [
@@ -108,6 +116,7 @@ def main():
     parser.add_argument("--places", type=int, default=30)
     parser.add_argument("--offices", type=int, default=0)
     parser.add_argument("--realistic", type=int, default=0)
+    parser.add_argument("--ndjson", action="store_true", help="print jobs only, as NDJSON for mongoimport")
     args = parser.parse_args()
     random.seed(42)
     places = top_places(args.places)
@@ -141,13 +150,22 @@ def main():
             "location": location, "source": provider, "active": True, "seedBatch": "geo-load",
             "createdAtOffsetMinutes": args.jobs + index, "sourceListings": [listing],
         })
+    if args.ndjson:
+        now = datetime.datetime.now(datetime.timezone.utc)
+        for job in jobs:
+            created = now - datetime.timedelta(minutes=job.pop("createdAtOffsetMinutes"))
+            job["createdAt"] = {"$date": created.isoformat(timespec="milliseconds").replace("+00:00", "Z")}
+            print(json.dumps(job))
+        return
     print("db.jobs.deleteMany({seedBatch: 'geo-load'});")
     print("const now = Date.now();")
-    print(f"const jobs = {json.dumps(jobs)};")
-    print("jobs.forEach(j => { j.createdAt = new Date(now - j.createdAtOffsetMinutes * 60000); "
-          "delete j.createdAtOffsetMinutes; });")
-    print("const result = db.jobs.insertMany(jobs);")
-    print("print('seeded ' + Object.keys(result.insertedIds).length + ' jobs');")
+    print("let seeded = 0;")
+    print("const seed = (jobs) => { jobs.forEach(j => { j.createdAt = new Date(now - j.createdAtOffsetMinutes * 60000); "
+          "delete j.createdAtOffsetMinutes; }); seeded += Object.keys(db.jobs.insertMany(jobs).insertedIds).length; };")
+    # One statement per line and chunk: mongosh evaluates piped input line by line, and one huge line runs it out of heap.
+    for start in range(0, len(jobs), CHUNK):
+        print(f"seed({json.dumps(jobs[start:start + CHUNK])});")
+    print("print('seeded ' + seeded + ' jobs');")
     offices = [{
         "companyKey": "acme", "company": "Acme", "label": f"Acme {name} seed office", "placeId": place_id,
         "lat": round(lat + 0.009, 5), "lng": lng, "enabled": True, "createdBy": "seed", "updatedBy": "seed",

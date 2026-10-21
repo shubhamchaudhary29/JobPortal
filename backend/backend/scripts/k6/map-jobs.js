@@ -1,11 +1,13 @@
-// Load check for the GEO-3/GEO-6 map job lists (local, not CI), against the backend inside the Compose network
+// Load check for the GEO-3/GEO-6/GEO-8 map job lists (local, not CI), against the backend inside the Compose network
 // (through nginx, one IP is capped at 5 r/s by GEO-7B; scripts/k6/rate-limits.js checks that instead).
-// Seed first: python3 backend/backend/scripts/seed-map-jobs.py --offices 3 | docker compose exec -T mongodb mongosh --quiet jobportal
+// Seed first: python3 backend/backend/scripts/seed-map-jobs.py --offices 3 --realistic 216 | docker compose exec -T mongodb mongosh --quiet jobportal
+// (realistic jobs get localities only after re-resolution; see docs/geo-operations.md, "Precision report")
 // docker run --rm -i --network <project>_default -e BASE_URL=http://backend:8080 grafana/k6 run - < backend/backend/scripts/k6/map-jobs.js
 // <project> is the Compose project name (default: the repo directory name; see `docker network ls`).
 // Mix: 65% place lists for the top places (cache-friendly), 20% nearby around fixed city centres,
 // 10% place lists with a search word (more distinct keys, so more cache misses), 5% office lists when the snapshot
-// has offices (otherwise those iterations become place lists).
+// has offices and 5% locality lists when it has localities (otherwise those iterations become place lists). The
+// locality share comes out of the plain place lists, which are now 60%.
 import http from 'k6/http';
 import { check } from 'k6';
 
@@ -29,7 +31,9 @@ export function setup() {
   if (places.length === 0) throw new Error('setup: empty snapshot; seed jobs first');
   const offices = (response.json('offices') || []).map((o) => o.id);
   if (offices.length === 0) console.warn('setup: no offices in the snapshot; the office leg runs as place lists');
-  return { places, offices };
+  const localities = (response.json('localities') || []).sort((a, b) => b.jobs - a.jobs).slice(0, 20).map((l) => l.id);
+  if (localities.length === 0) console.warn('setup: no localities in the snapshot; the locality leg runs as place lists');
+  return { places, offices, localities };
 }
 
 const pick = (items) => items[Math.floor(Math.random() * items.length)];
@@ -39,6 +43,8 @@ export default function (data) {
   let url;
   if (roll < 0.05 && data.offices.length > 0) {
     url = `${BASE_URL}/api/v1/jobs/map/offices/${pick(data.offices)}/jobs`;
+  } else if (roll >= 0.05 && roll < 0.1 && data.localities.length > 0) {
+    url = `${BASE_URL}/api/v1/jobs/map/localities/${pick(data.localities)}/jobs`;
   } else if (roll < 0.7) {
     url = `${BASE_URL}/api/v1/jobs/map/places/${pick(data.places)}/jobs`;
   } else if (roll < 0.9) {

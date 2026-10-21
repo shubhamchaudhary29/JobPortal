@@ -3,7 +3,9 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 const { apiGet } = vi.hoisted(() => ({ apiGet: vi.fn() }));
 vi.mock("./helper", () => ({ default: { get: apiGet } }));
 
-import { getMapSnapshot, getNearbyJobs, getOfficeJobs, getPlaceJobs, getUnplacedJobs, isAbortError } from "./map-service";
+import {
+  getLocalityJobs, getMapSnapshot, getNearbyJobs, getOfficeJobs, getPlaceJobs, getUnplacedJobs, isAbortError,
+} from "./map-service";
 
 const slice = { content: [{ id: "job-1" }], page: 0, size: 20, hasNext: false, totalHint: 1 };
 const httpError = (status, headers = {}) => Object.assign(new Error(`HTTP ${status}`), { response: { status, headers } });
@@ -29,6 +31,22 @@ describe("map service", () => {
     await getPlaceJobs("1277333", { q: " java " });
     expect(apiGet).toHaveBeenLastCalledWith("/api/v1/jobs/map/places/1277333/jobs",
       { params: { q: "java", page: 0, size: 20 }, signal: undefined });
+  });
+
+  it("passes the place scope only when given", async () => {
+    await getPlaceJobs("1277333", { scope: "unlisted", page: 0 });
+    expect(apiGet).toHaveBeenLastCalledWith("/api/v1/jobs/map/places/1277333/jobs",
+      { params: { scope: "unlisted", page: 0, size: 20 }, signal: undefined });
+    await getPlaceJobs("1277333", { scope: undefined });
+    expect(apiGet).toHaveBeenLastCalledWith("/api/v1/jobs/map/places/1277333/jobs",
+      { params: { page: 0, size: 20 }, signal: undefined });
+  });
+
+  it("requests one locality's jobs with an encoded id", async () => {
+    const signal = new AbortController().signal;
+    await getLocalityJobs("osm-n377219489", { q: " java ", page: 1, signal });
+    expect(apiGet).toHaveBeenCalledWith("/api/v1/jobs/map/localities/osm-n377219489/jobs",
+      { params: { q: "java", page: 1, size: 20 }, signal });
   });
 
   it("rounds coordinates to the 0.05° grid before they leave the browser", async () => {

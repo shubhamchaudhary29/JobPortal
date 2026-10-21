@@ -46,9 +46,12 @@ async function get(url, params, signal) {
 /** Every place with jobs plus unplaced counts. Served from memory with an ETag; the browser revalidates it. */
 export const getMapSnapshot = ({ signal } = {}) => get(apiRoutes.jobs.mapSnapshot, {}, signal);
 
-/** Slice of jobs at one place: {@code {content, page, size, hasNext, totalHint}}. */
-export const getPlaceJobs = (placeId, { q, page = 0, size = PAGE_SIZE, signal } = {}) =>
-  get(apiRoutes.jobs.mapPlaceJobs(placeId), { q: q?.trim(), page, size }, signal);
+/**
+ * Slice of jobs at one place: {@code {content, page, size, hasNext, totalHint}}. {@code scope} "unlisted" keeps only
+ * the jobs at the city centre (no pinned office or locality); omitted means all of them.
+ */
+export const getPlaceJobs = (placeId, { scope, q, page = 0, size = PAGE_SIZE, signal } = {}) =>
+  get(apiRoutes.jobs.mapPlaceJobs(placeId), { scope, q: q?.trim(), page, size }, signal);
 
 /**
  * Places within a radius and their jobs: {@code {centerLat, centerLng, radiusKm, places, jobs}}. Coordinates are
@@ -60,6 +63,10 @@ export const getNearbyJobs = ({ lat, lng, radiusKm, q, page = 0, size = PAGE_SIZ
 /** Slice of jobs at one pinned office (same shape as a place's jobs). */
 export const getOfficeJobs = (officeId, { q, page = 0, size = PAGE_SIZE, signal } = {}) =>
   get(apiRoutes.jobs.mapOfficeJobs(officeId), { q: q?.trim(), page, size }, signal);
+
+/** Slice of jobs at one OpenStreetMap locality ({@code osm-…} id; same shape as a place's jobs). */
+export const getLocalityJobs = (localityId, { q, page = 0, size = PAGE_SIZE, signal } = {}) =>
+  get(apiRoutes.jobs.mapLocalityJobs(localityId), { q: q?.trim(), page, size }, signal);
 
 /** Jobs without a place: {@code kind} "remote" or "india" (state- and India-wide). */
 export const getUnplacedJobs = ({ kind, q, page = 0, size = PAGE_SIZE, signal } = {}) =>

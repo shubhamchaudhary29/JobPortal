@@ -9,7 +9,7 @@ import { formatViewHash, parseViewHash, replaceHash } from "../../map/viewHash";
 
 const AREA_BUTTON_DELAY_MS = 500;
 const OWN_MOVE = Object.freeze({ ownMove: true });
-const CLICKABLE = [LAYERS.clusters, LAYERS.points, LAYERS.offices];
+const CLICKABLE = [LAYERS.clusters, LAYERS.points, LAYERS.offices, LAYERS.localities];
 const MARKERS_MARK = "jobs-map:markers-visible";
 
 const prefersReducedMotion = () => Boolean(globalThis.matchMedia?.("(prefers-reduced-motion: reduce)").matches);
@@ -39,27 +39,28 @@ function removeOverlay(map) {
 }
 
 /**
- * Clustered city markers over the base map. Supplementary to the panel, which offers everything keyboard users need.
- * {@code selected}: the city or office shown in the panel ({@code {id, lat, lng}}), ringed and framed.
+ * Clustered city, locality and office markers over the base map. Supplementary to the panel, which offers everything
+ * keyboard users need. {@code selected}: the city, locality or office shown in the panel ({@code {id, lat, lng}}),
+ * ringed and framed.
  * {@code area}: {@code {lat, lng, radiusKm, fit, approximate}} draws the search circle (and frames it when fit).
  */
 export default function JobsMap({ snapshot, selected, dimmed, area, allowAreaSearch, onSelectPlace, onSelectOffice,
-  onSearchArea, className = "" }) {
+  onSelectLocality, onSearchArea, className = "" }) {
   const [ready, setReady] = useState(null);
   const [showAreaButton, setShowAreaButton] = useState(false);
-  const callbacks = useRef({ onSelectPlace, onSelectOffice, onSearchArea });
+  const callbacks = useRef({ onSelectPlace, onSelectOffice, onSelectLocality, onSearchArea });
   // A view restored from the URL hash (reload, or Back from a job) wins over framing the place it was showing.
   const [restoredPlaceId] = useState(() => {
     const { hash = "", search = "" } = globalThis.location ?? {};
     const params = new URLSearchParams(search);
-    return /^#\d/.test(hash) ? params.get("office") || params.get("place") : null;
+    return /^#\d/.test(hash) ? params.get("office") || params.get("locality") || params.get("place") : null;
   });
   const framedPlaceId = useRef(restoredPlaceId);
   // While a near-me area is shown the view centre is the user's (rounded) position, so it stays out of the URL.
   const privateView = useRef(false);
 
   useEffect(() => {
-    callbacks.current = { onSelectPlace, onSelectOffice, onSearchArea };
+    callbacks.current = { onSelectPlace, onSelectOffice, onSelectLocality, onSearchArea };
   });
 
   const handleReady = useCallback((map, { hasGlyphs }) => {
@@ -93,6 +94,10 @@ export default function JobsMap({ snapshot, selected, dimmed, area, allowAreaSea
       const id = event.features?.[0]?.properties?.id;
       if (id != null) callbacks.current.onSelectOffice?.(String(id));
     };
+    const clickLocality = (event) => {
+      const id = event.features?.[0]?.properties?.id;
+      if (id != null) callbacks.current.onSelectLocality?.(String(id));
+    };
     let userMoving = false;
     let timer = null;
     const moveStart = (event) => {
@@ -116,6 +121,7 @@ export default function JobsMap({ snapshot, selected, dimmed, area, allowAreaSea
     map.on("click", LAYERS.clusters, clickCluster);
     map.on("click", LAYERS.points, clickPlace);
     map.on("click", LAYERS.offices, clickOffice);
+    map.on("click", LAYERS.localities, clickLocality);
     map.on("movestart", moveStart);
     map.on("moveend", moveEnd);
     // A pasted or edited view hash on an open page moves the map, as MapLibre's own hash option did.
@@ -131,6 +137,7 @@ export default function JobsMap({ snapshot, selected, dimmed, area, allowAreaSea
       map.off("click", LAYERS.clusters, clickCluster);
       map.off("click", LAYERS.points, clickPlace);
       map.off("click", LAYERS.offices, clickOffice);
+      map.off("click", LAYERS.localities, clickLocality);
       map.off("movestart", moveStart);
       map.off("moveend", moveEnd);
       removeOverlay(map);
@@ -185,7 +192,7 @@ export default function JobsMap({ snapshot, selected, dimmed, area, allowAreaSea
   };
 
   return (
-    <section aria-label="Map of job openings by city. The list panel offers the same places for keyboard users."
+    <section aria-label="Map of job openings by city, locality and office. The list panel offers the same places for keyboard users."
       className={`relative overflow-hidden ${className}`}>
       {/* View sync is done here rather than with BaseMap's hash option, so near-me views can stay out of the URL. */}
       <BaseMap onReady={handleReady} className="h-full w-full" />

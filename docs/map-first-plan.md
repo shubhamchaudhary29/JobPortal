@@ -55,7 +55,7 @@ Attribution required: © OpenStreetMap contributors, GeoNames (CC-BY 4.0).
 - [x] GEO-7F — session resilience behind shared IPs: refresh limited per session, reuse grace window, separate nginx `refresh` zone, HTTP/2, one refresh across tabs, no logout on transient errors
 - [x] GEO-8A — offline OpenStreetMap extract (localities and offices per city, ODbL) loaded at startup, ADMIN precision report
 - [x] GEO-8B — resolver v3: localities inside the resolved city, curated locality aliases, Adzuna point snapping; `localityIds` on every write path
-- [ ] GEO-8C — locality markers and "office not listed" city bubbles on `/jobs/map`, locality job lists, NCR decision
+- [x] GEO-8C — locality markers and "office not listed" city bubbles on `/jobs/map`, locality job lists, NCR decision
 - [ ] GEO-8D — OpenStreetMap office suggestions for admins, opt-in auto-apply behind `GEO_OSM_OFFICE_AUTO_APPLY`
 
 ---
@@ -419,6 +419,27 @@ Precision order everywhere (snapshot, job pages, nearby, distances): **office** 
   | Adzuna jobs with a point | 0 of 16 | 16 of 16 (8 snapped) |
 
   The remaining unresolved strings are the deliberate negatives ("Sector 18", "Delhi, NY", "Multiple Locations").
+
+**8C — localities on the map (done).**
+- Snapshot: `places[].localityJobs` and `localities[]`; a job counts at each place toward its office, else its first
+  locality there, else the centre (invariant tested per place, including inactive listings and top-level geo).
+- Lists: `GET /api/v1/jobs/map/localities/{id}/jobs` (public, `map_list` in nginx, permitted in `SecurityConfig`,
+  snapshot-versioned cache) and `scope=all|unlisted` on place lists; job places carry `localityId`/`localityName`;
+  nearby has locality chips and measures to office > locality > centre.
+- Frontend: locality markers and panel (`?locality=`), the city bubble opens "office not listed" (`&scope=unlisted`)
+  with "Show all {City} jobs", card chips (office, locality, or "Office not listed"), near-me locality chips.
+- Checked in the Compose stack with 21,080 seeded jobs (headless Chrome over the DevTools protocol, screenshots in the
+  PR): at zoom 11 Bengaluru splits into Whitefield · 60, Electronics City Phase 1 · 40, Koramangala, HSR Layout,
+  Bellanduru and Manyata Tech Park bubbles, the city bubble keeps its 1.7k "office not listed" jobs and the Acme pin
+  stays separate; Near me from Whitefield lists the locality chips by distance and measures Whitefield jobs at 2.2 km,
+  Electronics City jobs at 14.5 km and centre jobs at 17.1 km.
+- Snapshot build on that data: 113 ms average, 197 ms max; 69 MB heap in use after a build. k6 `map-jobs.js` with a 5%
+  locality leg: 13,718 req/s, p95 26.2 ms, 0% errors (table in `docs/geo-operations.md`).
+- **NCR (decided: keep the alias).** The plan was to stop mapping "NCR"/"Delhi NCR" to Delhi if those strings are at
+  least 5% of Delhi jobs. Measured on the local data: 8 of 241 Delhi jobs (3.3%), below the line, so `place-aliases.tsv`
+  is unchanged. Production has not been measured yet (no access from here): the precision report's
+  `ncr.percentOfDelhi` gives the real share after deploy, and the decision is revisited only if it is 5% or more (then:
+  an "Anywhere in India"-style region with a "Delhi NCR" label is the smaller change, since it needs no new place id).
 
 ---
 

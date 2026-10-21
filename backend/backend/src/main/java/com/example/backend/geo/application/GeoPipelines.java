@@ -69,6 +69,19 @@ final class GeoPipelines {
                 new Document("$ifNull", List.of("$geo.localityIds", List.of()))));
     }
 
+    /**
+     * {@code geo.localityIds} of active listings concatenated in listing order (resolver order within a listing), or the
+     * top-level list. May repeat ids; readers keep the first occurrence. Used where "first locality" matters.
+     */
+    static Document orderedLocalityIds() {
+        Document concatenated = new Document("$reduce", new Document("input", activeListings())
+                .append("initialValue", List.of())
+                .append("in", new Document("$concatArrays", List.of("$$value",
+                        new Document("$ifNull", List.of("$$this.geo.localityIds", List.of()))))));
+        return new Document("$cond", List.of(hasListings(), concatenated,
+                new Document("$ifNull", List.of("$geo.localityIds", List.of()))));
+    }
+
     /** Best status rank over active listings (or top-level geo); {@link #UNPROCESSED_RANK} when nothing is resolved. */
     static Document bestRank() {
         Document statuses = new Document("$cond", List.of(hasListings(),

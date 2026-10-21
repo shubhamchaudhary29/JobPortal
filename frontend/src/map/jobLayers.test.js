@@ -20,7 +20,8 @@ describe("job map layers", () => {
 
     const withText = jobLayers({ hasGlyphs: true });
     const symbols = withText.filter((layer) => layer.type === "symbol");
-    expect(symbols.map((layer) => layer.id)).toEqual([LAYERS.clusterCounts, LAYERS.pointCounts, LAYERS.names, LAYERS.officeNames]);
+    expect(symbols.map((layer) => layer.id)).toEqual([LAYERS.clusterCounts, LAYERS.pointCounts, LAYERS.names,
+      LAYERS.localityNames, LAYERS.officeNames]);
     symbols.forEach((layer) => layer.layout["text-font"].forEach((font) => expect(baseFonts).toContain(font)));
     expect(withText.find((layer) => layer.id === LAYERS.names).minzoom).toBe(7);
   });
@@ -43,9 +44,31 @@ describe("job map layers", () => {
     expect(all.find((layer) => layer.id === LAYERS.officeNames).layout["text-field"]).toEqual(["get", "name"]);
   });
 
+  it("draws localities between city bubbles and office pins, labelled with name and count at locality zoom", () => {
+    const all = jobLayers({ hasGlyphs: true });
+    const ids = all.map((layer) => layer.id);
+    const localities = all.find((layer) => layer.id === LAYERS.localities);
+    expect(localities.filter).toEqual(["all", ["!", ["has", "point_count"]], ["==", ["get", "kind"], "locality"]]);
+    expect(localities.paint["circle-color"]).toBe("#818cf8");
+    expect(localities.paint["circle-stroke-color"]).toBe("#ffffff");
+    expect(ids.indexOf(LAYERS.points)).toBeLessThan(ids.indexOf(LAYERS.localities));
+    expect(ids.indexOf(LAYERS.localities)).toBeLessThan(ids.indexOf(LAYERS.offices));
+    // Max radius: city 30 > locality 20 > office 14.
+    const maxRadius = (id) => all.find((layer) => layer.id === id).paint["circle-radius"].at(-1);
+    expect(maxRadius(LAYERS.points)).toBeGreaterThan(maxRadius(LAYERS.localities));
+    expect(maxRadius(LAYERS.localities)).toBeGreaterThan(maxRadius(LAYERS.offices));
+    for (const id of [LAYERS.points, LAYERS.pointCounts, LAYERS.names]) {
+      expect(JSON.stringify(all.find((layer) => layer.id === id).filter)).toContain('["!",["==",["get","kind"],"locality"]]');
+    }
+    const names = all.find((layer) => layer.id === LAYERS.localityNames);
+    expect(names.minzoom).toBe(PLACE_ZOOM);
+    expect(names.layout["text-field"].slice(0, 3)).toEqual(["concat", ["get", "name"], " · "]);
+  });
+
   it("dims markers for the Remote and India tabs", () => {
     const dimmed = Object.fromEntries(dimmingPaint(true).map(([layer, property, value]) => [`${layer}/${property}`, value]));
     const normal = Object.fromEntries(dimmingPaint(false).map(([layer, property, value]) => [`${layer}/${property}`, value]));
     expect(dimmed[`${LAYERS.points}/circle-opacity`]).toBeLessThan(normal[`${LAYERS.points}/circle-opacity`]);
+    expect(dimmed[`${LAYERS.localities}/circle-opacity`]).toBeLessThan(normal[`${LAYERS.localities}/circle-opacity`]);
   });
 });

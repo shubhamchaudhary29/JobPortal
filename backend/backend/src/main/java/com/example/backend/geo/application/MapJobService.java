@@ -30,6 +30,9 @@ import org.springframework.web.server.ResponseStatusException;
  * Job lists for the map: jobs at a place, near a point, and without a place. Candidate places for "nearby" come
  * from the in-memory snapshot (no geo query); coordinates are rounded to a 0.05° grid before any use and are
  * never stored or logged. Results are cached per snapshot version.
+ *
+ * <p>Every job place is shown at the most precise point known: the company's pinned office in that city, else the
+ * job's first locality there (GEO-8C), else the city centre. Distances in nearby follow the same order.
  */
 @Service
 public class MapJobService {
@@ -45,6 +48,7 @@ public class MapJobService {
     static final int MAX_RETURNED_PLACES = 50;
     /** 0.05° grid (about 5 km of latitude): 20 steps per degree. */
     static final int GRID_STEPS_PER_DEGREE = 20;
+    static final java.util.regex.Pattern LOCALITY_ID = java.util.regex.Pattern.compile("^osm-[nwr]\\d{1,15}$");
 
     private final MapSnapshotService snapshots;
     private final MapJobQueries queries;
@@ -78,21 +82,94 @@ public class MapJobService {
     }
 
     public MapJobSlice place(String placeId, String q, Integer page, Integer size) {
+        return place(placeId, null, q, page, size);
+    }
+
+    /**
+     * Jobs at one place. {@code scope} "all" (default) is every job there; "unlisted" only the city-centre jobs: no
+     * pinned office and no locality in this city ("office not listed").
+     */
+    public MapJobSlice place(String placeId, String scope, String q, Integer page, Integer size) {
+        boolean unlisted = switch (scope == null ? "all" : scope) {
+            case "all" -> false;
+            case "unlisted" -> true;
+            default -> throw new BadRequestException("scope must be all or unlisted");
+        };
         int pageNumber = page(page);
         int pageSize = size(size);
         String phrase = phrase(q);
         Place place = gazetteer.byId(placeId).orElseThrow(() -> new ResourceNotFoundException("Place not found"));
         MapSnapshotService.MapSnapshot snapshot = snapshot();
-        Rows rows = rows("place", snapshot, List.of(place.id()), phrase, pageNumber, pageSize);
-        Long totalHint = phrase != null ? null
-                : snapshot.places().stream().filter(candidate -> candidate.id().equals(place.id()))
-                        .mapToLong(MapSnapshotService.MapPlace::jobs).findFirst().orElse(0L);
+        MapSnapshotService.MapPlace counted = snapshot.places().stream().filter(candidate -> candidate.id().equals(place.id()))
+                .findFirst().orElse(null);
         OfficeIndex index = offices.get();
-        List<MapJob> content = rows.rows().stream().map(row -> row.toJob(List.of(index
-                .officeFor(CompanyNames.key(row.company()), place.id())
-                .map(office -> new MapJobPlace(place.id(), place.name(), null, office.id(), office.label()))
-                .orElseGet(() -> new MapJobPlace(place.id(), place.name(), null))))).toList();
+        Rows rows;
+        if (unlisted) {
+            List<String> companies = officeCompaniesAt(index, place.id());
+            List<String> localities = snapshot.localities().stream().filter(locality -> locality.placeId().equals(place.id()))
+                    .map(MapSnapshotService.MapLocality::id).sorted().toList();
+            String scopeKey = place.id() + "|" + String.join("\u0001", companies) + "|" + String.join(",", localities);
+            MapJobCache.Key key = new MapJobCache.Key("place-unlisted", snapshot.version(), scopeKey, cacheText(phrase),
+                    pageNumber, pageSize);
+            rows = cache.get(key, () -> timed("place", () -> Rows.of(
+                    queries.unlistedAtPlace(place.id(), companies, localities, phrase, pageNumber, pageSize), pageSize)));
+        } else {
+            rows = rows("place", snapshot, List.of(place.id()), phrase, pageNumber, pageSize);
+        }
+        Long totalHint = phrase != null ? null : counted == null ? 0L : unlisted ? counted.centreJobs() : counted.jobs();
+        List<MapJob> content = rows.rows().stream().map(row -> row.toJob(List.of(jobPlace(row, place, index)))).toList();
         return new MapJobSlice(content, pageNumber, pageSize, rows.hasNext(), totalHint);
+    }
+
+    /**
+     * Jobs at one OpenStreetMap locality: jobs whose localities include it, except those of companies with a pinned
+     * office in its city (those show at the office). {@code totalHint} is the snapshot's count, which assigns a job with
+     * several localities in one city to its first, so a list can hold a few more jobs than the hint.
+     */
+    public MapJobSlice locality(String localityId, String q, Integer page, Integer size) {
+        if (localityId == null || !LOCALITY_ID.matcher(localityId).matches()) throw new BadRequestException("Invalid locality id");
+        int pageNumber = page(page);
+        int pageSize = size(size);
+        String phrase = phrase(q);
+        LocalityIndex.Locality locality = gazetteer.localityById(localityId)
+                .orElseThrow(() -> new ResourceNotFoundException("Locality not found"));
+        Place place = gazetteer.byId(locality.placeId()).orElseThrow(() -> new ResourceNotFoundException("Locality not found"));
+        MapSnapshotService.MapSnapshot snapshot = snapshot();
+        OfficeIndex index = offices.get();
+        List<String> companies = officeCompaniesAt(index, place.id());
+        MapJobCache.Key key = new MapJobCache.Key("locality", snapshot.version(),
+                localityId + "|" + String.join("\u0001", companies), cacheText(phrase), pageNumber, pageSize);
+        Rows rows = cache.get(key, () -> timed("locality", () -> Rows.of(queries.atPlaces(List.of(), List.of(),
+                List.of(new MapJobQueries.LocalityScope(localityId, companies)), phrase, pageNumber, pageSize), pageSize)));
+        Long totalHint = phrase != null ? null : snapshot.localities().stream()
+                .filter(candidate -> candidate.id().equals(localityId)).mapToLong(MapSnapshotService.MapLocality::jobs)
+                .findFirst().orElse(0L);
+        MapJobPlace at = new MapJobPlace(place.id(), place.name(), null, null, null, locality.id(), locality.name());
+        List<MapJob> content = rows.rows().stream().map(row -> row.toJob(List.of(at))).toList();
+        return new MapJobSlice(content, pageNumber, pageSize, rows.hasNext(), totalHint);
+    }
+
+    /** A job's place in a list: the company's office there, else its first locality there, else the city. */
+    private MapJobPlace jobPlace(Row row, Place place, OfficeIndex index) {
+        OfficeIndex.Office office = index.officeFor(CompanyNames.key(row.company()), place.id()).orElse(null);
+        if (office != null) return new MapJobPlace(place.id(), place.name(), null, office.id(), office.label());
+        LocalityIndex.Locality locality = firstLocality(row, place.id());
+        if (locality != null) return new MapJobPlace(place.id(), place.name(), null, null, null, locality.id(), locality.name());
+        return new MapJobPlace(place.id(), place.name(), null);
+    }
+
+    private LocalityIndex.Locality firstLocality(Row row, String placeId) {
+        for (String id : row.localityIds()) {
+            LocalityIndex.Locality locality = gazetteer.localityById(id).orElse(null);
+            if (locality != null && locality.placeId().equals(placeId)) return locality;
+        }
+        return null;
+    }
+
+    /** Company spellings the last snapshot counted toward pinned offices in this city (sorted, for stable cache keys). */
+    private List<String> officeCompaniesAt(OfficeIndex index, String placeId) {
+        return index.resolvable().stream().filter(office -> office.placeId().equals(placeId))
+                .flatMap(office -> snapshots.officeCompanies(office.id()).stream()).distinct().sorted().toList();
     }
 
     /**
@@ -160,8 +237,22 @@ public class MapJobService {
                     office.company(), office.label()));
         }
         officesInRadius.sort(BY_DISTANCE);
+        // Localities too: their own point and job count; a locality in range brings its jobs even if its city is not.
+        List<NearbyPlace> localitiesInRadius = new ArrayList<>();
+        for (MapSnapshotService.MapLocality locality : snapshot.localities()) {
+            double km = haversineKm(centerLat, centerLng, locality.lat(), locality.lng());
+            if (km > radius) continue;
+            Place city = gazetteer.byId(locality.placeId()).orElse(null);
+            if (city == null) continue;
+            officeCityNames.putIfAbsent(city.id(), city.name());
+            localitiesInRadius.add(new NearbyPlace(city.id(), city.name(), gazetteer.admin1Name(city.admin1()).orElse(null),
+                    locality.lat(), locality.lng(), Math.round(km * 10) / 10.0, locality.jobs(), "locality", null, null,
+                    locality.name(), locality.id()));
+        }
+        localitiesInRadius.sort(BY_DISTANCE);
         List<NearbyPlace> chips = new ArrayList<>(candidates);
         chips.addAll(officesInRadius);
+        chips.addAll(localitiesInRadius);
         chips.sort(BY_DISTANCE);
         List<NearbyPlace> returned = List.copyOf(chips.subList(0, Math.min(MAX_RETURNED_PLACES, chips.size())));
         List<MapJobQueries.OfficeScope> officeScopes = officesInRadius.stream()
@@ -170,13 +261,18 @@ public class MapJobService {
                         snapshots.officeCompanies(office.officeId()).stream().sorted().toList()))
                 .filter(scope -> !scope.companies().isEmpty())
                 .limit(MAX_QUERY_PLACES).toList();
-        if (candidates.isEmpty() && officeScopes.isEmpty()) {
+        OfficeIndex index = offices.get();
+        List<MapJobQueries.LocalityScope> localityScopes = localitiesInRadius.stream()
+                .filter(locality -> !byId.containsKey(locality.id()))
+                .map(locality -> new MapJobQueries.LocalityScope(locality.localityId(), officeCompaniesAt(index, locality.id())))
+                .limit(MAX_QUERY_PLACES).toList();
+        if (candidates.isEmpty() && officeScopes.isEmpty() && localityScopes.isEmpty()) {
             return new NearbyResult(centerLat, centerLng, radius, returned,
                     new MapJobSlice(List.of(), pageNumber, pageSize, false, null));
         }
-        Rows rows = officeScopes.isEmpty() ? rows("nearby", snapshot, byId.keySet(), phrase, pageNumber, pageSize)
-                : nearbyWithOffices(snapshot, byId.keySet(), officeScopes, phrase, pageNumber, pageSize);
-        OfficeIndex index = offices.get();
+        Rows rows = officeScopes.isEmpty() && localityScopes.isEmpty()
+                ? rows("nearby", snapshot, byId.keySet(), phrase, pageNumber, pageSize)
+                : nearbyWithScopes(snapshot, byId.keySet(), officeScopes, localityScopes, phrase, pageNumber, pageSize);
         List<MapJob> content = rows.rows().stream().map(row -> row.toJob(row.placeIds().stream()
                         .map(placeId -> nearbyJobPlace(row, placeId, byId, officeCityNames, index, centerLat, centerLng))
                         .filter(java.util.Objects::nonNull)
@@ -188,29 +284,41 @@ public class MapJobService {
     }
 
     private static final Comparator<NearbyPlace> BY_DISTANCE = Comparator.comparingDouble(NearbyPlace::distanceKm)
-            .thenComparing(NearbyPlace::id).thenComparing(place -> place.officeId() == null ? "" : place.officeId());
+            .thenComparing(NearbyPlace::id).thenComparing(place -> place.officeId() == null ? "" : place.officeId())
+            .thenComparing(place -> place.localityId() == null ? "" : place.localityId());
 
-    /** A job's place in a nearby result: the office point when the company has one there, else the city centre. */
-    private static MapJobPlace nearbyJobPlace(Row row, String placeId, Map<String, NearbyPlace> cities,
-                                              Map<String, String> officeCityNames, OfficeIndex index, double lat, double lng) {
+    /**
+     * A job's place in a nearby result: the office point when the company has one there, else its first locality there,
+     * else the city centre; distances follow the same order.
+     */
+    private MapJobPlace nearbyJobPlace(Row row, String placeId, Map<String, NearbyPlace> cities,
+                                       Map<String, String> extraCityNames, OfficeIndex index, double lat, double lng) {
         NearbyPlace city = cities.get(placeId);
-        String name = city != null ? city.name() : officeCityNames.get(placeId);
+        String name = city != null ? city.name() : extraCityNames.get(placeId);
         if (name == null) return null;
         OfficeIndex.Office office = index.officeFor(CompanyNames.key(row.company()), placeId).orElse(null);
         if (office != null) {
             double km = Math.round(haversineKm(lat, lng, office.lat(), office.lng()) * 10) / 10.0;
             return new MapJobPlace(placeId, name, km, office.id(), office.label());
         }
+        LocalityIndex.Locality locality = firstLocality(row, placeId);
+        if (locality != null) {
+            double km = Math.round(haversineKm(lat, lng, locality.lat(), locality.lng()) * 10) / 10.0;
+            return new MapJobPlace(placeId, name, km, null, null, locality.id(), locality.name());
+        }
         return city == null ? null : new MapJobPlace(placeId, name, city.distanceKm());
     }
 
-    private Rows nearbyWithOffices(MapSnapshotService.MapSnapshot snapshot, java.util.Collection<String> placeIds,
-                                   List<MapJobQueries.OfficeScope> scopes, String phrase, int page, int size) {
+    private Rows nearbyWithScopes(MapSnapshotService.MapSnapshot snapshot, java.util.Collection<String> placeIds,
+                                  List<MapJobQueries.OfficeScope> offices, List<MapJobQueries.LocalityScope> localities,
+                                  String phrase, int page, int size) {
         List<String> sorted = placeIds.stream().sorted().toList();
-        String scope = String.join(",", sorted) + "|" + String.join(",", scopes.stream()
-                .map(office -> office.placeId() + ":" + String.join("\u0001", office.companies())).sorted().toList());
+        String scope = String.join(",", sorted) + "|" + String.join(",", offices.stream()
+                .map(office -> office.placeId() + ":" + String.join("\u0001", office.companies())).sorted().toList())
+                + "|" + String.join(",", localities.stream()
+                .map(locality -> locality.localityId() + ":" + String.join("\u0001", locality.excludedCompanies())).sorted().toList());
         MapJobCache.Key key = new MapJobCache.Key("nearby", snapshot.version(), scope, cacheText(phrase), page, size);
-        return cache.get(key, () -> timed("nearby", () -> Rows.of(queries.atPlaces(sorted, scopes, phrase, page, size), size)));
+        return cache.get(key, () -> timed("nearby", () -> Rows.of(queries.atPlaces(sorted, offices, localities, phrase, page, size), size)));
     }
 
     public MapJobSlice unplaced(String kind, String q, Integer page, Integer size) {
@@ -297,12 +405,13 @@ public class MapJobService {
 
     /** One job row from the projection plus its places per the shared job definition. */
     record Row(String id, String title, String company, String location, String employmentType, Double salaryMin,
-               Double salaryMax, String source, LocalDateTime createdAt, LocalDateTime publishedAt, Set<String> placeIds) {
+               Double salaryMax, String source, LocalDateTime createdAt, LocalDateTime publishedAt, Set<String> placeIds,
+               List<String> localityIds) {
         static Row of(Document document) {
             return new Row(String.valueOf(document.get("_id")), document.getString("title"), document.getString("company"),
                     document.getString("location"), document.getString("employmentType"), number(document.get("salaryMin")),
                     number(document.get("salaryMax")), document.getString("source"), time(document.get("createdAt")),
-                    time(document.get("publishedAt")), placeIds(document));
+                    time(document.get("publishedAt")), placeIds(document), localityIds(document));
         }
 
         MapJob toJob(List<MapJobPlace> places) {
@@ -327,6 +436,23 @@ public class MapJobService {
             return Set.copyOf(ids);
         }
 
+        /** Same rule as places, in first-occurrence order (listing order, then resolver order). */
+        private static List<String> localityIds(Document document) {
+            Set<String> ids = new LinkedHashSet<>();
+            List<Document> listings = document.getList("sourceListings", Document.class);
+            if (listings != null && !listings.isEmpty()) {
+                for (Document listing : listings) {
+                    if (Boolean.FALSE.equals(listing.get("active"))) continue;
+                    Document geo = listing.get("geo", Document.class);
+                    if (geo != null) ids.addAll(geo.getList("localityIds", String.class, List.of()));
+                }
+            } else {
+                Document geo = document.get("geo", Document.class);
+                if (geo != null) ids.addAll(geo.getList("localityIds", String.class, List.of()));
+            }
+            return List.copyOf(ids);
+        }
+
         private static Double number(Object value) { return value instanceof Number number ? number.doubleValue() : null; }
 
         private static LocalDateTime time(Object value) {
@@ -341,9 +467,18 @@ public class MapJobService {
         }
     }
 
-    /** {@code officeId}/{@code officeLabel}: set when the job's company has a pinned office at this place. */
-    public record MapJobPlace(String id, String name, Double distanceKm, String officeId, String officeLabel) {
-        public MapJobPlace(String id, String name, Double distanceKm) { this(id, name, distanceKm, null, null); }
+    /**
+     * {@code officeId}/{@code officeLabel}: set when the job's company has a pinned office at this place;
+     * otherwise {@code localityId}/{@code localityName} when the job names a locality here; neither means the listing
+     * only names the city ("office not listed").
+     */
+    public record MapJobPlace(String id, String name, Double distanceKm, String officeId, String officeLabel,
+                              String localityId, String localityName) {
+        public MapJobPlace(String id, String name, Double distanceKm) { this(id, name, distanceKm, null, null, null, null); }
+
+        public MapJobPlace(String id, String name, Double distanceKm, String officeId, String officeLabel) {
+            this(id, name, distanceKm, officeId, officeLabel, null, null);
+        }
     }
 
     public record MapJob(String id, String title, String company, String location, String employmentType,
@@ -353,13 +488,20 @@ public class MapJobService {
     public record MapJobSlice(List<MapJob> content, int page, int size, boolean hasNext, Long totalHint) { }
 
     /**
-     * A nearby chip: a city ({@code kind} "city", its centre and all its jobs) or a pinned office ({@code kind}
-     * "office": {@code id} is the office's city, {@code lat}/{@code lng}/{@code jobs} are the office's own).
+     * A nearby chip: a city ({@code kind} "city", its centre and all its jobs), a pinned office ({@code kind}
+     * "office": {@code id} is the office's city, {@code lat}/{@code lng}/{@code jobs} are the office's own) or a
+     * locality ({@code kind} "locality", GEO-8C: {@code id} is its city, {@code localityId} and {@code label} name it,
+     * point and jobs are its own).
      */
     public record NearbyPlace(String id, String name, String state, double lat, double lng, double distanceKm, long jobs,
-                              String kind, String officeId, String company, String label) {
+                              String kind, String officeId, String company, String label, String localityId) {
         public NearbyPlace(String id, String name, String state, double lat, double lng, double distanceKm, long jobs) {
-            this(id, name, state, lat, lng, distanceKm, jobs, "city", null, null, null);
+            this(id, name, state, lat, lng, distanceKm, jobs, "city", null, null, null, null);
+        }
+
+        public NearbyPlace(String id, String name, String state, double lat, double lng, double distanceKm, long jobs,
+                           String kind, String officeId, String company, String label) {
+            this(id, name, state, lat, lng, distanceKm, jobs, kind, officeId, company, label, null);
         }
     }
 

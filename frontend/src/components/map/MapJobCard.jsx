@@ -19,12 +19,24 @@ function employmentLabel(type) {
 
 const chip = "inline-flex items-center rounded-lg bg-slate-100 px-2 py-1 text-xs font-semibold text-slate-600";
 
+/**
+ * Where the job is, as precisely as we know: the pinned office, else the locality, else "Office not listed" (the
+ * listing only names the city). Jobs without a place (Remote, Anywhere in India) keep their location text.
+ */
+function LocationChip({ job }) {
+  const place = job.places?.[0];
+  const title = job.location || undefined;
+  if (place?.officeLabel) return <span className={`${chip} bg-indigo-50 text-indigo-700`} title={title}>📍 {place.officeLabel}</span>;
+  if (place?.localityName) return <span className={`${chip} bg-indigo-50 text-indigo-700`} title={title}>📍 {place.localityName}</span>;
+  if (place) return <span className={chip} title={title}>📍 {place.name} · Office not listed</span>;
+  return job.location ? <span className={chip}>📍 {job.location}</span> : null;
+}
+
 /** Compact job card for the map panel. Same structure as JobCard: one link, attribution as a sibling link. */
 export default function MapJobCard({ job, distanceKm }) {
   const date = posted(job);
   const distance = formatDistance(distanceKm);
   const type = job.employmentType ? employmentLabel(job.employmentType) : "";
-  const officeLabel = job.places?.[0]?.officeLabel;
 
   return (
     <article className="group rounded-2xl border border-slate-100 bg-white p-4 shadow-sm transition-all duration-200 hover:border-indigo-100 hover:shadow-md">
@@ -37,8 +49,7 @@ export default function MapJobCard({ job, distanceKm }) {
           <h3 className="line-clamp-2 font-bold text-slate-900 transition-colors group-hover:text-indigo-600">{job.title}</h3>
           {job.company && <p className="mt-0.5 truncate text-sm font-medium text-slate-500">{job.company}</p>}
           <div className="mt-3 flex flex-wrap gap-1.5">
-            {officeLabel ? <span className={`${chip} bg-indigo-50 text-indigo-700`} title={job.location || undefined}>📍 {officeLabel}</span>
-              : job.location && <span className={chip}>📍 {job.location}</span>}
+            <LocationChip job={job} />
             <span className={chip}>💰 {formatSalary(job.salaryMin, job.salaryMax)}</span>
             {type && <span className={chip}>{type}</span>}
             {distance && <span className="inline-flex items-center rounded-lg bg-indigo-50 px-2 py-1 text-xs font-semibold text-indigo-700">{distance} away</span>}

@@ -59,6 +59,7 @@ vi.mock("../map/tilesManifest", async (original) => ({
 }));
 const service = vi.hoisted(() => ({
   getMapSnapshot: vi.fn(), getPlaceJobs: vi.fn(), getNearbyJobs: vi.fn(), getUnplacedJobs: vi.fn(), getOfficeJobs: vi.fn(),
+  getLocalityJobs: vi.fn(),
 }));
 vi.mock("../services/map-service", async (original) => ({ ...(await original()), ...service }));
 vi.mock("../components/Header", () => ({ default: () => <header>Header</header> }));
@@ -288,7 +289,7 @@ describe("MapJobs page", () => {
 
     act(() => map.handler("click", "places-points")({ features: [{ properties: { id: DELHI.id } }] }));
     await waitFor(() => expect(params().get("place")).toBe(DELHI.id));
-    expect(service.getPlaceJobs).toHaveBeenCalledWith(DELHI.id, expect.anything());
+    expect(service.getPlaceJobs).toHaveBeenCalledWith(DELHI.id, expect.objectContaining({ scope: "unlisted" }));
     expect(await screen.findByRole("heading", { name: "Delhi" })).toBeInTheDocument();
     await waitFor(() => expect(map.easeTo).toHaveBeenCalledWith(expect.objectContaining({ center: [DELHI.lng, DELHI.lat], zoom: 10 }),
       { ownMove: true }));
@@ -299,6 +300,119 @@ describe("MapJobs page", () => {
     }));
     expect(map.sources.places.getClusterExpansionZoom).toHaveBeenCalledWith(7);
     expect(map.easeTo).toHaveBeenLastCalledWith(expect.objectContaining({ center: [77, 20], zoom: 8 }), { ownMove: true });
+  });
+
+  it("opens a city bubble as its office-not-listed jobs and links to all of the city's jobs", async () => {
+    service.getPlaceJobs.mockResolvedValue(slice([job("job-1")], { totalHint: 120 }));
+    renderAt("/jobs/map");
+    const map = await readyMap();
+    act(() => map.handler("click", "places-points")({ features: [{ properties: { id: BENGALURU.id } }] }));
+
+    await waitFor(() => expect(params().get("scope")).toBe("unlisted"));
+    expect(await screen.findByRole("heading", { name: "Bengaluru" })).toHaveFocus();
+    expect(await screen.findByText("120 jobs · office not listed")).toBeInTheDocument();
+    expect(screen.getByText("These listings only name the city.")).toBeInTheDocument();
+    expect(await screen.findByText("📍 Bengaluru · Office not listed")).toBeInTheDocument();
+    expect(service.getPlaceJobs).toHaveBeenLastCalledWith(BENGALURU.id, expect.objectContaining({ scope: "unlisted", page: 0 }));
+
+    service.getPlaceJobs.mockResolvedValue(slice([job("job-2")], { totalHint: 214 }));
+    fireEvent.click(screen.getByRole("button", { name: "Show all Bengaluru jobs" }));
+    await waitFor(() => expect(params().has("scope")).toBe(false));
+    expect(params().get("place")).toBe(BENGALURU.id);
+    await waitFor(() => expect(service.getPlaceJobs).toHaveBeenLastCalledWith(BENGALURU.id,
+      expect.objectContaining({ scope: undefined })));
+    expect(await screen.findByText("214 jobs")).toBeInTheDocument();
+    expect(screen.queryByText("These listings only name the city.")).not.toBeInTheDocument();
+  });
+
+  it("opens top places with all of a city's jobs", async () => {
+    renderAt("/jobs/map");
+    fireEvent.click(await screen.findByRole("button", { name: /Bengaluru/ }));
+    await waitFor(() => expect(service.getPlaceJobs).toHaveBeenCalledWith(BENGALURU.id, expect.objectContaining({ scope: undefined })));
+    expect(params().has("scope")).toBe(false);
+  });
+
+  describe("localities", () => {
+    const WHITEFIELD = { id: "osm-n377219489", name: "Whitefield", placeId: BENGALURU.id, lat: 12.9698, lng: 77.75, jobs: 42 };
+    const KORAMANGALA = { id: "osm-n429918282", name: "Koramangala", placeId: BENGALURU.id, lat: 12.9352, lng: 77.6245, jobs: 18 };
+    const withLocalities = {
+      ...withOffice,
+      places: [{ ...BENGALURU, officeJobs: 30, localityJobs: 60 }, DELHI, MUMBAI],
+      localities: [WHITEFIELD, KORAMANGALA],
+    };
+    const localityJob = job("loc-1", { location: "Whitefield, Bengaluru", places: [{ id: BENGALURU.id, name: "Bengaluru",
+      distanceKm: null, localityId: WHITEFIELD.id, localityName: "Whitefield" }] });
+    beforeEach(() => {
+      service.getMapSnapshot.mockResolvedValue(withLocalities);
+      service.getLocalityJobs.mockResolvedValue(slice([localityJob], { totalHint: 42 }));
+      service.getOfficeJobs.mockResolvedValue(slice([], { totalHint: 30 }));
+    });
+
+    it("draws localities and keeps cluster totals equal to the snapshot's city totals", async () => {
+      renderAt("/jobs/map");
+      const map = await readyMap();
+      await waitFor(() => expect(map.sources.places.setData).toHaveBeenLastCalledWith(expect.objectContaining({
+        features: expect.arrayContaining([
+          expect.objectContaining({ properties: expect.objectContaining({ id: BENGALURU.id, kind: "city", jobs: 124 }) }),
+          expect.objectContaining({ properties: expect.objectContaining({ id: WHITEFIELD.id, kind: "locality", jobs: 42 }) }),
+        ]),
+      })));
+      const { features } = map.sources.places.setData.mock.lastCall[0];
+      expect(features.reduce((sum, feature) => sum + feature.properties.jobs, 0))
+        .toBe(withLocalities.places.reduce((sum, place) => sum + place.jobs, 0));
+      expect(map.layers["localities-points"]).toBeDefined();
+    });
+
+    it("opens a locality clicked on the map and lists its jobs", async () => {
+      renderAt("/jobs/map?place=1277333");
+      const map = await readyMap();
+      act(() => map.handler("click", "localities-points")({ features: [{ properties: { id: WHITEFIELD.id } }] }));
+      await waitFor(() => expect(params().get("locality")).toBe(WHITEFIELD.id));
+      expect(params().has("place")).toBe(false);
+      expect(await screen.findByRole("heading", { name: "Whitefield" })).toHaveFocus();
+      expect(screen.getByText("Bengaluru")).toBeInTheDocument();
+      expect(screen.getByText("42 jobs")).toBeInTheDocument();
+      expect(service.getLocalityJobs).toHaveBeenCalledWith(WHITEFIELD.id, expect.objectContaining({ page: 0, q: "" }));
+      expect(await screen.findByText("📍 Whitefield")).toBeInTheDocument();
+      await waitFor(() => expect(map.easeTo).toHaveBeenCalledWith(expect.objectContaining({
+        center: [WHITEFIELD.lng, WHITEFIELD.lat] }), { ownMove: true }));
+      expect(map.setFilter).toHaveBeenLastCalledWith("places-selected", expect.arrayContaining([["==", ["get", "id"], WHITEFIELD.id]]));
+    });
+
+    it("restores ?locality= with a search and drops an unknown one", async () => {
+      renderAt(`/jobs/map?locality=${WHITEFIELD.id}&q=java`);
+      expect(await screen.findByRole("heading", { name: "Whitefield" })).toBeInTheDocument();
+      expect(service.getLocalityJobs).toHaveBeenCalledWith(WHITEFIELD.id, expect.objectContaining({ q: "java" }));
+      cleanup();
+      renderAt("/jobs/map?locality=osm-n1");
+      expect(await screen.findByText("Top places")).toBeInTheDocument();
+      await waitFor(() => expect(params().has("locality")).toBe(false));
+    });
+
+    it("prefers office over locality over place in a hand-edited URL", async () => {
+      renderAt(`/jobs/map?place=1277333&locality=${WHITEFIELD.id}`);
+      expect(await screen.findByRole("heading", { name: "Whitefield" })).toBeInTheDocument();
+      expect(service.getPlaceJobs).not.toHaveBeenCalled();
+    });
+
+    it("shows how many city jobs are in localities", async () => {
+      renderAt("/jobs/map?place=1277333");
+      expect(await screen.findByText("214 jobs · 30 at pinned offices · 60 in localities")).toBeInTheDocument();
+    });
+
+    it("offers locality chips near the user, measured to the locality", async () => {
+      mockGeolocation(vi.fn((success) => success({ coords: { latitude: 12.95, longitude: 77.75 } })));
+      service.getNearbyJobs.mockResolvedValue(nearby([{ ...localityJob, places: [{ ...localityJob.places[0], distanceKm: 2.2 }] }], [
+        { id: BENGALURU.id, name: "Bengaluru", state: "Karnataka", lat: WHITEFIELD.lat, lng: WHITEFIELD.lng, distanceKm: 2.2,
+          jobs: 42, kind: "locality", label: "Whitefield", localityId: WHITEFIELD.id },
+      ]));
+      renderAt("/jobs/map");
+      fireEvent.click(await screen.findByRole("button", { name: /Near me/ }));
+      expect(await screen.findByText("2.2 km away")).toBeInTheDocument();
+      fireEvent.click(screen.getByRole("button", { name: "Whitefield · Bengaluru · 2.2 km" }));
+      await waitFor(() => expect(params().get("locality")).toBe(WHITEFIELD.id));
+      expect(service.getLocalityJobs).toHaveBeenCalledWith(WHITEFIELD.id, expect.anything());
+    });
   });
 
   it("dims the markers on the Remote and India tabs", async () => {
@@ -454,6 +568,7 @@ describe("MapJobs page", () => {
     const map = await readyMap();
     unmount();
     expect(map.off).toHaveBeenCalledWith("click", "places-points", expect.any(Function));
+    expect(map.off).toHaveBeenCalledWith("click", "localities-points", expect.any(Function));
     expect(map.removeSource).toHaveBeenCalledWith("places");
     expect(map.remove).toHaveBeenCalled();
   });
