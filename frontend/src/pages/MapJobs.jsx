@@ -9,7 +9,7 @@ import { roundToGrid } from "../map/geo";
 import { MAP_TABS, tabCounts, topPlaces } from "../map/panelData";
 import { useJobList } from "../map/useJobList";
 import { useMapSnapshot } from "../map/useMapSnapshot";
-import { getNearbyJobs, getOfficeJobs, getPlaceJobs, getUnplacedJobs } from "../services/map-service";
+import { getLocalityJobs, getNearbyJobs, getOfficeJobs, getPlaceJobs, getUnplacedJobs } from "../services/map-service";
 
 // MapLibre is the bulk of this page; the panel renders while it downloads.
 const JobsMap = lazy(() => import("../components/map/JobsMap"));
@@ -31,22 +31,25 @@ const GEOLOCATION_MESSAGES = {
 const PANEL_ID = "map-panel-list";
 const INDIA_CAPTION = "Jobs open across a state or anywhere in India.";
 const REMOTE_CAPTION = "Remote roles — check location eligibility on each posting.";
+const UNLISTED_CAPTION = "These listings only name the city.";
 
 const backButton = "text-sm font-semibold text-indigo-600 hover:text-indigo-700";
 const distanceOf = (job) => job.places?.[0]?.distanceKm;
 
 /**
- * /jobs/map: clustered city markers and pinned offices plus a list panel. URL holds only place or office, tab and q
- * (the map view lives in the hash); near-me and this-area searches stay in memory, with coordinates rounded before
- * any request.
+ * /jobs/map: clustered city markers, localities and pinned offices plus a list panel. URL holds only place (with
+ * scope=unlisted for a city bubble's "office not listed" jobs), locality or office, tab and q (the map view lives in
+ * the hash); near-me and this-area searches stay in memory, with coordinates rounded before any request.
  */
 export default function MapJobs() {
   const [searchParams] = useSearchParams();
   const navigate = useNavigate();
   const tab = TAB_IDS.includes(searchParams.get("tab")) ? searchParams.get("tab") : "map";
-  // A city and an office are never selected together; office wins if a hand-edited URL has both.
+  // Only one of office, locality and city is selected; a hand-edited URL with several keeps the most precise.
   const officeId = searchParams.get("office") || null;
-  const placeId = officeId ? null : searchParams.get("place") || null;
+  const localityId = officeId ? null : searchParams.get("locality") || null;
+  const placeId = officeId || localityId ? null : searchParams.get("place") || null;
+  const unlisted = Boolean(placeId) && searchParams.get("scope") === "unlisted";
   const q = (searchParams.get("q") || "").trim().slice(0, MAX_QUERY_LENGTH);
 
   const [queryInput, setQueryInput] = useState(q);
@@ -77,20 +80,25 @@ export default function MapJobs() {
   const selectedPlace = placeId ? placesById.get(placeId) ?? null : null;
   const officesById = useMemo(() => new Map((snapshot?.offices ?? []).map((office) => [office.id, office])), [snapshot]);
   const selectedOffice = officeId ? officesById.get(officeId) ?? null : null;
+  const localitiesById = useMemo(() => new Map((snapshot?.localities ?? []).map((locality) => [locality.id, locality])),
+    [snapshot]);
+  const selectedLocality = localityId ? localitiesById.get(localityId) ?? null : null;
 
-  // A place or office that is not in the snapshot (stale link, or its jobs closed) falls back to Top places.
+  // A place, locality or office that is not in the snapshot (stale link, or its jobs closed) falls back to Top places.
   useEffect(() => {
     if (!snapshot) return;
-    if (placeId && !placesById.has(placeId)) updateParams({ place: null }, { replace: true });
+    if (placeId && !placesById.has(placeId)) updateParams({ place: null, scope: null }, { replace: true });
     if (officeId && !officesById.has(officeId)) updateParams({ office: null }, { replace: true });
-  }, [snapshot, placeId, placesById, officeId, officesById, updateParams]);
+    if (localityId && !localitiesById.has(localityId)) updateParams({ locality: null }, { replace: true });
+  }, [snapshot, placeId, placesById, officeId, officesById, localityId, localitiesById, updateParams]);
 
   const onPlaceMissing = useCallback(() => {
     setNotice("That place is no longer on the map, so we're showing top places instead.");
-    updateParams({ place: null, office: null }, { replace: true });
+    updateParams({ place: null, office: null, locality: null, scope: null }, { replace: true });
   }, [updateParams]);
 
-  const mode = tab !== "map" ? "unplaced" : area ? "nearby" : officeId ? "office" : placeId ? "place" : null;
+  const mode = tab !== "map" ? "unplaced" : area ? "nearby" : officeId ? "office" : localityId ? "locality"
+    : placeId ? "place" : null;
   const fetcher = useMemo(() => {
     if (mode === "unplaced") return ({ page, signal }) => getUnplacedJobs({ kind: tab, q, page, signal });
     if (mode === "nearby") {
@@ -103,16 +111,23 @@ export default function MapJobs() {
         throw error;
       });
     }
-    if (mode === "place") {
-      return ({ page, signal }) => getPlaceJobs(placeId, { q, page, signal }).catch((error) => {
+    if (mode === "locality") {
+      return ({ page, signal }) => getLocalityJobs(localityId, { q, page, signal }).catch((error) => {
         if (error?.status === 404) onPlaceMissing();
         throw error;
       });
     }
+    if (mode === "place") {
+      return ({ page, signal }) => getPlaceJobs(placeId, { scope: unlisted ? "unlisted" : undefined, q, page, signal })
+        .catch((error) => {
+          if (error?.status === 404) onPlaceMissing();
+          throw error;
+        });
+    }
     return null;
-  }, [mode, tab, q, area, placeId, officeId, onPlaceMissing]);
-  const list = useJobList(fetcher, [mode, tab, placeId, officeId, area?.lat ?? null, area?.lng ?? null,
-    area?.radiusKm ?? null, q]);
+  }, [mode, tab, q, area, placeId, unlisted, officeId, localityId, onPlaceMissing]);
+  const list = useJobList(fetcher, [mode, tab, placeId, unlisted, officeId, localityId, area?.lat ?? null,
+    area?.lng ?? null, area?.radiusKm ?? null, q]);
 
   useEffect(() => {
     if (!focusHeading.current || !headingRef.current) return;
@@ -120,23 +135,22 @@ export default function MapJobs() {
     headingRef.current.focus();
   });
 
-  const selectPlace = useCallback((id) => {
+  const select = useCallback((changes) => {
     setArea(null);
     setNotice("");
     setMobileView("list");
     focusHeading.current = true;
-    updateParams({ place: id, office: null, tab: null });
+    updateParams({ place: null, office: null, locality: null, scope: null, tab: null, ...changes });
   }, [updateParams]);
 
-  const selectOffice = useCallback((id) => {
-    setArea(null);
-    setNotice("");
-    setMobileView("list");
-    focusHeading.current = true;
-    updateParams({ office: id, place: null, tab: null });
-  }, [updateParams]);
+  /** All jobs of a city (Top places, near-me chips, "Show all"). */
+  const selectPlace = useCallback((id) => select({ place: id }), [select]);
+  /** A city bubble on the map holds only the jobs whose listings name no office or locality. */
+  const selectCityMarker = useCallback((id) => select({ place: id, scope: "unlisted" }), [select]);
+  const selectOffice = useCallback((id) => select({ office: id }), [select]);
+  const selectLocality = useCallback((id) => select({ locality: id }), [select]);
 
-  const clearPlace = () => updateParams({ place: null, office: null });
+  const clearPlace = () => updateParams({ place: null, office: null, locality: null, scope: null });
 
   const selectTab = (id) => {
     setNotice("");
@@ -149,7 +163,9 @@ export default function MapJobs() {
     setMobileView("list");
     focusHeading.current = true;
     const params = new URLSearchParams(window.location.search);
-    if (params.has("place") || params.has("office")) updateParams({ place: null, office: null }, { replace: true });
+    if (params.has("place") || params.has("office") || params.has("locality")) {
+      updateParams({ place: null, office: null, locality: null, scope: null }, { replace: true });
+    }
   }, [updateParams]);
 
   const locate = () => {
@@ -221,6 +237,13 @@ export default function MapJobs() {
                     <span aria-hidden="true">◉ </span>{place.company} · {place.label} · {formatDistance(place.distanceKm)}
                   </button>
                 </li>
+              ) : place.kind === "locality" ? (
+                <li key={`locality-${place.localityId}`} className="shrink-0">
+                  <button type="button" onClick={() => selectLocality(place.localityId)}
+                    className="rounded-full border border-indigo-100 bg-white px-3 py-1.5 text-xs font-semibold text-indigo-700 hover:border-indigo-300 focus:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500">
+                    {place.label} · {place.name} · {formatDistance(place.distanceKm)}
+                  </button>
+                </li>
               ) : (
                 <li key={place.id} className="shrink-0">
                   <button type="button" onClick={() => selectPlace(place.id)}
@@ -283,6 +306,61 @@ export default function MapJobs() {
       );
     }
 
+    if (localityId) {
+      const name = selectedLocality?.name ?? list.items[0]?.places?.[0]?.localityName ?? "Selected locality";
+      const city = placesById.get(selectedLocality?.placeId)?.name ?? list.items[0]?.places?.[0]?.name;
+      return (
+        <div>
+          <button type="button" onClick={clearPlace} className={backButton}>← All places</button>
+          <div className="mt-2 flex items-end justify-between gap-3">
+            <div className="min-w-0">
+              <h2 ref={headingRef} tabIndex={-1} className="truncate text-xl font-extrabold text-slate-900 focus:outline-none">{name}</h2>
+              {city && <p className="text-sm text-slate-500">{city}</p>}
+            </div>
+            <p className="shrink-0 text-sm font-semibold text-slate-500">
+              {q ? "Results" : list.totalHint != null ? `${formatCount(list.totalHint)} jobs` : ""}
+            </p>
+          </div>
+          <div className="mt-4">
+            <MapJobList list={list} label={`Jobs in ${name}${city ? `, ${city}` : ""}`} empty={(
+              <p className="rounded-3xl border border-dashed border-slate-300 bg-white px-5 py-8 text-center text-sm text-slate-500">
+                {q ? `No jobs here match “${q}”.` : "No openings here right now."}
+              </p>
+            )} />
+          </div>
+        </div>
+      );
+    }
+
+    if (placeId && unlisted) {
+      const name = selectedPlace?.name ?? list.items[0]?.places?.[0]?.name ?? "Selected place";
+      return (
+        <div>
+          <button type="button" onClick={clearPlace} className={backButton}>← All places</button>
+          <div className="mt-2 flex items-end justify-between gap-3">
+            <div className="min-w-0">
+              <h2 ref={headingRef} tabIndex={-1} className="truncate text-xl font-extrabold text-slate-900 focus:outline-none">{name}</h2>
+              {selectedPlace?.state && <p className="text-sm text-slate-500">{selectedPlace.state}</p>}
+            </div>
+            <p className="shrink-0 text-sm font-semibold text-slate-500">
+              {q ? "Results" : list.totalHint != null ? `${formatCount(list.totalHint)} jobs · office not listed` : "Office not listed"}
+            </p>
+          </div>
+          <p className="mt-2 text-sm text-slate-500">{UNLISTED_CAPTION}</p>
+          <button type="button" onClick={() => updateParams({ scope: null })} className={`${backButton} mt-1`}>
+            Show all {name} jobs
+          </button>
+          <div className="mt-4">
+            <MapJobList list={list} label={`Jobs in ${name} without a listed office`} empty={(
+              <p className="rounded-3xl border border-dashed border-slate-300 bg-white px-5 py-8 text-center text-sm text-slate-500">
+                {q ? `No jobs here match “${q}”.` : "Every opening here names its office or area."}
+              </p>
+            )} />
+          </div>
+        </div>
+      );
+    }
+
     if (placeId) {
       const name = selectedPlace?.name ?? list.items[0]?.places?.[0]?.name ?? "Selected place";
       return (
@@ -297,6 +375,8 @@ export default function MapJobs() {
               {q ? "Results" : list.totalHint != null ? `${formatCount(list.totalHint)} jobs` : ""}
               {!q && list.totalHint != null && selectedPlace?.officeJobs > 0
                 && ` · ${formatCount(selectedPlace.officeJobs)} at pinned offices`}
+              {!q && list.totalHint != null && selectedPlace?.localityJobs > 0
+                && ` · ${formatCount(selectedPlace.localityJobs)} in localities`}
             </p>
           </div>
           <div className="mt-4">
@@ -397,9 +477,9 @@ export default function MapJobs() {
 
         <div className="absolute inset-0 lg:static">
           <Suspense fallback={<div className="h-full w-full animate-pulse bg-slate-100 lg:rounded-3xl" />}>
-            <JobsMap snapshot={snapshot} selected={tab === "map" ? selectedOffice ?? selectedPlace : null} dimmed={tab !== "map"}
-              area={tab === "map" ? area : null} allowAreaSearch={tab === "map"} onSelectPlace={selectPlace}
-              onSelectOffice={selectOffice}
+            <JobsMap snapshot={snapshot} selected={tab === "map" ? selectedOffice ?? selectedLocality ?? selectedPlace : null}
+              dimmed={tab !== "map"} area={tab === "map" ? area : null} allowAreaSearch={tab === "map"}
+              onSelectPlace={selectCityMarker} onSelectOffice={selectOffice} onSelectLocality={selectLocality}
               onSearchArea={searchArea} className="h-full w-full bg-slate-100 lg:rounded-3xl lg:ring-1 lg:ring-slate-200" />
           </Suspense>
         </div>

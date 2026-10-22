@@ -1,0 +1,59 @@
+# Locality names that resolve WITHOUT a city ("Whitefield" alone), and spellings that differ from OpenStreetMap
+# ("Electronic City" vs "Electronics City Phase 1"). Maintained by hand; only unambiguous, well-known tech hubs.
+# alias	target: an in-localities.tsv localityId, or name|placeId (resolved against in-localities.tsv)
+# Every target must resolve (GazetteerDataTest). Editing this file changes the resolver version (re-resolution).
+# Bengaluru
+Whitefield	osm-n377219489
+Electronic City	osm-n459501900
+Electronics City	osm-n459501900
+Electronic City Phase 1	osm-n459501900
+Manyata Tech Park	osm-w34121900
+Manyata Embassy Business Park	osm-w34121900
+Bellandur	osm-n456016705
+Koramangala	osm-n429918282
+Marathahalli	osm-n442068273
+HSR Layout	osm-r17168010
+# Hyderabad
+HITEC City	osm-n2926946739
+Hitech City	osm-n2926946739
+Hi Tech City	osm-n2926946739
+Gachibowli	osm-n701232038
+Madhapur	osm-n349267516
+Kondapur	osm-n2237665097
+Nanakramguda	osm-n13369264755
+# Pune
+Hinjewadi	osm-n9455603476
+Hinjawadi	osm-n9455603476
+Hinjewadi Phase 1	osm-n673316094
+Hinjewadi Phase 2	osm-n13611182118
+Hinjewadi Phase 3	osm-n9497561239
+Kharadi	osm-n1796628053
+Baner	osm-n6616602606
+Wakad	osm-n1229121214
+# Mumbai and Navi Mumbai
+Powai	osm-n4759418251
+Bandra Kurla Complex	osm-n1640262758
+BKC	osm-n1640262758
+Andheri East	osm-n702054777
+Lower Parel	osm-n674751026
+Wagle Estate	osm-n1643429093
+Vashi	osm-n619090921
+# Delhi NCR
+Cyber City	osm-n2727388994
+DLF Cyber City	osm-n2727388994
+Udyog Vihar	osm-w1412971484
+Okhla	osm-n7788133646
+Connaught Place	osm-n561299050
+Noida Sector 62	osm-n10811810934
+# Chennai
+Sholinganallur	osm-n256197959
+Perungudi	osm-n257439179
+Thoraipakkam	osm-n257439176
+Guindy	osm-n249497729
+# Kolkata
+Salt Lake Sector V	Sector V|1275004
+Sector V Salt Lake	Sector V|1275004
+# Kochi
+Infopark	osm-w731817480
+Infopark Kochi	osm-w731817480
+Kakkanad	osm-n594931695

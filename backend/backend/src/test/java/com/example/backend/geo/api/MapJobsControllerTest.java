@@ -37,7 +37,7 @@ class MapJobsControllerTest {
                 "full_time", 1.0, 2.0, "adzuna", LocalDateTime.of(2026, 10, 1, 0, 0), null,
                 List.of(new MapJobService.MapJobPlace("1277333", "Bengaluru", null)));
         slice = new MapJobService.MapJobSlice(List.of(job), 0, 20, false, 1L);
-        when(jobs.place(eq("1277333"), any(), any(), any())).thenReturn(slice);
+        when(jobs.place(eq("1277333"), any(), any(), any(), any())).thenReturn(slice);
         when(jobs.unplaced(eq("remote"), any(), any(), any())).thenReturn(slice);
         when(jobs.nearby(anyDouble(), anyDouble(), any(), any(), any(), any())).thenReturn(new MapJobService.NearbyResult(
                 12.95, 77.6, 25, List.of(new MapJobService.NearbyPlace("1277333", "Bengaluru", "Karnataka", 12.97,
@@ -70,9 +70,9 @@ class MapJobsControllerTest {
 
     @Test
     void missingSnapshotAndTimeoutsAreServiceUnavailableWithDifferentRetryAfter() throws Exception {
-        when(jobs.place(eq("1"), any(), any(), any())).thenThrow(
+        when(jobs.place(eq("1"), any(), any(), any(), any())).thenThrow(
                 new ResponseStatusException(HttpStatus.SERVICE_UNAVAILABLE, MapJobService.SNAPSHOT_UNAVAILABLE));
-        when(jobs.place(eq("2"), any(), any(), any())).thenThrow(
+        when(jobs.place(eq("2"), any(), any(), any(), any())).thenThrow(
                 new ResponseStatusException(HttpStatus.SERVICE_UNAVAILABLE, MapJobService.QUERY_TIMEOUT));
 
         mvc.perform(get("/api/v1/jobs/map/places/1/jobs"))
@@ -92,12 +92,23 @@ class MapJobsControllerTest {
         mvc.perform(get("/api/v1/jobs/map/unplaced").param("kind", "foreign")).andExpect(status().isBadRequest());
         mvc.perform(get("/api/v1/jobs/map/nearby").param("lat", "12.97")).andExpect(status().isBadRequest());
         mvc.perform(get("/api/v1/jobs/map/nearby").param("lat", "north").param("lng", "77")).andExpect(status().isBadRequest());
+        when(jobs.place(eq("1277333"), eq("nearby"), any(), any(), any())).thenThrow(new BadRequestException("scope must be all or unlisted"));
+        mvc.perform(get("/api/v1/jobs/map/places/1277333/jobs").param("scope", "nearby")).andExpect(status().isBadRequest());
+        when(jobs.locality(eq("bad id"), any(), any(), any())).thenThrow(new BadRequestException("Invalid locality id"));
+        mvc.perform(get("/api/v1/jobs/map/localities/bad id/jobs")).andExpect(status().isBadRequest());
+    }
+
+    @Test
+    void placeScopeIsPassedThrough() throws Exception {
+        when(jobs.place(eq("1277333"), eq("unlisted"), any(), any(), any())).thenReturn(slice);
+        mvc.perform(get("/api/v1/jobs/map/places/1277333/jobs").param("scope", "unlisted"))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.content[0].id").value("job-1"));
     }
 
     @Test
     void writesAreNotPermitted() throws Exception {
         for (String path : List.of("/api/v1/jobs/map/places/1277333/jobs", "/api/v1/jobs/map/nearby",
-                "/api/v1/jobs/map/unplaced")) {
+                "/api/v1/jobs/map/unplaced", "/api/v1/jobs/map/localities/osm-n377219489/jobs")) {
             int code = mvc.perform(post(path)).andReturn().getResponse().getStatus();
             assertTrue(code == 401 || code == 403 || code == 405, path + " POST returned " + code);
         }

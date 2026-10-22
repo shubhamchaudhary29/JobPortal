@@ -6,6 +6,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 import com.example.backend.geo.application.GeoCoverageService;
+import com.example.backend.geo.application.GeoPrecisionService;
 import com.example.backend.shared.security.JwtUtil;
 import java.time.Instant;
 import java.util.LinkedHashMap;
@@ -25,6 +26,7 @@ class AdminGeoCoverageSecurityTest {
     @Autowired MockMvc mvc;
     @Autowired JwtUtil jwt;
     @MockitoBean GeoCoverageService coverage;
+    @MockitoBean GeoPrecisionService precision;
 
     @Test
     void coverageRequiresAdmin() throws Exception {
@@ -45,6 +47,31 @@ class AdminGeoCoverageSecurityTest {
                 .andExpect(jsonPath("$.byStatus.PLACE").value(3))
                 .andExpect(jsonPath("$.placeResolvedPercent").value(75.0))
                 .andExpect(jsonPath("$.topUnresolved[0].location").value("Multiple Locations"));
+    }
+
+    @Test
+    void precisionRequiresAdmin() throws Exception {
+        Map<String, Long> byPrecision = new LinkedHashMap<>();
+        byPrecision.put("office", 1L);
+        byPrecision.put("locality", 0L);
+        byPrecision.put("city", 5L);
+        when(precision.precision()).thenReturn(new GeoPrecisionService.Precision("3-abc", Instant.EPOCH, 6, byPrecision,
+                List.of(new GeoPrecisionService.LocationCount("Bengaluru, Karnataka, India", 4)),
+                List.of(new GeoPrecisionService.CityGain("1277333", "Bengaluru", 5, 4, 1, 4, 0, 0, 120)),
+                new GeoPrecisionService.AdzunaPoints(2, 1, 1, 0, 0), new GeoPrecisionService.Ncr(1, 10, 10.0),
+                new GeoPrecisionService.ReResolution(30000, 0.0)));
+
+        mvc.perform(get("/api/v1/admin/geo/precision")).andExpect(status().isUnauthorized());
+        mvc.perform(get("/api/v1/admin/geo/precision").header(HttpHeaders.AUTHORIZATION, bearer("USER")))
+                .andExpect(status().isForbidden());
+        mvc.perform(get("/api/v1/admin/geo/precision").header(HttpHeaders.AUTHORIZATION, bearer("RECRUITER")))
+                .andExpect(status().isForbidden());
+        mvc.perform(get("/api/v1/admin/geo/precision").header(HttpHeaders.AUTHORIZATION, bearer("ADMIN")))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.byPrecision.city").value(5))
+                .andExpect(jsonPath("$.topCityCentreStrings[0].location").value("Bengaluru, Karnataka, India"))
+                .andExpect(jsonPath("$.topCities[0].centreJobs").value(4))
+                .andExpect(jsonPath("$.ncr.percentOfDelhi").value(10.0));
     }
 
     private String bearer(String role) {

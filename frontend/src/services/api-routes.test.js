@@ -21,9 +21,14 @@ describe("versioned API routes", () => {
     expect(apiRoutes.jobs.mapNearby).toBe("/api/v1/jobs/map/nearby");
     expect(apiRoutes.jobs.mapUnplaced).toBe("/api/v1/jobs/map/unplaced");
     expect(apiRoutes.jobs.mapOfficeJobs("a/b")).toBe("/api/v1/jobs/map/offices/a%2Fb/jobs");
+    expect(apiRoutes.jobs.mapLocalityJobs("osm-n377219489")).toBe("/api/v1/jobs/map/localities/osm-n377219489/jobs");
+    expect(apiRoutes.jobs.mapLocalityJobs("a/b")).toBe("/api/v1/jobs/map/localities/a%2Fb/jobs");
     expect(apiRoutes.adminOffices.collection).toBe("/api/v1/admin/geo/offices");
     expect(apiRoutes.adminOffices.candidates).toBe("/api/v1/admin/geo/offices/candidates");
     expect(apiRoutes.adminOffices.byId("o 1")).toBe("/api/v1/admin/geo/offices/o%201");
     expect(apiRoutes.adminOffices.audit("o1")).toBe("/api/v1/admin/geo/offices/o1/audit");
+    expect(apiRoutes.adminOffices.osmReport).toBe("/api/v1/admin/geo/offices/osm-report");
+    expect(apiRoutes.adminOffices.osmPick("osm-n1")).toBe("/api/v1/admin/geo/offices/osm/osm-n1/pick");
+    expect(apiRoutes.adminOffices.osmReject("osm-w2")).toBe("/api/v1/admin/geo/offices/osm/osm-w2/reject");
   });
 });

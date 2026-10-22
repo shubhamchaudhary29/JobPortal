@@ -1,4 +1,4 @@
-# Map-First Job Discovery Plan (GEO-0 … GEO-7)
+# Map-First Job Discovery Plan (GEO-0 … GEO-8)
 
 Goal: show job openings on a map, let candidates find openings near them and apply from there.
 
@@ -53,6 +53,10 @@ Attribution required: © OpenStreetMap contributors, GeoNames (CC-BY 4.0).
 - [x] GEO-7D — k6 capacity runs inside the Compose network and a rate-limit check through nginx
 - [ ] GEO-7E — tiles to Cloudflare R2: trigger and target design (decision only)
 - [x] GEO-7F — session resilience behind shared IPs: refresh limited per session, reuse grace window, separate nginx `refresh` zone, HTTP/2, one refresh across tabs, no logout on transient errors
+- [x] GEO-8A — offline OpenStreetMap extract (localities and offices per city, ODbL) loaded at startup, ADMIN precision report
+- [x] GEO-8B — resolver v3: localities inside the resolved city, curated locality aliases, Adzuna point snapping; `localityIds` on every write path
+- [x] GEO-8C — locality markers and "office not listed" city bubbles on `/jobs/map`, locality job lists, NCR decision
+- [x] GEO-8D — OpenStreetMap office suggestions for admins, opt-in auto-apply behind `GEO_OSM_OFFICE_AUTO_APPLY`
 
 ---
 
@@ -340,6 +344,128 @@ burst 60. Logout stays in `api`. The HTTPS server has `http2 on` (tiles' paralle
 
 ---
 
+## GEO-8 — Office-level job locations
+
+Almost every job sat on its city centre, so Bengaluru or Delhi was one pile. Feeds only send city text, the gazetteer
+only knows cities, and the only precise source was ADMIN office pins. GEO-8 shows a job at its office, else its
+locality (neighbourhood or tech park), else its city with an honest "office not listed" label. Nothing is invented: no
+jitter, no spreading, no raw provider points as pins. Offline open data only (OpenStreetMap, ODbL); no geocoding API.
+
+Precision order everywhere (snapshot, job pages, nearby, distances): **office** (GEO-6 pin or GEO-8D OSM match) >
+**locality** > **city centre**.
+
+**8A — extract and measure (done).**
+- `scripts/build-osm-geo.py` (laptop only, pyosmium) reads Geofabrik's India extract in three memory-light passes and
+  writes `in-localities.tsv` (suburbs, neighbourhoods, quarters and named tech hubs) and `in-osm-offices.tsv` (named
+  company offices and office/commercial buildings), each row with its gazetteer parent city. 2026-10-20 extract:
+  17,542 localities (6,084 suburbs, 10,245 neighbourhoods, 960 quarters, 253 tech hubs) and 14,768 offices; 1.5 MB and
+  1.2 MB, so no gzip. Build time 6 minutes, about 1.7 GB peak memory.
+- **Parent city, measured and changed from the plan.** "Nearest 100k+ city within 40 km" alone gave HITEC City to
+  Kukatpally, Dwarka to Gurugram, Hinjawadi to Pimpri-Chinchwad and Delhi's localities to the "New Delhi" place, while
+  listings say Hyderabad, Delhi, Pune. The script therefore skips places absorbed into a bigger city (city sections,
+  aliased-away names such as New Delhi, towns within 30 km of a 1M+ city 1.5× their size, places within 10 km of a
+  same-state alias target, except district/state seats and alias targets) and prefers a parent in the object's own
+  state (OpenStreetMap `admin_level=4` boundaries, consulted only when candidates span states). 446 parent cities remain.
+- Loaded at startup into `Gazetteer` (`LocalityIndex`: by id, by place, by name/English/alternate name key per place,
+  nearest within a radius) and `OsmOfficeDirectory`. Heap delta 15.1 MB in the 1 GiB container (budget 80 MB):
+  `event=geo_osm_loaded localities=17542 offices=14768 heap_delta_mb=15.1`. The locality file is part of the data
+  hash, so a rebuild re-resolves every job (30,000 jobs/hour at the defaults); the office file is read-time only.
+- `GET /api/v1/admin/geo/precision` (ADMIN, cached 5 min, aggregations bounded at 15 s with `allowDiskUse`): jobs by
+  precision, top 50 city-centre strings, locality potential for the top 10 cities, Adzuna points, NCR share and the
+  re-resolution time. Runbook in `docs/geo-operations.md`.
+- Local report before GEO-8B (2,000 seeded jobs + 60 hand-written ATS/Adzuna strings, 3 pinned offices):
+  office 94, locality 0, city 1,774, country 97, remote 90, unresolved 5. NCR strings are 4 of 225 Delhi jobs (1.8%).
+- Found while measuring: re-resolution resolved without the provider hint, so every version bump erased stored
+  Adzuna points (`withPoint` 0 of 8 after the run). Fixed in 8B.
+
+**8B — locality resolution (done, parser version 3).**
+- Once a candidate has a city, its other segments are looked up as localities **of that city only** (name, `name:en`,
+  alternate names, then a curated alias of a locality in that city), with a trailing block/stage/phase/sector part
+  stripped only when the full name is unknown ("Koramangala 12th Block" → Koramangala; "Koramangala 5th Block" exists
+  and wins). Locality keys unify `sec`/`sector`, `ph`/`phase`, roman I–V after those words and `sector62`.
+- A city fused with a locality is split, longest city name first, only when the rest is one of its localities
+  ("Noida Sector 62", "Sec 62 Noida", "Gurgaon Cyber City"). A locality may also follow the city ("Bengaluru,
+  Whitefield"), and an unknown middle part is tolerated when a place follows it ("Sector V, Salt Lake, Kolkata"); an
+  unknown last part still blocks ("Delhi, NY").
+- A small GeoNames place first gives way to a later city that has it as a locality ("Powai, Mumbai" → Mumbai + Powai,
+  not the 20,000-person "Powai" place). A whole-string city match ("New Delhi") never yields a locality.
+- **Bare localities** resolve only through `locality-aliases.tsv` (47 hand-checked aliases for unambiguous hubs; a
+  test fails on a dangling alias or an alias that is also a 100k+ city name). "Sector 18" alone stays unresolved.
+  Not aliased because OpenStreetMap has no matching row: Magarpatta, Golf Course Road, Outer Ring Road, OMR, Tidel
+  Park, Technopark, Noida Sectors 63/125/135.
+- Multi-candidate input keeps every locality with its own city; a candidate that placed nothing is tried as a locality
+  of a city another candidate named ("Aundh / Kharadi, Pune").
+- **Adzuna:** with one place, no text locality and a point ≥ 1.5 km from the centre, the point snaps to the nearest
+  locality within 2 km; a centre point (Adzuna's own centroid) never does, and the raw point is never a pin. More
+  specific `location.area[]` elements after the city are tried as its localities. Re-resolution now passes the stored
+  point back, so it is kept (and snapped) instead of erased.
+- Model: `GeoResolution.localityIds` (last component, defensive copy, empty for old documents; a 5-argument
+  constructor keeps old call sites). Every locality belongs to one of `placeIds`; at most 10. Every GEO-1B write path
+  stores the whole resolution, so all of them carry localities (tests: import store, Adzuna, lifecycle `updateMulti`,
+  conflict copy, fingerprint migration, feature-store bulk update, manual jobs, re-resolution).
+  `GeoPipelines.localityIds()` mirrors `placeIds()`. Indexes `jobs_listing_geo_locality_idx` and
+  `jobs_geo_locality_idx`; `audit-mongo-indexes.js` lists missing geo indexes.
+- Local before/after on the same data (2,000 seeded + 216 realistic jobs from 54 ATS/Adzuna strings, 3 offices):
+
+  | Precision | Before (v2) | After (v3) |
+  |---|---|---|
+  | office | 98 | 102 |
+  | locality | 0 | 140 |
+  | city | 1,887 | 1,771 |
+  | state | 4 | 0 |
+  | country | 97 | 97 |
+  | remote | 94 | 94 |
+  | unresolved | 36 | 12 |
+  | Adzuna jobs with a point | 0 of 16 | 16 of 16 (8 snapped) |
+
+  The remaining unresolved strings are the deliberate negatives ("Sector 18", "Delhi, NY", "Multiple Locations").
+
+**8C — localities on the map (done).**
+- Snapshot: `places[].localityJobs` and `localities[]`; a job counts at each place toward its office, else its first
+  locality there, else the centre (invariant tested per place, including inactive listings and top-level geo).
+- Lists: `GET /api/v1/jobs/map/localities/{id}/jobs` (public, `map_list` in nginx, permitted in `SecurityConfig`,
+  snapshot-versioned cache) and `scope=all|unlisted` on place lists; job places carry `localityId`/`localityName`;
+  nearby has locality chips and measures to office > locality > centre.
+- Frontend: locality markers and panel (`?locality=`), the city bubble opens "office not listed" (`&scope=unlisted`)
+  with "Show all {City} jobs", card chips (office, locality, or "Office not listed"), near-me locality chips.
+- Checked in the Compose stack with 21,080 seeded jobs (headless Chrome over the DevTools protocol, screenshots in the
+  PR): at zoom 11 Bengaluru splits into Whitefield · 60, Electronics City Phase 1 · 40, Koramangala, HSR Layout,
+  Bellanduru and Manyata Tech Park bubbles, the city bubble keeps its 1.7k "office not listed" jobs and the Acme pin
+  stays separate; Near me from Whitefield lists the locality chips by distance and measures Whitefield jobs at 2.2 km,
+  Electronics City jobs at 14.5 km and centre jobs at 17.1 km.
+- Snapshot build on that data: 113 ms average, 197 ms max; 69 MB heap in use after a build. k6 `map-jobs.js` with a 5%
+  locality leg: 13,718 req/s, p95 26.2 ms, 0% errors (table in `docs/geo-operations.md`).
+- **NCR (decided: keep the alias).** The plan was to stop mapping "NCR"/"Delhi NCR" to Delhi if those strings are at
+  least 5% of Delhi jobs. Measured on the local data: 8 of 241 Delhi jobs (3.3%), below the line, so `place-aliases.tsv`
+  is unchanged. Production has not been measured yet (no access from here): the precision report's
+  `ncr.percentOfDelhi` gives the real share after deploy, and the decision is revisited only if it is 5% or more (then:
+  an "Anywhere in India"-style region with a "Delhi NCR" label is the smaller change, since it needs no new place id).
+
+**8D — company offices from OpenStreetMap (done; suggest by default, auto-apply behind a flag).**
+- `OsmOfficeDirectory` indexes `in-osm-offices.tsv` by company key: the `CompanyNames.key` of a row's name, English
+  name, brand and operator, as is and with trailing generic words removed ("Infosys Campus", "Google Office Bengaluru",
+  "Amazon Development Centre" → infosys, google, amazon). Exact equality only (no fuzzy, prefix or edit distance: "Info
+  Edge" never matches Infosys); empty, short, generic ("IT Park") or city-name keys never match; rows of one company
+  within 150 m are one office (lower id).
+- Effective offices are built at read time with the GEO-6 index: any ADMIN office for the pair, enabled or disabled,
+  wins; a REJECT removes that object from the pair; exactly one remaining candidate within the 60 km guard becomes an
+  office (`osm-…` id, source "OSM", named after the company's most common job spelling) only when
+  `GEO_OSM_OFFICE_AUTO_APPLY=true`. Several candidates are never applied. Nothing is written to `company_offices`
+  unless an ADMIN picks a match; `/api/v1/jobs/map/offices/{id}/jobs` accepts `osm-…` ids in the index.
+- ADMIN API under `/api/v1/admin/geo/offices`: `POST osm/{osmRef}/pick` (a normal audited office via the same
+  validation and guard, `source: "OSM"`, `osmRef`; PICK decision), `POST osm/{osmRef}/reject` (REJECT decision, index
+  rebuild and debounced snapshot refresh), worklist rows with `osmCandidates` (≤ 10, nearest the centre first) and
+  `autoApplied`, and `GET osm-report` (pairs with 0/1/many matches and their jobs, jobs auto-apply would move, the top
+  50 matches with openstreetmap.org links). Decisions live in `osm_office_decisions` (unique per company key, place
+  and object) and are audited in `company_office_audit` as `OSM_PICK`/`OSM_REJECT`.
+- `/admin/offices`: "N OpenStreetMap matches" in the worklist, grey suggestion markers in the pin editor with "Use this
+  office" and "Not this company", and an "OpenStreetMap matches" tab with Reject and links; the copy says suggestions
+  can be wrong and an admin pin always wins.
+- The flag defaults to false in `application.properties`, Compose and `.env.example`. Turn it on only after reviewing
+  the report on production data.
+
+---
+
 ## Scaling path (only when load demands it)
 
 1. Move Mongo to its own instance.
@@ -348,8 +474,14 @@ burst 60. Logout stays in `api`. The HTTPS server has `http2 on` (tiles' paralle
 
 ## Follow-ups
 
-- Investigate Adzuna `"India"`-only listings (31% COUNTRY in the GEO-1 local preview).
+- Adzuna `"India"`-only listings: measure on production with `GET /api/v1/admin/geo/precision` (`byPrecision.country`
+  and `adzuna.jobs`/`withPoint`); the local GEO-8 data has 97 country-level jobs of 2,216 (4.4%), but that is seeded,
+  not real. GEO-8 does not change them: they carry no text to find a locality in. It does stop re-resolution from
+  erasing Adzuna points, so Adzuna jobs that have one keep it and can snap to a locality.
+- Re-check the NCR share (`ncr.percentOfDelhi`) on production; act only at 5% or more (see GEO-8C).
 
 ## Optional later
 
+- GEO-9 — employer-pinned offices: companies claim a page, pin their offices, and recruiters pick an office when
+  posting a job (the exact, long-term source).
 - Feed `placeIds` into `MATCHING_LOCATION_WEIGHT` for distance-aware matching.

@@ -45,6 +45,28 @@ public class AdminCompanyOfficeController {
         return offices.candidates(limit);
     }
 
+    @GetMapping("/osm-report")
+    @Operation(summary = "OpenStreetMap office matches",
+            description = "Pairs with no, one or several OSM candidates, jobs auto-apply would move, and the top 50 matches "
+                    + "with openstreetmap.org links; review before setting GEO_OSM_OFFICE_AUTO_APPLY=true")
+    public CompanyOfficeService.OsmReport osmReport() { return offices.osmReport(); }
+
+    @PostMapping("/osm/{osmRef}/pick")
+    @ResponseStatus(HttpStatus.CREATED)
+    @Operation(summary = "Use an OpenStreetMap match as the company's office",
+            description = "Creates a normal audited office at the OSM point (60 km guard applies) and records a PICK decision")
+    public CompanyOfficeService.OfficeView pickOsm(@PathVariable String osmRef, @Valid @RequestBody PickRequest request,
+                                                   Authentication authentication) {
+        return offices.pickOsm(osmRef, request.companyKey(), request.placeId(), request.label(), actor(authentication));
+    }
+
+    @PostMapping("/osm/{osmRef}/reject")
+    @Operation(summary = "Not this company's office", description = "Records a REJECT decision; the match is never applied")
+    public CompanyOfficeService.Decision rejectOsm(@PathVariable String osmRef, @Valid @RequestBody RejectRequest request,
+                                                   Authentication authentication) {
+        return offices.rejectOsm(osmRef, request.companyKey(), request.placeId(), actor(authentication));
+    }
+
     @GetMapping("/{id}")
     public CompanyOfficeService.OfficeView get(@PathVariable String id) { return offices.get(id); }
 
@@ -77,4 +99,9 @@ public class AdminCompanyOfficeController {
                                 @NotNull Double lat, @NotNull Double lng, @Size(max = 20) String placeId) { }
 
     public record UpdateRequest(@Size(max = 80) String label, Double lat, Double lng, Boolean enabled) { }
+
+    public record PickRequest(@NotBlank @Size(max = 200) String companyKey, @NotBlank @Size(max = 20) String placeId,
+                              @Size(max = 80) String label) { }
+
+    public record RejectRequest(@NotBlank @Size(max = 200) String companyKey, @NotBlank @Size(max = 20) String placeId) { }
 }

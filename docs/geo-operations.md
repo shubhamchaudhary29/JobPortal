@@ -14,6 +14,9 @@ All under `backend/backend/src/main/resources/geo/`:
 | `place-aliases.tsv` | hand | Old or alternate spellings → gazetteer place (`Bangalore` → `Bengaluru`) |
 | `state-aliases.tsv` | hand | State/UT names and abbreviations → admin1 code |
 | `countries.tsv` | hand | India markers and foreign countries/regions |
+| `in-localities.tsv` | `scripts/build-osm-geo.py` | OpenStreetMap suburbs, neighbourhoods, quarters and tech hubs per city (GEO-8, ODbL) |
+| `in-osm-offices.tsv` | `scripts/build-osm-geo.py` | OpenStreetMap company offices and office buildings per city (GEO-8, ODbL) |
+| `locality-aliases.tsv` | hand | Localities that resolve without a city, and spellings OSM lacks (`Electronic City` → `Electronics City Phase 1`) |
 
 ### Regenerate the gazetteer
 
@@ -34,6 +37,50 @@ afterwards: every alias must still resolve to exactly one place.
 3. Deploy. Editing any data file changes the resolver version (`GeoResolver.PARSER_VERSION` + data hash),
    so every listing on the old version is re-resolved automatically on the next scheduled run.
 
+### Rebuild the OpenStreetMap localities and offices (GEO-8)
+
+Run on a laptop, never on EC2 (it reads a 1.7 GB file and needs about 2 GB of RAM):
+
+```bash
+cd backend/backend
+pip install osmium==4.3.2        # or the docker one-liner in the script header
+python3 scripts/build-osm-geo.py # downloads india-latest.osm.pbf to ~/.cache/jobportal-osm, or pass --pbf PATH
+./mvnw test -Dtest='GazetteerDataTest,LocalityIndexTest'
+```
+
+It writes `in-localities.tsv` and `in-osm-offices.tsv` (gzipped as `.tsv.gz` if either passes 4 MB) with the source
+URL, the extract's replication timestamp and the ODbL notice in their header comments, and prints row counts. Output is
+sorted, so the diff shows only real OpenStreetMap changes. Monthly is plenty.
+
+- **Parent city.** Each object belongs to the nearest gazetteer place of 100,000+ people within 40 km, in its own
+  state when the candidates span states (OpenStreetMap state boundaries), skipping places absorbed into a bigger city:
+  city sections (`PPLX`), names that `place-aliases.tsv` sends elsewhere (New Delhi → Delhi), towns within 30 km of a
+  1M+ city at least 1.5× their size, and places within 10 km of a same-state alias target (Kanayannur → Kochi);
+  district/state seats and alias targets are never absorbed. Listings name the big city, so this keeps HITEC City in
+  Hyderabad, Dwarka in Delhi and Hinjawadi in Pune rather than in GeoNames sub-places. The script prints the absorbed
+  list; check it after a gazetteer or alias change.
+- **Cost of a rebuild.** `in-localities.tsv` is part of the gazetteer data hash, so a rebuild changes the resolver
+  version and every active job is re-resolved by the job below. At the defaults (200 × 25 jobs every 10 minutes,
+  30,000 jobs per hour) that takes about N hours for N × 30,000 active jobs; `GET /api/v1/admin/geo/precision` shows
+  the figure for the current job count (`reResolution.hoursForAllActiveJobs`). Map counts are right throughout: old
+  resolutions keep their places until they are replaced. `in-osm-offices.tsv` is applied at read time and does not
+  trigger re-resolution.
+- **Memory.** Both files are loaded once at startup. The backend logs
+  `event=geo_osm_loaded localities=… offices=… heap_delta_mb=…`; the budget is 80 MB of the 1 GiB container. If a
+  rebuild exceeds it, rebuild with `--min-population 300000` (fewer parent cities) and note it here.
+- **Licence.** The files are OpenStreetMap data under ODbL 1.0 (see `src/main/resources/geo/ATTRIBUTION.md`); keep them
+  separate from our own data and keep "© OpenStreetMap contributors" on the map.
+
+### Add a locality alias
+
+A locality alone ("Whitefield") resolves only through `locality-aliases.tsv`, so keep it to unambiguous, well-known
+hubs. Add `alias<TAB>localityId` (an `osm-…` id from `in-localities.tsv`) or `alias<TAB>name|placeId`, then run
+`./mvnw test -Dtest=GazetteerDataTest`: it fails on a target that is not in the locality file, or on an alias that is
+also the name of a 100k+ city. An OSM rebuild can change ids (rarely for nodes); the same test catches it. Like every
+data file, an edit changes the resolver version and re-resolves all jobs.
+
+Inside a resolved city no alias is needed: "Hinjawadi, Pune" matches by name, "Hinjewadi, Pune" through the alias.
+
 ## Re-resolution job
 
 A lease-locked (`geo-reresolution`) background job re-resolves active jobs whose `geo.version` is not
@@ -48,6 +95,10 @@ current. It runs on the global scheduler, so it only runs when `JOB_AGGREGATION_
 
 Listings imported before GEO-1 have no `rawLocation`. The job seeds it from the canonical `location` and
 sets `rawLocationInferred: true`; the next sync of that listing replaces it with the provider's own value.
+
+Since GEO-8B the job passes a listing's stored provider point (Adzuna) back to the resolver, so it is kept and can
+snap to a locality. Earlier releases dropped the point on every version bump until the next Adzuna sync, so after the
+first GEO-8 deploy some Adzuna jobs have no point until Adzuna lists them again.
 
 Each run logs one line:
 
@@ -66,6 +117,49 @@ event=geo_reresolution_completed scanned=… updated=… remaining_estimate=… 
 - `topUnresolved`: the 50 most frequent strings the resolver could not place (from `unresolved_locations`,
   kept 90 days after last sighting). These are the best candidates for new aliases.
 
+## Precision report
+
+`GET /api/v1/admin/geo/precision` (ADMIN, cached 5 minutes, every aggregation bounded by `maxTimeMS` 15 s with
+`allowDiskUse`) says how precisely visible jobs can be shown:
+
+| Field | Meaning |
+|---|---|
+| `byPrecision` | Jobs by best placement: `office` (a pinned office in one of its cities) > `locality` > `city` (city centre); jobs without a place by status: `state`, `country`, `remote`, `foreign`, `unresolved` (includes EMPTY and not yet resolved) |
+| `topCityCentreStrings` | The 50 most common location strings of `city` jobs: text the resolver could still learn from |
+| `topCities[]` | The 10 cities with most jobs: `centreJobs`, and of their top 500 centre strings how many (`stringsWithLocality`, `jobsWithLocality`) name a locality the city has (`knownLocalities`) |
+| `adzuna` | Adzuna jobs with a stored point, points ≥ 1.5 km from their city centre, of those within 2 km of a known locality, and how many already have a locality |
+| `ncr` | Jobs whose location is exactly "NCR", "Delhi NCR" or "Delhi-NCR" versus all jobs placed in Delhi |
+| `reResolution` | Re-resolution throughput at the current settings and the hours a full pass takes |
+
+**Check it locally.** Locally `.env` keeps scheduling off, so nothing re-resolves seeded jobs. This override turns
+scheduling on but points every provider host at the container's own closed port, so no provider is called and only the
+re-resolution job does real work:
+
+```bash
+python3 backend/backend/scripts/seed-map-jobs.py --offices 3 --realistic 60 \
+  | docker compose exec -T mongodb mongosh --quiet jobportal
+cat > /tmp/geo-local.yml <<'YML'
+services:
+  backend:
+    environment:
+      JOB_AGGREGATION_SCHEDULING_ENABLED: "true"
+      GEO_RERESOLUTION_DELAY_MS: "20000"
+    extra_hosts:
+      - "api.adzuna.com:127.0.0.1"
+      - "in.jooble.org:127.0.0.1"
+      - "boards-api.greenhouse.io:127.0.0.1"
+      - "api.lever.co:127.0.0.1"
+      - "api.ashbyhq.com:127.0.0.1"
+      - "api.smartrecruiters.com:127.0.0.1"
+      - "apply.workable.com:127.0.0.1"
+YML
+docker compose -f docker-compose.yml -f /tmp/geo-local.yml up -d backend
+docker compose logs -f backend | grep -m1 'geo_reresolution_completed.*remaining_estimate=0'
+curl -s -H "Authorization: Bearer $ADMIN_TOKEN" http://localhost/api/v1/admin/geo/precision | jq
+```
+
+Restart without the override file afterwards (`docker compose up -d backend`).
+
 ## Map snapshot
 
 `GET /api/v1/jobs/map/snapshot` (public) returns every place with visible jobs and its count, plus
@@ -80,6 +174,14 @@ belong to a pinned office; `jobs - officeJobs` stay at the city centre) and `off
 `placeId`, `lat`, `lng`, `jobs`; only offices that own jobs, sorted by id). The aggregation groups placed jobs by sorted
 place ids and `lower(trim(company))` (keeping up to 5 raw spellings per group); Java maps each group's company key to
 an office. More than 100,000 groups logs `event=geo_snapshot_large_facet` (no failure).
+
+Localities (GEO-8C) add `places[].localityJobs` and `localities[]` (`id`, `name`, `placeId`, `lat`, `lng`, `jobs`; only
+localities that own jobs, sorted by id) and change no existing field. At each of a job's places it counts toward the
+company's office there, else toward its **first** locality there (resolver order), else the city centre, so per place
+`jobs = officeJobs + localityJobs + centre jobs` and that place's `localities[].jobs` add up to `localityJobs`. The
+aggregation also groups by the job's ordered locality ids. Measured locally on 21,080 jobs (19,023 placed, 33 places,
+26 localities): builds took 113 ms on average (max 197 ms), heap in use after a build 69 MB, snapshot 7.6 KB (2.2 KB
+gzipped).
 
 | Header | Value |
 |---|---|
@@ -114,7 +216,8 @@ All anonymous `GET`s; responses never include descriptions, application URLs or 
 
 | Endpoint | Returns | `Cache-Control` |
 |---|---|---|
-| `/api/v1/jobs/map/places/{placeId}/jobs` | Jobs at one place (404 if the place is not in the gazetteer) | `public, max-age=60` |
+| `/api/v1/jobs/map/places/{placeId}/jobs` | Jobs at one place (404 if the place is not in the gazetteer); `scope=unlisted` keeps only its centre jobs | `public, max-age=60` |
+| `/api/v1/jobs/map/localities/{localityId}/jobs` | Jobs at one OpenStreetMap locality, without those at a pinned office in its city (400 for a malformed id, 404 if unknown) | `public, max-age=60` |
 | `/api/v1/jobs/map/nearby?lat&lng&radiusKm` | Nearest 50 places within the radius + their jobs | `private, max-age=60` |
 | `/api/v1/jobs/map/unplaced?kind=remote\|india` | Jobs with no place: REMOTE, or STATE/COUNTRY | `public, max-age=60` |
 | `/api/v1/jobs/map/offices/{officeId}/jobs` | Jobs at one pinned office (404 if unknown, disabled or ambiguous) | `public, max-age=60` |
@@ -135,6 +238,14 @@ Common parameters: `q` (optional phrase search, max 100 chars; quotes are ignore
   there is no distance sort.
 - **Office list:** the GEO-3 place filter for the office's city AND `company` in the spellings the last snapshot
   counted for that office. A spelling first seen after the last snapshot appears after the next refresh.
+- **Localities (GEO-8C):** each job place carries `localityId`/`localityName` when the job names a locality there and
+  has no office there. A locality list holds jobs whose localities (active listings, or the top-level geo) include the
+  id, minus the company spellings of pinned offices in its city; `totalHint` is the snapshot count, which puts a job
+  with two localities in one city at its first, so a list can be a few jobs longer than its hint. `scope=unlisted` on a
+  place list excludes office spellings and the place's snapshot localities ("office not listed"; `totalHint` is the
+  centre count). Nearby adds `kind: "locality"` chips (`localityId`, `label`, the locality's point and jobs); a
+  locality in range brings its jobs even when its city centre is out of range, and job distances are measured to the
+  office, else the locality, else the city centre.
 - **Limits:** `radiusKm` 1–100 (default 25); every query has `maxTimeMS` 3000.
 - **503 `Retry-After: 10`:** no snapshot yet (same as the snapshot endpoint).
   **503 `Retry-After: 5`:** a query exceeded 3 s.
@@ -249,6 +360,35 @@ punctuation removed, legal suffixes (`pvt ltd`, `limited`, `technologies`, `indi
 former names mapped by `backend/backend/src/main/resources/aggregation/company-aliases.json`. Changing that file
 changes fingerprints too, so it needs a new `JobFingerprint.VERSION` and the fingerprint migration.
 
+## OpenStreetMap offices (GEO-8D)
+
+OpenStreetMap (`in-osm-offices.tsv`) suggests where a company's office is in a city. Suggestions can be wrong (the data
+is volunteer-made and the match is by name only), so they are off the map until reviewed.
+
+**How a match is made:** exact equality of the company matching key with the key of an office's name, English name,
+brand or operator, as is or without trailing generic words (office, campus, India, HQ, development/technology/innovation
+/delivery centre, IDC, GDC, R&D, SEZ, "tower B", "phase 2", the city's own names). Never fuzzy or by prefix. Generic,
+short or city-name keys never match. Two objects of one company within 150 m are one office.
+
+**Precedence for a (company, city) pair:** an ADMIN office (enabled *or disabled*) → OSM ignored; a rejected object is
+ignored; exactly one object left and auto-apply on → it is the office (60 km guard); several → suggestion only.
+
+**Review workflow (ADMIN, `/admin/offices`):**
+1. Open the "OpenStreetMap matches" tab (`GET /api/v1/admin/geo/offices/osm-report`). It shows how many (company,
+   city) pairs have one, several or no match, how many jobs auto-apply would move, and the 50 matches with most jobs.
+2. Open each link on openstreetmap.org and check the object is that company's office. **Reject** the wrong ones.
+3. In the worklist, "Pin office" shows a pair's matches as grey markers: **Use this office** makes it a normal pin
+   (audited, `source: "OSM"`), **Not this company** rejects it. An admin pin always wins over OSM.
+4. When the top matches look right, set `GEO_OSM_OFFICE_AUTO_APPLY=true` in `.env` and redeploy. Single matches then
+   show as offices within about a minute; turning the flag off removes them again (no data is written).
+
+Decisions are in `osm_office_decisions` (one per company key, city and object; a later decision replaces it) and in
+`company_office_audit` (`OSM_PICK` on the new office, `OSM_REJECT` with the `osm-…` reference as `officeId`).
+
+| Variable | Default | Meaning |
+|---|---|---|
+| `GEO_OSM_OFFICE_AUTO_APPLY` | `false` | Apply single, unrejected OSM matches as offices (after reviewing the report) |
+
 ## Map page
 
 `/jobs/map` (GEO-5) is the user-facing map: clustered city markers from the snapshot, a list panel, "Near me", "Jobs in
@@ -257,10 +397,18 @@ this area", and Remote / Anywhere-in-India tabs. Job cards open the normal `/job
 
 | URL part | Meaning |
 |---|---|
-| `?place=<placeId>` | Selected place (dropped if it is not in the snapshot or the place endpoint returns 404) |
+| `?place=<placeId>` | Selected place, all its jobs (dropped if it is not in the snapshot or the place endpoint returns 404) |
+| `&scope=unlisted` | With `place`: only its "office not listed" jobs (a click on the city bubble opens this) |
+| `?locality=<osm-…>` | Selected locality (dropped if it is not in the snapshot); office > locality > place if several are given |
 | `?tab=remote\|india` | Remote or Anywhere-in-India list (absent = On map) |
 | `?q=<text>` | Search (max 100 chars); filters the list only, markers always show all openings |
 | `#zoom/lat/lng` | Map view (MapLibre `hash`), so reload and Back from a job restore it |
+
+**Markers (GEO-8C):** a city bubble holds only its "office not listed" jobs (`jobs - officeJobs - localityJobs`; no
+bubble when that is 0), localities are lighter, smaller indigo bubbles at their own point (labelled "Whitefield · 42"
+from zoom 10), offices white rings. Cluster sums still equal the city totals. The city panel says "{n} jobs · office
+not listed" and "These listings only name the city.", with "Show all {City} jobs". Job cards show the office label, else
+the locality, else "{City} · Office not listed".
 
 **Requests per visit:** one snapshot (browser cache `max-age=60` + ETag revalidation; served from backend memory), then
 one list request per place/tab/search/page. Place and unplaced lists are `public, max-age=60` and backed by the
@@ -339,7 +487,7 @@ Per client IP (`$binary_remote_addr`), `nodelay` (a burst is answered at once, t
 | Location | Zone | Rate | Burst |
 |---|---|---|---|
 | `/api/` (everything else, including `/jobs/map/snapshot`) | `api` | 20 r/s | 40 |
-| `/api/v1/jobs/map/{nearby, places/*/jobs, offices/*/jobs, unplaced}` | `map_list` | 5 r/s | 10 |
+| `/api/v1/jobs/map/{nearby, places/*/jobs, offices/*/jobs, localities/*/jobs, unplaced}` | `map_list` | 5 r/s | 10 |
 | `/api/v1/auth/{sessions, registrations, recruiter-registrations}` (login, sign-up) | `auth` | 30 r/min | 20 |
 | `/api/v1/auth/sessions/refresh` | `refresh` | 120 r/min | 60 |
 | Swagger (when enabled) | `api` | 20 r/s | 40 |
@@ -425,7 +573,7 @@ docker compose exec -T mongodb mongosh --quiet jobportal --eval \
 | Script | Mix |
 |---|---|
 | `map-snapshot.js` | 200 VUs × 60 s; half revalidate with `If-None-Match` (304), all gzip |
-| `map-jobs.js` | 200 VUs × 60 s; 65% place lists, 20% nearby, 10% place + `q`, 5% office lists (place lists when the snapshot has no offices) |
+| `map-jobs.js` | 200 VUs × 60 s; 60% place lists, 20% nearby, 10% place + `q`, 5% office lists, 5% locality lists (place lists when the snapshot has no offices or localities) |
 | `rate-limits.js` | 20 s at fixed rates through nginx: nearby 15 r/s, snapshot 10 r/s, `/tiles/manifest.json` 50 r/s |
 
 **Results, 2026-10-17.** Laptop: Intel Core i5-1240P (16 threads), 7.4 GiB RAM, Linux 7.0, Docker 29.1, k6 2.3.0 in
@@ -438,6 +586,15 @@ Peak memory is the highest `docker stats` sample during the run.
 | `map-snapshot.js` (backend direct) | 200 | 13,047 | 33.6 ms | 58.6 ms | 0.00% | 482 MiB | 250 MiB |
 | `map-jobs.js` (backend direct) | 200 | 10,756 | 34.4 ms | 91.3 ms | 0.00% | 513 MiB | 234 MiB |
 | `rate-limits.js` (through nginx) | ≤ 20 | 75 | 3.7 ms | 4.4 ms | 0.00% unexpected | 512 MiB | 238 MiB |
+
+**GEO-8C re-run, 2026-10-21** (same laptop and limits; 21,080 seeded jobs: `--jobs 20000 --realistic 1080 --ndjson`
+plus 3 offices, re-resolved to 19,023 placed jobs over 33 places and 26 localities):
+
+| Run | VUs | Requests/s | p95 | p99 | Errors | Peak backend | Peak Mongo |
+|---|---|---|---|---|---|---|---|
+| `map-jobs.js` with the locality leg (backend direct) | 200 | 13,718 | 26.2 ms | 55.3 ms | 0.00% | 519 MiB | 385 MiB |
+
+Through nginx, 40 parallel locality-list requests from one IP got 11 × 200 and 29 × 429 (`map_list` burst 10).
 
 `rate-limits.js` thresholds all passed: nearby 63.1% 429 (190 of 301; the expected share is ≈ 1 − 111/300), every 429
 had the `RATE_LIMITED` body, the snapshot was 200/304 for 201 of 201, and `/tiles/manifest.json` had 0 429s.

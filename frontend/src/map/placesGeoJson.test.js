@@ -59,4 +59,35 @@ describe("snapshotToGeoJson", () => {
     const emitted = snapshotToGeoJson(snapshot).features.reduce((sum, feature) => sum + feature.properties.jobs, 0);
     expect(emitted).toBe(snapshot.places.reduce((sum, place) => sum + place.jobs, 0));
   });
+
+  const withLocalities = {
+    places: [
+      { id: "blr", name: "Bengaluru", state: "Karnataka", lat: 12.97, lng: 77.59, jobs: 214, officeJobs: 30, localityJobs: 60 },
+      { id: "pune", name: "Pune", state: "Maharashtra", lat: 18.52, lng: 73.86, jobs: 40, officeJobs: 0, localityJobs: 40 },
+    ],
+    offices: [{ id: "o1", company: "Acme", label: "Bellandur", placeId: "blr", lat: 12.93, lng: 77.68, jobs: 30 }],
+    localities: [
+      { id: "osm-n1", name: "Whitefield", placeId: "blr", lat: 12.97, lng: 77.75, jobs: 42 },
+      { id: "osm-n2", name: "Koramangala", placeId: "blr", lat: 12.93, lng: 77.62, jobs: 18 },
+      { id: "osm-n3", name: "Hinjawadi", placeId: "pune", lat: 18.59, lng: 73.74, jobs: 40 },
+      { id: "osm-n4", name: "Nowhere", placeId: "pune", lat: Number.NaN, lng: 73.74, jobs: 0 },
+    ],
+  };
+
+  it("adds locality features and leaves the city only its office-not-listed jobs", () => {
+    const byId = Object.fromEntries(snapshotToGeoJson(withLocalities).features.map((feature) => [feature.properties.id, feature]));
+    expect(byId.blr.properties.jobs).toBe(124);
+    expect(byId.pune).toBeUndefined();
+    expect(byId["osm-n1"]).toEqual({
+      type: "Feature",
+      geometry: { type: "Point", coordinates: [77.75, 12.97] },
+      properties: { id: "osm-n1", kind: "locality", placeId: "blr", name: "Whitefield", jobs: 42 },
+    });
+    expect(byId["osm-n4"]).toBeUndefined();
+  });
+
+  it("keeps cluster sums equal to city totals with offices and localities", () => {
+    const emitted = snapshotToGeoJson(withLocalities).features.reduce((sum, feature) => sum + feature.properties.jobs, 0);
+    expect(emitted).toBe(withLocalities.places.reduce((sum, place) => sum + place.jobs, 0));
+  });
 });

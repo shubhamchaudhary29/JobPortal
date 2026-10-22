@@ -59,6 +59,10 @@ public class MongoIndexInitializer implements ApplicationRunner {
         jobs.ensureIndex(new Index().on("sourceListings.geo.version", Sort.Direction.ASC)
                 .named("jobs_listing_geo_version_idx"));
         jobs.ensureIndex(new Index().on("geo.version", Sort.Direction.ASC).named("jobs_geo_version_idx"));
+        // GEO-8C locality job lists: multikey, like the place indexes.
+        jobs.ensureIndex(new Index().on("sourceListings.geo.localityIds", Sort.Direction.ASC)
+                .named("jobs_listing_geo_locality_idx"));
+        jobs.ensureIndex(new Index().on("geo.localityIds", Sort.Direction.ASC).named("jobs_geo_locality_idx"));
         jobs.ensureIndex(new TextIndexDefinition.TextIndexDefinitionBuilder().onField("title").onField("description")
                 .onField("company").named("jobs_search_text_idx").build());
         mongo.indexOps("aggregation_conflicts").ensureIndex(new Index()
@@ -95,6 +99,9 @@ public class MongoIndexInitializer implements ApplicationRunner {
                 .on("label", Sort.Direction.ASC).unique().named("company_offices_company_place_label_unique"));
         mongo.indexOps("company_office_audit").ensureIndex(new Index().on("officeId", Sort.Direction.ASC)
                 .on("at", Sort.Direction.DESC).named("company_office_audit_office_at_idx"));
+        mongo.indexOps("osm_office_decisions").ensureIndex(new Index().on("companyKey", Sort.Direction.ASC)
+                .on("placeId", Sort.Direction.ASC).on("osmRef", Sort.Direction.ASC).unique()
+                .named("osm_office_decisions_pair_ref_unique"));
         mongo.indexOps("candidate_profiles").ensureIndex(new Index().on("userId", Sort.Direction.ASC)
                 .unique().named("candidate_profile_user_unique"));
         IndexOperations resumes = mongo.indexOps("tailored_resume_versions");

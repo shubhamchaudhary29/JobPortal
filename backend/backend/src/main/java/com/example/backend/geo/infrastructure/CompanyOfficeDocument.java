@@ -9,6 +9,8 @@ import org.springframework.data.mongodb.core.mapping.Document;
  * One office of a company, pinned by an ADMIN on the map (no geocoding). {@code companyKey} is
  * {@code CompanyNames.key(company)} and, with {@code placeId}, decides which jobs the office represents.
  * {@code company} and {@code placeId} are identity: changing either means creating a new office.
+ * {@code source} (GEO-8D) is "ADMIN" (a pin; also when missing on older documents) or "OSM" when an ADMIN picked an
+ * OpenStreetMap match, whose reference is {@code osmRef}.
  */
 @Data
 @Document("company_offices")
@@ -25,4 +27,6 @@ public class CompanyOfficeDocument {
     private String createdBy;
     private Instant updatedAt;
     private String updatedBy;
+    private String source;
+    private String osmRef;
 }

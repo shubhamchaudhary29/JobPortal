@@ -32,6 +32,7 @@ export const apiRoutes = Object.freeze({
     mapNearby: `${API_V1}/jobs/map/nearby`,
     mapUnplaced: `${API_V1}/jobs/map/unplaced`,
     mapOfficeJobs: (id) => `${API_V1}/jobs/map/offices/${encodeURIComponent(id)}/jobs`,
+    mapLocalityJobs: (id) => `${API_V1}/jobs/map/localities/${encodeURIComponent(id)}/jobs`,
   }),
   applications: Object.freeze({
     collection: `${API_V1}/applications`,
@@ -58,6 +59,9 @@ export const apiRoutes = Object.freeze({
     candidates: `${API_V1}/admin/geo/offices/candidates`,
     byId: (id) => `${API_V1}/admin/geo/offices/${encodeURIComponent(id)}`,
     audit: (id) => `${API_V1}/admin/geo/offices/${encodeURIComponent(id)}/audit`,
+    osmReport: `${API_V1}/admin/geo/offices/osm-report`,
+    osmPick: (osmRef) => `${API_V1}/admin/geo/offices/osm/${encodeURIComponent(osmRef)}/pick`,
+    osmReject: (osmRef) => `${API_V1}/admin/geo/offices/osm/${encodeURIComponent(osmRef)}/reject`,
   }),
   adminAggregation: Object.freeze({
     status: `${API_V1}/admin/ingestion/status`,

@@ -18,7 +18,7 @@ import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.server.ResponseStatusException;
 
-/** Anonymous job lists for the map: at a place, near a point, and without a place. */
+/** Anonymous job lists for the map: at a place, office or locality, near a point, and without a place. */
 @RestController
 @RequestMapping("/api/v1/jobs/map")
 @Tag(name = "Job map", description = "Per-place job counts and job lists for the map")
@@ -30,12 +30,24 @@ public class MapJobsController {
     public MapJobsController(MapJobService jobs) { this.jobs = jobs; }
 
     @GetMapping("/places/{placeId}/jobs")
-    @Operation(summary = "Jobs at one place", description = "Newest first; slice paging (size 1-20, page 0-49)")
+    @Operation(summary = "Jobs at one place", description = "Newest first; slice paging (size 1-20, page 0-49); "
+            + "scope=unlisted keeps only jobs with no pinned office and no locality in the city")
     public ResponseEntity<MapJobService.MapJobSlice> place(@PathVariable String placeId,
+                                                           @RequestParam(required = false) String scope,
                                                            @RequestParam(required = false) String q,
                                                            @RequestParam(required = false) Integer page,
                                                            @RequestParam(required = false) Integer size) {
-        return cached(PUBLIC_CACHE, jobs.place(placeId, q, page, size));
+        return cached(PUBLIC_CACHE, jobs.place(placeId, scope, q, page, size));
+    }
+
+    @GetMapping("/localities/{localityId}/jobs")
+    @Operation(summary = "Jobs at one locality",
+            description = "OpenStreetMap locality (osm-n…/w…/r…), without jobs at a pinned office in its city; 404 if unknown")
+    public ResponseEntity<MapJobService.MapJobSlice> locality(@PathVariable String localityId,
+                                                              @RequestParam(required = false) String q,
+                                                              @RequestParam(required = false) Integer page,
+                                                              @RequestParam(required = false) Integer size) {
+        return cached(PUBLIC_CACHE, jobs.locality(localityId, q, page, size));
     }
 
     @GetMapping("/offices/{officeId}/jobs")

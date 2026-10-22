@@ -50,10 +50,21 @@ class AdminCompanyOfficeSecurityTest {
         when(offices.update(eq("o1"), any(), any(), any(), any(), any())).thenReturn(OFFICE);
         when(offices.audit(eq("o1"), anyInt(), anyInt()))
                 .thenReturn(PageResponse.from(new PageImpl<>(List.of(), PageRequest.of(0, 20), 0)));
+        when(offices.osmReport()).thenReturn(new CompanyOfficeService.OsmReport(false, 10,
+                new CompanyOfficeService.OsmBucket(1, 2), new CompanyOfficeService.OsmBucket(1, 12),
+                new CompanyOfficeService.OsmBucket(0, 0), 12, List.of(new CompanyOfficeService.OsmMatch("Acme", "acme",
+                "1277333", "Bengaluru", "Acme Campus", "osm-n1", "https://www.openstreetmap.org/node/1", 12))));
+        when(offices.pickOsm(eq("osm-n1"), eq("acme"), eq("1277333"), any(), any())).thenReturn(OFFICE);
+        when(offices.rejectOsm(eq("osm-n1"), eq("acme"), eq("1277333"), any())).thenReturn(new CompanyOfficeService.Decision(
+                "acme", "1277333", "osm-n1", "REJECT", "admin@example.com", Instant.EPOCH));
+        String pair = "{\"companyKey\":\"acme\",\"placeId\":\"1277333\"}";
         List<MockHttpServletRequestBuilder> requests = List.of(get(BASE), get(BASE + "/candidates"), get(BASE + "/o1/audit"),
                 post(BASE).contentType(MediaType.APPLICATION_JSON)
                         .content("{\"company\":\"Acme\",\"label\":\"Bellandur\",\"lat\":12.926,\"lng\":77.676}"),
-                patch(BASE + "/o1").contentType(MediaType.APPLICATION_JSON).content("{\"enabled\":false}"));
+                patch(BASE + "/o1").contentType(MediaType.APPLICATION_JSON).content("{\"enabled\":false}"),
+                get(BASE + "/osm-report"),
+                post(BASE + "/osm/osm-n1/pick").contentType(MediaType.APPLICATION_JSON).content(pair),
+                post(BASE + "/osm/osm-n1/reject").contentType(MediaType.APPLICATION_JSON).content(pair));
         for (MockHttpServletRequestBuilder request : requests) {
             mvc.perform(request).andExpect(status().isUnauthorized());
             mvc.perform(request.header(HttpHeaders.AUTHORIZATION, bearer("USER"))).andExpect(status().isForbidden());
@@ -71,6 +82,18 @@ class AdminCompanyOfficeSecurityTest {
         mvc.perform(patch(BASE + "/o1").header(HttpHeaders.AUTHORIZATION, bearer("ADMIN"))
                 .contentType(MediaType.APPLICATION_JSON).content("{\"enabled\":false}")).andExpect(status().isOk());
         verify(offices).update("o1", null, null, null, false, "admin@example.com");
+        mvc.perform(get(BASE + "/osm-report").header(HttpHeaders.AUTHORIZATION, bearer("ADMIN"))).andExpect(status().isOk())
+                .andExpect(jsonPath("$.topMatches[0].url").value("https://www.openstreetmap.org/node/1"))
+                .andExpect(jsonPath("$.autoApply").value(false));
+        mvc.perform(post(BASE + "/osm/osm-n1/pick").header(HttpHeaders.AUTHORIZATION, bearer("ADMIN"))
+                .contentType(MediaType.APPLICATION_JSON).content(pair)).andExpect(status().isCreated());
+        verify(offices).pickOsm("osm-n1", "acme", "1277333", null, "admin@example.com");
+        mvc.perform(post(BASE + "/osm/osm-n1/reject").header(HttpHeaders.AUTHORIZATION, bearer("ADMIN"))
+                .contentType(MediaType.APPLICATION_JSON).content(pair)).andExpect(status().isOk())
+                .andExpect(jsonPath("$.decision").value("REJECT"));
+        verify(offices).rejectOsm("osm-n1", "acme", "1277333", "admin@example.com");
+        mvc.perform(post(BASE + "/osm/osm-n1/reject").header(HttpHeaders.AUTHORIZATION, bearer("ADMIN"))
+                .contentType(MediaType.APPLICATION_JSON).content("{\"companyKey\":\"acme\"}")).andExpect(status().isBadRequest());
     }
 
     @Test

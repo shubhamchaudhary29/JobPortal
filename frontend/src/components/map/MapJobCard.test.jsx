@@ -33,6 +33,21 @@ describe("MapJobCard", () => {
     expect(screen.queryByText(/away/)).not.toBeInTheDocument();
   });
 
+  it("shows the office, else the locality, else that the office is not listed", () => {
+    renderCard({ job: { ...job, places: [{ ...job.places[0], officeId: "o1", officeLabel: "Bellandur", localityName: "Whitefield" }] } });
+    expect(screen.getByText("📍 Bellandur")).toHaveAttribute("title", "Bengaluru, Karnataka");
+    cleanup();
+    renderCard({ job: { ...job, places: [{ ...job.places[0], localityId: "osm-n1", localityName: "Whitefield" }] } });
+    expect(screen.getByText("📍 Whitefield")).toBeInTheDocument();
+    cleanup();
+    renderCard({ job });
+    expect(screen.getByText("📍 Bengaluru · Office not listed")).toHaveAttribute("title", "Bengaluru, Karnataka");
+    cleanup();
+    renderCard({ job: { ...job, location: "Remote", places: [] } });
+    expect(screen.getByText("📍 Remote")).toBeInTheDocument();
+    expect(screen.queryByText(/Office not listed/)).not.toBeInTheDocument();
+  });
+
   it("falls back gracefully without salary, type or source", () => {
     renderCard({ job: { id: "job-2", title: "Analyst", company: "Globex", location: "Remote", createdAt: "2026-10-05T09:00:00" } });
     expect(screen.getByText("💰 Not disclosed")).toBeInTheDocument();
