@@ -149,13 +149,24 @@ public class MapJobService {
         return new MapJobSlice(content, pageNumber, pageSize, rows.hasNext(), totalHint);
     }
 
-    /** A job's place in a list: the company's office there, else its first locality there, else the city. */
+    /**
+     * A job's place in a list: the company's office there, else its first locality there, else the city. The precision
+     * is explicit and the listing's site label for this place (GEO-9D) rides along, so a city-centre card can name the
+     * office the listing gives ("We Work") without pretending it is mapped.
+     */
     private MapJobPlace jobPlace(Row row, Place place, OfficeIndex index) {
+        String siteLabel = row.siteLabels().get(place.id());
         OfficeIndex.Office office = index.officeFor(CompanyNames.key(row.company()), place.id()).orElse(null);
-        if (office != null) return new MapJobPlace(place.id(), place.name(), null, office.id(), office.label());
+        if (office != null) {
+            return new MapJobPlace(place.id(), place.name(), null, office.id(), office.label(), null, null,
+                    MapJobPlace.OFFICE, siteLabel);
+        }
         LocalityIndex.Locality locality = firstLocality(row, place.id());
-        if (locality != null) return new MapJobPlace(place.id(), place.name(), null, null, null, locality.id(), locality.name());
-        return new MapJobPlace(place.id(), place.name(), null);
+        if (locality != null) {
+            return new MapJobPlace(place.id(), place.name(), null, null, null, locality.id(), locality.name(),
+                    MapJobPlace.LOCALITY, siteLabel);
+        }
+        return new MapJobPlace(place.id(), place.name(), null, null, null, null, null, MapJobPlace.CITY, siteLabel);
     }
 
     private LocalityIndex.Locality firstLocality(Row row, String placeId) {
@@ -306,7 +317,8 @@ public class MapJobService {
             double km = Math.round(haversineKm(lat, lng, locality.lat(), locality.lng()) * 10) / 10.0;
             return new MapJobPlace(placeId, name, km, null, null, locality.id(), locality.name());
         }
-        return city == null ? null : new MapJobPlace(placeId, name, city.distanceKm());
+        return city == null ? null : new MapJobPlace(placeId, name, city.distanceKm(), null, null, null, null,
+                MapJobPlace.CITY, row.siteLabels().get(placeId));
     }
 
     private Rows nearbyWithScopes(MapSnapshotService.MapSnapshot snapshot, java.util.Collection<String> placeIds,
@@ -406,12 +418,12 @@ public class MapJobService {
     /** One job row from the projection plus its places per the shared job definition. */
     record Row(String id, String title, String company, String location, String employmentType, Double salaryMin,
                Double salaryMax, String source, LocalDateTime createdAt, LocalDateTime publishedAt, Set<String> placeIds,
-               List<String> localityIds) {
+               List<String> localityIds, Map<String, String> siteLabels) {
         static Row of(Document document) {
             return new Row(String.valueOf(document.get("_id")), document.getString("title"), document.getString("company"),
                     document.getString("location"), document.getString("employmentType"), number(document.get("salaryMin")),
                     number(document.get("salaryMax")), document.getString("source"), time(document.get("createdAt")),
-                    time(document.get("publishedAt")), placeIds(document), localityIds(document));
+                    time(document.get("publishedAt")), placeIds(document), localityIds(document), siteLabels(document));
         }
 
         MapJob toJob(List<MapJobPlace> places) {
@@ -453,6 +465,31 @@ public class MapJobService {
             return List.copyOf(ids);
         }
 
+        /**
+         * Site label per place (GEO-9D): from the first active listing whose places include it, else the listing-less
+         * job's top-level geo. A place whose listing has no label is absent.
+         */
+        private static Map<String, String> siteLabels(Document document) {
+            Map<String, String> labels = new HashMap<>();
+            Set<String> seen = new java.util.HashSet<>();
+            List<Document> listings = document.getList("sourceListings", Document.class);
+            List<Document> geos = new ArrayList<>();
+            if (listings != null && !listings.isEmpty()) {
+                for (Document listing : listings) {
+                    if (!Boolean.FALSE.equals(listing.get("active")) && listing.get("geo") instanceof Document geo) geos.add(geo);
+                }
+            } else if (document.get("geo") instanceof Document geo) {
+                geos.add(geo);
+            }
+            for (Document geo : geos) {
+                String label = geo.getString("siteLabel");
+                for (String placeId : geo.getList("placeIds", String.class, List.of())) {
+                    if (seen.add(placeId) && label != null) labels.put(placeId, label);
+                }
+            }
+            return Map.copyOf(labels);
+        }
+
         private static Double number(Object value) { return value instanceof Number number ? number.doubleValue() : null; }
 
         private static LocalDateTime time(Object value) {
@@ -471,13 +508,28 @@ public class MapJobService {
      * {@code officeId}/{@code officeLabel}: set when the job's company has a pinned office at this place;
      * otherwise {@code localityId}/{@code localityName} when the job names a locality here; neither means the listing
      * only names the city ("office not listed").
+     *
+     * <p>{@code precision} (GEO-9D) says which of those the point is: {@value #OFFICE}, {@value #LOCALITY} or
+     * {@value #CITY}, so clients need not infer it from which ids are set. {@code siteLabel} is the listing's own name for
+     * its office here ("We Work"), text only and never geocoded; null when the listing names none.
      */
     public record MapJobPlace(String id, String name, Double distanceKm, String officeId, String officeLabel,
-                              String localityId, String localityName) {
+                              String localityId, String localityName, String precision, String siteLabel) {
+        public static final String OFFICE = "office";
+        public static final String LOCALITY = "locality";
+        public static final String CITY = "city";
+
         public MapJobPlace(String id, String name, Double distanceKm) { this(id, name, distanceKm, null, null, null, null); }
 
         public MapJobPlace(String id, String name, Double distanceKm, String officeId, String officeLabel) {
             this(id, name, distanceKm, officeId, officeLabel, null, null);
+        }
+
+        /** Precision derived from which ids are set; no site label (pre-GEO-9 shape). */
+        public MapJobPlace(String id, String name, Double distanceKm, String officeId, String officeLabel,
+                           String localityId, String localityName) {
+            this(id, name, distanceKm, officeId, officeLabel, localityId, localityName,
+                    officeId != null ? OFFICE : localityId != null ? LOCALITY : CITY, null);
         }
     }
 

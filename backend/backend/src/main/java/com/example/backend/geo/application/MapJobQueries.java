@@ -22,7 +22,8 @@ public class MapJobQueries {
             .append("employmentType", 1).append("salaryMin", 1).append("salaryMax", 1).append("source", 1)
             .append("createdAt", 1).append("publishedAt", 1).append("sourceListings.active", 1)
             .append("sourceListings.geo.placeIds", 1).append("geo.placeIds", 1)
-            .append("sourceListings.geo.localityIds", 1).append("geo.localityIds", 1);
+            .append("sourceListings.geo.localityIds", 1).append("geo.localityIds", 1)
+            .append("sourceListings.geo.siteLabel", 1).append("geo.siteLabel", 1);
     private static final String JOBS = "jobs";
     private final MongoTemplate mongo;
 
