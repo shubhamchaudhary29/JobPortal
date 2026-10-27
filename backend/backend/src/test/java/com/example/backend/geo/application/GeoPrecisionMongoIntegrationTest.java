@@ -99,6 +99,38 @@ class GeoPrecisionMongoIntegrationTest {
         assertEquals(0, service.precision().activeJobs());
     }
 
+    @Test
+    void topSiteLabelsCountCityCentreJobsPerCompanyCityAndSite() {
+        String bengaluru = GeoTestJobs.placeId(gazetteer, "Bengaluru");
+        String mumbai = GeoTestJobs.placeId(gazetteer, "Mumbai");
+        LocalityIndex.Locality whitefield = gazetteer.localityMatches("whitefield", bengaluru).get(0);
+        Place centre = gazetteer.byId(bengaluru).orElseThrow();
+        insert(job("w1", "Hooli", "Bengaluru- We Work", geo("PLACE", bengaluru).append("siteLabel", "We Work")));
+        insert(job("w2", "hooli ", "Bengaluru - We Work", geo("PLACE", bengaluru).append("siteLabel", "We Work")));
+        insert(job("u1", "Hooli", "Mumbai, Urmi", geo("PLACE", mumbai).append("siteLabel", "Urmi")));
+        insert(job("office", "Acme", "Bengaluru- We Work", geo("PLACE", bengaluru).append("siteLabel", "We Work")));
+        insert(job("locality", "Globex", "Bengaluru - Whitefield Tower", geo("PLACE", bengaluru).append("siteLabel", "Tower")
+                .append("localityIds", List.of(whitefield.id()))));
+        insert(job("plain", "Initech", "Bengaluru", geo("PLACE", bengaluru)));
+        insert(job("gone", "Hooli", "Bengaluru- We Work", geo("PLACE", bengaluru).append("siteLabel", "We Work"))
+                .append("active", false));
+        // Two listings at the same place: the first listing's label wins and the job counts once.
+        Document twoListings = job("two", "Initech", "Bengaluru, OUC", geo("PLACE", bengaluru).append("siteLabel", "OUC"));
+        twoListings.getList("sourceListings", Document.class).add(new Document("identity", "lever:two").append("provider", "lever")
+                .append("active", true).append("geo", geo("PLACE", bengaluru).append("siteLabel", "Other")));
+        insert(twoListings);
+        OfficeIndex offices = new OfficeIndex(List.of(new OfficeIndex.Office("o1", "acme", "Acme", "Acme HQ", bengaluru,
+                centre.lat(), centre.lng())));
+
+        List<GeoPrecisionService.SiteLabelCount> labels = new GeoPrecisionService(mongo, gazetteer, resolver, () -> offices,
+                clock, 30_000).precision().topSiteLabels();
+
+        assertEquals(List.of(
+                new GeoPrecisionService.SiteLabelCount("Hooli", bengaluru, "Bengaluru", "We Work", 2),
+                new GeoPrecisionService.SiteLabelCount("Hooli", mumbai, "Mumbai", "Urmi", 1),
+                new GeoPrecisionService.SiteLabelCount("Initech", bengaluru, "Bengaluru", "OUC", 1)), labels);
+    }
+
     private void insert(Document job) { mongo.getCollection("jobs").insertOne(job); }
 
     private static Document geo(String status, String... placeIds) {

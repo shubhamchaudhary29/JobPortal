@@ -14,6 +14,7 @@ All under `backend/backend/src/main/resources/geo/`:
 | `place-aliases.tsv` | hand | Old or alternate spellings → gazetteer place (`Bangalore` → `Bengaluru`) |
 | `state-aliases.tsv` | hand | State/UT names and abbreviations → admin1 code |
 | `countries.tsv` | hand | India markers and foreign countries/regions |
+| `foreign-qualifiers.tsv` | hand | Foreign states, provinces and cities that follow an Indian city name ("Hyderabad, Sindh"); they only stop "City, X" reading X as a site label (GEO-9A) and never make a job FOREIGN |
 | `in-localities.tsv` | `scripts/build-osm-geo.py` | OpenStreetMap suburbs, neighbourhoods, quarters and tech hubs per city (GEO-8, ODbL) |
 | `in-osm-offices.tsv` | `scripts/build-osm-geo.py` | OpenStreetMap company offices and office buildings per city (GEO-8, ODbL) |
 | `locality-aliases.tsv` | hand | Localities that resolve without a city, and spellings OSM lacks (`Electronic City` → `Electronics City Phase 1`) |
@@ -100,6 +101,11 @@ Since GEO-8B the job passes a listing's stored provider point (Adzuna) back to t
 snap to a locality. Earlier releases dropped the point on every version bump until the next Adzuna sync, so after the
 first GEO-8 deploy some Adzuna jobs have no point until Adzuna lists them again.
 
+**GEO-9 deploy:** parser version 4 makes every job stale. At the defaults a run re-resolves up to
+`GEO_RERESOLUTION_BATCH_SIZE × GEO_RERESOLUTION_MAX_BATCHES` = 5,000 jobs every `GEO_RERESOLUTION_DELAY_MS` (10 min),
+about 30,000 jobs an hour; the precision report's `reResolution.hoursForAllActiveJobs` gives the real figure. Until a
+job is re-resolved it keeps its old (correct, but site-label-free) resolution.
+
 Each run logs one line:
 
 ```
@@ -130,6 +136,7 @@ event=geo_reresolution_completed scanned=… updated=… remaining_estimate=… 
 | `adzuna` | Adzuna jobs with a stored point, points ≥ 1.5 km from their city centre, of those within 2 km of a known locality, and how many already have a locality |
 | `ncr` | Jobs whose location is exactly "NCR", "Delhi NCR" or "Delhi-NCR" versus all jobs placed in Delhi |
 | `reResolution` | Re-resolution throughput at the current settings and the hours a full pass takes |
+| `topSiteLabels` | GEO-9D: the 50 commonest (company, city, site label) of `city` jobs, e.g. Hooli · Bengaluru · "We Work"; the worklist for per-site offices (GEO-9C) |
 
 **Check it locally.** Locally `.env` keeps scheduling off, so nothing re-resolves seeded jobs. This override turns
 scheduling on but points every provider host at the container's own closed port, so no provider is called and only the
@@ -216,7 +223,8 @@ All anonymous `GET`s; responses never include descriptions, application URLs or 
 
 | Endpoint | Returns | `Cache-Control` |
 |---|---|---|
-| `/api/v1/jobs/map/places/{placeId}/jobs` | Jobs at one place (404 if the place is not in the gazetteer); `scope=unlisted` keeps only its centre jobs | `public, max-age=60` |
+| `/api/v1/jobs/map/places/{placeId}/jobs` | Jobs at one place (404 if the place is not in the gazetteer); `scope=unlisted` keeps only its centre jobs, and `company` (exact stored spelling, only with `scope=unlisted`, else 400) one company of them | `public, max-age=60` |
+| `/api/v1/jobs/map/places/{placeId}/companies?limit` | Companies of the place's centre jobs, most jobs first, with the snapshot's `centreJobs` (limit 1–60, default 40; 404 if unknown) | `public, max-age=60` |
 | `/api/v1/jobs/map/localities/{localityId}/jobs` | Jobs at one OpenStreetMap locality, without those at a pinned office in its city (400 for a malformed id, 404 if unknown) | `public, max-age=60` |
 | `/api/v1/jobs/map/nearby?lat&lng&radiusKm` | Nearest 50 places within the radius + their jobs | `private, max-age=60` |
 | `/api/v1/jobs/map/unplaced?kind=remote\|india` | Jobs with no place: REMOTE, or STATE/COUNTRY | `public, max-age=60` |
@@ -399,6 +407,7 @@ this area", and Remote / Anywhere-in-India tabs. Job cards open the normal `/job
 |---|---|
 | `?place=<placeId>` | Selected place, all its jobs (dropped if it is not in the snapshot or the place endpoint returns 404) |
 | `&scope=unlisted` | With `place`: only its "office not listed" jobs (a click on the city bubble opens this) |
+| `&company=<name>` | With `scope=unlisted`: one company of the centre ring (removable "Company: X" chip); ignored otherwise |
 | `?locality=<osm-…>` | Selected locality (dropped if it is not in the snapshot); office > locality > place if several are given |
 | `?tab=remote\|india` | Remote or Anywhere-in-India list (absent = On map) |
 | `?q=<text>` | Search (max 100 chars); filters the list only, markers always show all openings |
@@ -408,12 +417,19 @@ this area", and Remote / Anywhere-in-India tabs. Job cards open the normal `/job
 bubble when that is 0), localities are lighter, smaller indigo bubbles at their own point (labelled "Whitefield · 42"
 from zoom 10), offices white rings. Cluster sums still equal the city totals. The city panel says "{n} jobs · office
 not listed" and "These listings only name the city.", with "Show all {City} jobs". Job cards show the office label, else
-the locality, else "{City} · Office not listed".
+the locality, else the listing's site label ("{City} · We Work", GEO-9D), else "{City} · Office not listed".
+
+**Centre-company ring (GEO-9E):** from zoom 12 the selected city (or the in-view city with centre jobs nearest the view
+centre) is ringed by up to 40 companies of its centre jobs, as slate circles with initials (names from zoom 14) inside
+a dashed outline, under office pins, with the caption "Grey circles: companies whose listings only name the city.
+Shown around the centre, not at their offices." They come from a separate `centre-ring` source, never the clustered
+one. Nothing animates. Everything stays reachable from the panel.
 
 **Requests per visit:** one snapshot (browser cache `max-age=60` + ETag revalidation; served from backend memory), then
 one list request per place/tab/search/page. Place and unplaced lists are `public, max-age=60` and backed by the
 snapshot-versioned server cache (`GEO_MAP_JOBS_CACHE_TTL_MS`); nearby is `private, max-age=60`. Panning and zooming
-make no API calls. A 503 snapshot is retried after `Retry-After`, up to 3 times, then the panel offers Retry; the base
+make no list calls; at street zoom a pause on a new focus city makes one `…/companies` call (debounced 300 ms, aborted
+when the focus moves on, kept per city and snapshot version). A 503 snapshot is retried after `Retry-After`, up to 3 times, then the panel offers Retry; the base
 map still renders.
 
 **Privacy:** the browser rounds the position from `navigator.geolocation` (coarse: `enableHighAccuracy: false`, cached

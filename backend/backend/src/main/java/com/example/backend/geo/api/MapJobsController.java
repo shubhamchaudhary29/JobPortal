@@ -18,7 +18,10 @@ import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.server.ResponseStatusException;
 
-/** Anonymous job lists for the map: at a place, office or locality, near a point, and without a place. */
+/**
+ * Anonymous job lists for the map: at a place, office or locality, near a point, and without a place; and the companies
+ * at a city's centre (GEO-9E).
+ */
 @RestController
 @RequestMapping("/api/v1/jobs/map")
 @Tag(name = "Job map", description = "Per-place job counts and job lists for the map")
@@ -31,13 +34,24 @@ public class MapJobsController {
 
     @GetMapping("/places/{placeId}/jobs")
     @Operation(summary = "Jobs at one place", description = "Newest first; slice paging (size 1-20, page 0-49); "
-            + "scope=unlisted keeps only jobs with no pinned office and no locality in the city")
+            + "scope=unlisted keeps only jobs with no pinned office and no locality in the city; company (exact stored "
+            + "spelling, only with scope=unlisted) narrows that to one company")
     public ResponseEntity<MapJobService.MapJobSlice> place(@PathVariable String placeId,
                                                            @RequestParam(required = false) String scope,
+                                                           @RequestParam(required = false) String company,
                                                            @RequestParam(required = false) String q,
                                                            @RequestParam(required = false) Integer page,
                                                            @RequestParam(required = false) Integer size) {
-        return cached(PUBLIC_CACHE, jobs.place(placeId, scope, q, page, size));
+        return cached(PUBLIC_CACHE, jobs.place(placeId, scope, company, q, page, size));
+    }
+
+    @GetMapping("/places/{placeId}/companies")
+    @Operation(summary = "Companies at a city's centre",
+            description = "Companies whose listings only name the city (no pinned office, no locality), most jobs first; "
+                    + "limit 1-60 (default 40). Shown around the centre bubble, not at their offices; 404 if unknown")
+    public ResponseEntity<MapJobService.CentreCompanies> centreCompanies(@PathVariable String placeId,
+                                                                         @RequestParam(required = false) Integer limit) {
+        return cached(PUBLIC_CACHE, jobs.centreCompanies(placeId, limit));
     }
 
     @GetMapping("/localities/{localityId}/jobs")

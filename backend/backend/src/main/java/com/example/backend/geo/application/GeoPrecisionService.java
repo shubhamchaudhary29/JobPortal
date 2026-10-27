@@ -24,12 +24,16 @@ import org.springframework.stereotype.Service;
  * How precisely visible jobs can be placed (GEO-8): at an office, a locality, a city centre, or only a state, the
  * country, remote, foreign or not at all. ADMIN report, computed by two bounded aggregations and cached five minutes.
  * The job definition is the snapshot's ({@link GeoPipelines}); offices come from the current {@link OfficeIndex}.
+ *
+ * <p>{@code topSiteLabels} (GEO-9D) is the worklist for per-site offices (GEO-9C): the commonest (company, city, site
+ * label) of city-centre jobs, from a third bounded aggregation.
  */
 @Service
 public class GeoPrecisionService {
     static final Duration CACHE_TTL = Duration.ofMinutes(5);
     static final long MAX_TIME_MS = 15_000;
     static final int TOP_STRINGS = 50;
+    static final int TOP_SITE_LABELS = 50;
     static final int TOP_CITIES = 10;
     static final int CITY_STRINGS = 500;
     static final int MAX_LOCALITY_WORDS = 5;
@@ -139,7 +143,77 @@ public class GeoPrecisionService {
         double ncrPercent = delhiJobs == 0 ? 0.0 : Math.round(ncrJobs * 1000.0 / delhiJobs) / 10.0;
         double hours = Math.round(activeJobs * 10.0 / reResolutionJobsPerHour) / 10.0;
         return new Precision(resolver.version(), now, activeJobs, byPrecision, topStrings, cities, adzuna(),
-                new Ncr(ncrJobs, delhiJobs, ncrPercent), new ReResolution(reResolutionJobsPerHour, hours));
+                new Ncr(ncrJobs, delhiJobs, ncrPercent), new ReResolution(reResolutionJobsPerHour, hours),
+                topSiteLabels(officeIndex));
+    }
+
+    /**
+     * City-precision jobs per (company, place, site label): no pinned office of the company there and none of the job's
+     * localities in that place, same as {@code byPrecision}. A job's label for a place is its first active listing's
+     * there (or the listing-less top-level geo), so a job counts once per place.
+     */
+    private List<SiteLabelCount> topSiteLabels(OfficeIndex officeIndex) {
+        Map<List<String>, SiteLabelCount> counts = new HashMap<>();
+        for (Document group : mongo.getCollection("jobs").aggregate(siteLabelPipeline())
+                .maxTime(MAX_TIME_MS, TimeUnit.MILLISECONDS).allowDiskUse(true)) {
+            Document id = group.get("_id", Document.class);
+            String placeId = id.getString("place");
+            String siteLabel = id.getString("siteLabel");
+            Place place = placeId == null ? null : gazetteer.byId(placeId).orElse(null);
+            if (place == null || siteLabel == null) continue;
+            String company = group.getString("company") == null ? "" : group.getString("company").trim();
+            if (officeIndex.officeFor(CompanyNames.key(company), placeId).isPresent()) continue;
+            boolean atLocality = id.getList("localities", String.class, List.of()).stream()
+                    .anyMatch(localityId -> gazetteer.localityById(localityId)
+                            .map(locality -> locality.placeId().equals(placeId)).orElse(false));
+            if (atLocality) continue;
+            long jobs = ((Number) group.get("count")).longValue();
+            counts.merge(List.of(id.getString("company"), placeId, siteLabel),
+                    new SiteLabelCount(company, placeId, place.name(), siteLabel, jobs),
+                    (left, right) -> new SiteLabelCount(preferCapitalized(left.company(), right.company()),
+                            placeId, place.name(), siteLabel, left.jobs() + right.jobs()));
+        }
+        return counts.values().stream()
+                .sorted(Comparator.comparingLong(SiteLabelCount::jobs).reversed()
+                        .thenComparing(SiteLabelCount::company).thenComparing(SiteLabelCount::placeId)
+                        .thenComparing(SiteLabelCount::siteLabel))
+                .limit(TOP_SITE_LABELS).toList();
+    }
+
+    private static String preferCapitalized(String left, String right) {
+        if (left == null || left.isBlank()) return right == null ? "" : right.trim();
+        if (right == null || right.isBlank()) return left.trim();
+        boolean leftUpper = Character.isUpperCase(left.charAt(0));
+        boolean rightUpper = Character.isUpperCase(right.charAt(0));
+        if (leftUpper != rightUpper) return leftUpper ? left : right;
+        return left.compareTo(right) <= 0 ? left : right;
+    }
+
+    private static List<Document> siteLabelPipeline() {
+        Document geos = new Document("$cond", List.of(GeoPipelines.hasListings(),
+                new Document("$map", new Document("input", GeoPipelines.activeListings()).append("as", "l")
+                        .append("in", new Document("$ifNull", List.of("$$l.geo", new Document())))),
+                List.of(new Document("$ifNull", List.of("$geo", new Document())))));
+        return List.of(
+                new Document("$match", new Document("$and", List.of(GeoPipelines.visibleJobs(), new Document("$or", List.of(
+                        new Document("sourceListings.geo.siteLabel", new Document("$type", "string")),
+                        new Document("geo.siteLabel", new Document("$type", "string"))))))),
+                new Document("$project", new Document("company", GeoPipelines.lowerCompany()).append("raw", "$company")
+                        .append("localities", new Document("$sortArray", new Document("input", GeoPipelines.localityIds())
+                                .append("sortBy", 1)))
+                        .append("geos", geos)),
+                new Document("$unwind", "$geos"),
+                new Document("$unwind", "$geos.placeIds"),
+                // First listing per (job, place), in listing order: its label, possibly none.
+                new Document("$group", new Document("_id", new Document("job", "$_id").append("place", "$geos.placeIds"))
+                        .append("siteLabel", new Document("$first", "$geos.siteLabel"))
+                        .append("company", new Document("$first", "$company")).append("raw", new Document("$first", "$raw"))
+                        .append("localities", new Document("$first", "$localities"))),
+                new Document("$match", new Document("siteLabel", new Document("$type", "string"))),
+                new Document("$sort", new Document("raw", 1)),
+                new Document("$group", new Document("_id", new Document("company", "$company").append("place", "$_id.place")
+                        .append("siteLabel", "$siteLabel").append("localities", "$localities"))
+                        .append("count", new Document("$sum", 1)).append("company", new Document("$first", "$raw"))));
     }
 
     private CityGain cityGain(String placeId, long jobs, long centreJobs, Map<String, Tally> strings) {
@@ -255,7 +329,25 @@ public class GeoPrecisionService {
      */
     public record Precision(String resolverVersion, Instant computedAt, long activeJobs, Map<String, Long> byPrecision,
                             List<LocationCount> topCityCentreStrings, List<CityGain> topCities, AdzunaPoints adzuna,
-                            Ncr ncr, ReResolution reResolution) { }
+                            Ncr ncr, ReResolution reResolution, List<SiteLabelCount> topSiteLabels) {
+        public Precision {
+            topSiteLabels = topSiteLabels == null ? List.of() : List.copyOf(topSiteLabels);
+        }
+
+        /** Without site labels (pre-GEO-9 shape). */
+        public Precision(String resolverVersion, Instant computedAt, long activeJobs, Map<String, Long> byPrecision,
+                         List<LocationCount> topCityCentreStrings, List<CityGain> topCities, AdzunaPoints adzuna, Ncr ncr,
+                         ReResolution reResolution) {
+            this(resolverVersion, computedAt, activeJobs, byPrecision, topCityCentreStrings, topCities, adzuna, ncr,
+                    reResolution, List.of());
+        }
+    }
+
+    /**
+     * City-centre jobs of one company in one city whose listings name the same site ("We Work"); {@code company} is one
+     * spelling of the case-insensitive group. The top {@value #TOP_SITE_LABELS} are the GEO-9C worklist.
+     */
+    public record SiteLabelCount(String company, String placeId, String placeName, String siteLabel, long jobs) { }
 
     public record LocationCount(String location, long jobs) { }
 

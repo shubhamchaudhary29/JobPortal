@@ -10,6 +10,7 @@ import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
 import org.bson.Document;
+import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -49,6 +50,14 @@ class OfficeMapMongoIntegrationTest {
         insert(job("g1", "Globex", 5, blr));
         insert(job("x1", "Acme Pvt Ltd", 6, blr).append("active", false));
         snapshots.refresh();
+    }
+
+    @AfterEach
+    void tearDown() {
+        mongo.getCollection("jobs").deleteMany(new Document());
+        mongo.getCollection("company_offices").deleteMany(new Document());
+        mongo.getCollection("company_office_audit").deleteMany(new Document());
+        offices.loadIndex();
     }
 
     @Test

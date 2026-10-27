@@ -19,6 +19,7 @@ const RADII_KM = [10, 25, 50, 100];
 const DEFAULT_RADIUS_KM = 25;
 const SEARCH_DEBOUNCE_MS = 300;
 const MAX_QUERY_LENGTH = 100;
+const MAX_COMPANY_LENGTH = 200;
 const TOP_PLACE_COUNT = 12;
 const PICKER_PLACE_COUNT = 50;
 // Coarse, cached positions are plenty: the result is rounded to a ≈5 km grid anyway.
@@ -38,8 +39,9 @@ const distanceOf = (job) => job.places?.[0]?.distanceKm;
 
 /**
  * /jobs/map: clustered city markers, localities and pinned offices plus a list panel. URL holds only place (with
- * scope=unlisted for a city bubble's "office not listed" jobs), locality or office, tab and q (the map view lives in
- * the hash); near-me and this-area searches stay in memory, with coordinates rounded before any request.
+ * scope=unlisted for a city bubble's "office not listed" jobs, and company for one company of its street-zoom ring),
+ * locality or office, tab and q (the map view lives in the hash); near-me and this-area searches stay in memory, with
+ * coordinates rounded before any request.
  */
 export default function MapJobs() {
   const [searchParams] = useSearchParams();
@@ -50,6 +52,8 @@ export default function MapJobs() {
   const localityId = officeId ? null : searchParams.get("locality") || null;
   const placeId = officeId || localityId ? null : searchParams.get("place") || null;
   const unlisted = Boolean(placeId) && searchParams.get("scope") === "unlisted";
+  // A centre-ring company (GEO-9E) narrows only the city-centre list.
+  const company = unlisted ? (searchParams.get("company") || "").slice(0, MAX_COMPANY_LENGTH) || null : null;
   const q = (searchParams.get("q") || "").trim().slice(0, MAX_QUERY_LENGTH);
 
   const [queryInput, setQueryInput] = useState(q);
@@ -87,14 +91,14 @@ export default function MapJobs() {
   // A place, locality or office that is not in the snapshot (stale link, or its jobs closed) falls back to Top places.
   useEffect(() => {
     if (!snapshot) return;
-    if (placeId && !placesById.has(placeId)) updateParams({ place: null, scope: null }, { replace: true });
+    if (placeId && !placesById.has(placeId)) updateParams({ place: null, scope: null, company: null }, { replace: true });
     if (officeId && !officesById.has(officeId)) updateParams({ office: null }, { replace: true });
     if (localityId && !localitiesById.has(localityId)) updateParams({ locality: null }, { replace: true });
   }, [snapshot, placeId, placesById, officeId, officesById, localityId, localitiesById, updateParams]);
 
   const onPlaceMissing = useCallback(() => {
     setNotice("That place is no longer on the map, so we're showing top places instead.");
-    updateParams({ place: null, office: null, locality: null, scope: null }, { replace: true });
+    updateParams({ place: null, office: null, locality: null, scope: null, company: null }, { replace: true });
   }, [updateParams]);
 
   const mode = tab !== "map" ? "unplaced" : area ? "nearby" : officeId ? "office" : localityId ? "locality"
@@ -118,15 +122,15 @@ export default function MapJobs() {
       });
     }
     if (mode === "place") {
-      return ({ page, signal }) => getPlaceJobs(placeId, { scope: unlisted ? "unlisted" : undefined, q, page, signal })
+      return ({ page, signal }) => getPlaceJobs(placeId, { scope: unlisted ? "unlisted" : undefined, company, q, page, signal })
         .catch((error) => {
           if (error?.status === 404) onPlaceMissing();
           throw error;
         });
     }
     return null;
-  }, [mode, tab, q, area, placeId, unlisted, officeId, localityId, onPlaceMissing]);
-  const list = useJobList(fetcher, [mode, tab, placeId, unlisted, officeId, localityId, area?.lat ?? null,
+  }, [mode, tab, q, area, placeId, unlisted, company, officeId, localityId, onPlaceMissing]);
+  const list = useJobList(fetcher, [mode, tab, placeId, unlisted, company, officeId, localityId, area?.lat ?? null,
     area?.lng ?? null, area?.radiusKm ?? null, q]);
 
   useEffect(() => {
@@ -140,17 +144,19 @@ export default function MapJobs() {
     setNotice("");
     setMobileView("list");
     focusHeading.current = true;
-    updateParams({ place: null, office: null, locality: null, scope: null, tab: null, ...changes });
+    updateParams({ place: null, office: null, locality: null, scope: null, company: null, tab: null, ...changes });
   }, [updateParams]);
 
   /** All jobs of a city (Top places, near-me chips, "Show all"). */
   const selectPlace = useCallback((id) => select({ place: id }), [select]);
   /** A city bubble on the map holds only the jobs whose listings name no office or locality. */
   const selectCityMarker = useCallback((id) => select({ place: id, scope: "unlisted" }), [select]);
+  /** A company in the centre ring: that city's "office not listed" jobs of this company only. */
+  const selectCentreCompany = useCallback((id, name) => select({ place: id, scope: "unlisted", company: name }), [select]);
   const selectOffice = useCallback((id) => select({ office: id }), [select]);
   const selectLocality = useCallback((id) => select({ locality: id }), [select]);
 
-  const clearPlace = () => updateParams({ place: null, office: null, locality: null, scope: null });
+  const clearPlace = () => updateParams({ place: null, office: null, locality: null, scope: null, company: null });
 
   const selectTab = (id) => {
     setNotice("");
@@ -164,7 +170,7 @@ export default function MapJobs() {
     focusHeading.current = true;
     const params = new URLSearchParams(window.location.search);
     if (params.has("place") || params.has("office") || params.has("locality")) {
-      updateParams({ place: null, office: null, locality: null, scope: null }, { replace: true });
+      updateParams({ place: null, office: null, locality: null, scope: null, company: null }, { replace: true });
     }
   }, [updateParams]);
 
@@ -347,13 +353,25 @@ export default function MapJobs() {
             </p>
           </div>
           <p className="mt-2 text-sm text-slate-500">{UNLISTED_CAPTION}</p>
-          <button type="button" onClick={() => updateParams({ scope: null })} className={`${backButton} mt-1`}>
+          {company && (
+            <div className="mt-2 flex flex-wrap gap-2">
+              <span className="inline-flex items-center gap-1 rounded-full bg-slate-100 py-1 pl-3 pr-1 text-xs font-semibold text-slate-700">
+                Company: {company}
+                <button type="button" onClick={() => updateParams({ company: null })} aria-label={`Remove company filter ${company}`}
+                  className="flex h-5 w-5 items-center justify-center rounded-full text-slate-500 hover:bg-slate-200 hover:text-slate-700 focus:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500">
+                  ×
+                </button>
+              </span>
+            </div>
+          )}
+          <button type="button" onClick={() => updateParams({ scope: null, company: null })} className={`${backButton} mt-1`}>
             Show all {name} jobs
           </button>
           <div className="mt-4">
-            <MapJobList list={list} label={`Jobs in ${name} without a listed office`} empty={(
+            <MapJobList list={list} label={`Jobs in ${name} without a listed office${company ? ` at ${company}` : ""}`} empty={(
               <p className="rounded-3xl border border-dashed border-slate-300 bg-white px-5 py-8 text-center text-sm text-slate-500">
-                {q ? `No jobs here match “${q}”.` : "Every opening here names its office or area."}
+                {q ? `No jobs here match “${q}”.` : company ? `No openings from ${company} here right now.`
+                  : "Every opening here names its office or area."}
               </p>
             )} />
           </div>
@@ -480,6 +498,7 @@ export default function MapJobs() {
             <JobsMap snapshot={snapshot} selected={tab === "map" ? selectedOffice ?? selectedLocality ?? selectedPlace : null}
               dimmed={tab !== "map"} area={tab === "map" ? area : null} allowAreaSearch={tab === "map"}
               onSelectPlace={selectCityMarker} onSelectOffice={selectOffice} onSelectLocality={selectLocality}
+              onSelectCentreCompany={selectCentreCompany}
               onSearchArea={searchArea} className="h-full w-full bg-slate-100 lg:rounded-3xl lg:ring-1 lg:ring-slate-200" />
           </Suspense>
         </div>

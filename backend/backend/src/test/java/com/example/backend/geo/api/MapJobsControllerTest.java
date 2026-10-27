@@ -11,6 +11,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 
 import com.example.backend.geo.application.MapJobService;
 import com.example.backend.shared.error.BadRequestException;
+import com.example.backend.shared.error.ResourceNotFoundException;
 import java.time.LocalDateTime;
 import java.util.List;
 import org.junit.jupiter.api.BeforeEach;
@@ -37,7 +38,7 @@ class MapJobsControllerTest {
                 "full_time", 1.0, 2.0, "adzuna", LocalDateTime.of(2026, 10, 1, 0, 0), null,
                 List.of(new MapJobService.MapJobPlace("1277333", "Bengaluru", null)));
         slice = new MapJobService.MapJobSlice(List.of(job), 0, 20, false, 1L);
-        when(jobs.place(eq("1277333"), any(), any(), any(), any())).thenReturn(slice);
+        when(jobs.place(eq("1277333"), any(), any(), any(), any(), any())).thenReturn(slice);
         when(jobs.unplaced(eq("remote"), any(), any(), any())).thenReturn(slice);
         when(jobs.nearby(anyDouble(), anyDouble(), any(), any(), any(), any())).thenReturn(new MapJobService.NearbyResult(
                 12.95, 77.6, 25, List.of(new MapJobService.NearbyPlace("1277333", "Bengaluru", "Karnataka", 12.97,
@@ -70,9 +71,9 @@ class MapJobsControllerTest {
 
     @Test
     void missingSnapshotAndTimeoutsAreServiceUnavailableWithDifferentRetryAfter() throws Exception {
-        when(jobs.place(eq("1"), any(), any(), any(), any())).thenThrow(
+        when(jobs.place(eq("1"), any(), any(), any(), any(), any())).thenThrow(
                 new ResponseStatusException(HttpStatus.SERVICE_UNAVAILABLE, MapJobService.SNAPSHOT_UNAVAILABLE));
-        when(jobs.place(eq("2"), any(), any(), any(), any())).thenThrow(
+        when(jobs.place(eq("2"), any(), any(), any(), any(), any())).thenThrow(
                 new ResponseStatusException(HttpStatus.SERVICE_UNAVAILABLE, MapJobService.QUERY_TIMEOUT));
 
         mvc.perform(get("/api/v1/jobs/map/places/1/jobs"))
@@ -92,7 +93,7 @@ class MapJobsControllerTest {
         mvc.perform(get("/api/v1/jobs/map/unplaced").param("kind", "foreign")).andExpect(status().isBadRequest());
         mvc.perform(get("/api/v1/jobs/map/nearby").param("lat", "12.97")).andExpect(status().isBadRequest());
         mvc.perform(get("/api/v1/jobs/map/nearby").param("lat", "north").param("lng", "77")).andExpect(status().isBadRequest());
-        when(jobs.place(eq("1277333"), eq("nearby"), any(), any(), any())).thenThrow(new BadRequestException("scope must be all or unlisted"));
+        when(jobs.place(eq("1277333"), eq("nearby"), any(), any(), any(), any())).thenThrow(new BadRequestException("scope must be all or unlisted"));
         mvc.perform(get("/api/v1/jobs/map/places/1277333/jobs").param("scope", "nearby")).andExpect(status().isBadRequest());
         when(jobs.locality(eq("bad id"), any(), any(), any())).thenThrow(new BadRequestException("Invalid locality id"));
         mvc.perform(get("/api/v1/jobs/map/localities/bad id/jobs")).andExpect(status().isBadRequest());
@@ -100,9 +101,38 @@ class MapJobsControllerTest {
 
     @Test
     void placeScopeIsPassedThrough() throws Exception {
-        when(jobs.place(eq("1277333"), eq("unlisted"), any(), any(), any())).thenReturn(slice);
+        when(jobs.place(eq("1277333"), eq("unlisted"), any(), any(), any(), any())).thenReturn(slice);
         mvc.perform(get("/api/v1/jobs/map/places/1277333/jobs").param("scope", "unlisted"))
                 .andExpect(status().isOk()).andExpect(jsonPath("$.content[0].id").value("job-1"));
+    }
+
+    @Test
+    void companyFilterAndCentreCompaniesArePassedThrough() throws Exception {
+        when(jobs.place(eq("1277333"), eq("unlisted"), eq("Wonka Industries"), any(), any(), any())).thenReturn(slice);
+        mvc.perform(get("/api/v1/jobs/map/places/1277333/jobs").param("scope", "unlisted").param("company", "Wonka Industries"))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.content[0].id").value("job-1"));
+        when(jobs.place(eq("1277333"), eq("all"), eq("Wonka"), any(), any(), any()))
+                .thenThrow(new BadRequestException("company requires scope=unlisted"));
+        mvc.perform(get("/api/v1/jobs/map/places/1277333/jobs").param("scope", "all").param("company", "Wonka"))
+                .andExpect(status().isBadRequest());
+
+        when(jobs.centreCompanies(eq("1277333"), any())).thenReturn(new MapJobService.CentreCompanies("1277333", "Bengaluru",
+                5, List.of(new MapJobService.CentreCompany("Wonka", 3), new MapJobService.CentreCompany("Hooli", 2))));
+        mvc.perform(get("/api/v1/jobs/map/places/1277333/companies").param("limit", "40"))
+                .andExpect(status().isOk())
+                .andExpect(header().string(HttpHeaders.CACHE_CONTROL, "public, max-age=60"))
+                .andExpect(jsonPath("$.placeName").value("Bengaluru"))
+                .andExpect(jsonPath("$.centreJobs").value(5))
+                .andExpect(jsonPath("$.companies[0].company").value("Wonka"))
+                .andExpect(jsonPath("$.companies[1].jobs").value(2));
+        for (int limit : new int[] {0, 61}) {
+            when(jobs.centreCompanies(eq("1277333"), eq(limit))).thenThrow(new BadRequestException("limit must be between 1 and 60"));
+            mvc.perform(get("/api/v1/jobs/map/places/1277333/companies").param("limit", String.valueOf(limit)))
+                    .andExpect(status().isBadRequest());
+        }
+        when(jobs.centreCompanies(eq("999"), any())).thenThrow(new ResourceNotFoundException("Place not found"));
+        mvc.perform(get("/api/v1/jobs/map/places/999/companies")).andExpect(status().isNotFound());
+        mvc.perform(get("/api/v1/jobs/map/places/1277333/companies").param("limit", "many")).andExpect(status().isBadRequest());
     }
 
     @Test

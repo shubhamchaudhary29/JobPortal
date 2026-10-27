@@ -1,5 +1,7 @@
 export const PLACES_SOURCE = "places";
 export const AREA_SOURCE = "search-area";
+/** Centre-company ring (GEO-9E): its own unclustered source, never part of "places", so cluster sums stay exact. */
+export const CENTRE_RING_SOURCE = "centre-ring";
 export const LAYERS = Object.freeze({
   areaFill: "search-area-fill",
   areaLine: "search-area-line",
@@ -14,13 +16,25 @@ export const LAYERS = Object.freeze({
   localities: "localities-points",
   localityNames: "localities-names",
 });
+export const RING_LAYERS = Object.freeze({
+  line: "centre-ring-line",
+  companies: "centre-companies",
+  initials: "centre-company-initials",
+  names: "centre-company-names",
+});
 /** Zoom at which clusters have all split into single places (clusterMaxZoom + 1). */
 export const PLACE_ZOOM = 10;
+/** Street zoom: the companies at a city's centre are drawn around its bubble from here (GEO-9E). */
+export const RING_ZOOM = PLACE_ZOOM + 2;
+/** Company names next to the ring markers from here; below it only their initials. */
+export const RING_NAMES_ZOOM = 14;
 export const NAMES_MIN_ZOOM = 7;
 
 const INDIGO_400 = "#818cf8";
 const INDIGO_600 = "#4f46e5";
 const INDIGO_900 = "#312e81";
+const SLATE_100 = "#f1f5f9";
+const SLATE_400 = "#94a3b8";
 const SLATE_700 = "#334155";
 const WHITE = "#ffffff";
 // Fontstacks the base style already ships (frontend/scripts/build-tiles.sh downloads exactly these).
@@ -116,6 +130,36 @@ export function jobLayers({ hasGlyphs }) {
   ];
 }
 
+const IS_RING_MARKER = ["==", ["geometry-type"], "Point"];
+const IS_RING_OUTLINE = ["==", ["geometry-type"], "LineString"];
+
+/**
+ * Layer specs of the centre-company ring, all from {@link RING_ZOOM}. Slate, hollow-looking circles with a dashed outline,
+ * so they cannot be read as offices (white with an indigo ring) or localities (indigo-400): they show who is hiring
+ * at the city centre, around it, not where their offices are. {@code circles} go below office pins; {@code labels} on top
+ * and only when the style has glyphs.
+ */
+export function centreRingLayers({ hasGlyphs }) {
+  const opacity = markerOpacity(false);
+  const circles = [
+    { id: RING_LAYERS.line, type: "line", source: CENTRE_RING_SOURCE, minzoom: RING_ZOOM, filter: IS_RING_OUTLINE,
+      paint: { "line-color": SLATE_400, "line-width": 1, "line-dasharray": [2, 2], "line-opacity": opacity.stroke } },
+    { id: RING_LAYERS.companies, type: "circle", source: CENTRE_RING_SOURCE, minzoom: RING_ZOOM, filter: IS_RING_MARKER,
+      paint: { "circle-color": SLATE_100, "circle-opacity": 1, "circle-stroke-color": SLATE_400, "circle-stroke-width": 1.5,
+        "circle-stroke-opacity": opacity.stroke, "circle-radius": 11 } },
+  ];
+  const labels = !hasGlyphs ? [] : [
+    { id: RING_LAYERS.initials, type: "symbol", source: CENTRE_RING_SOURCE, minzoom: RING_ZOOM, filter: IS_RING_MARKER,
+      layout: { "text-field": ["get", "initial"], "text-font": FONT_MEDIUM, "text-size": 11, "text-allow-overlap": true },
+      paint: { "text-color": SLATE_700, "text-opacity": opacity.text } },
+    { id: RING_LAYERS.names, type: "symbol", source: CENTRE_RING_SOURCE, minzoom: RING_NAMES_ZOOM, filter: IS_RING_MARKER,
+      layout: { "text-field": ["get", "company"], "text-font": FONT_REGULAR, "text-size": 10, "text-anchor": "top",
+        "text-offset": [0, 1.3], "text-optional": true, "text-max-width": 8 },
+      paint: { "text-color": SLATE_700, "text-halo-color": WHITE, "text-halo-width": 1.5, "text-opacity": opacity.text } },
+  ];
+  return { circles, labels };
+}
+
 /** setPaintProperty calls that dim or restore every marker layer present on the map. */
 export function dimmingPaint(dimmed) {
   const opacity = markerOpacity(dimmed);
@@ -134,5 +178,10 @@ export function dimmingPaint(dimmed) {
     [LAYERS.clusterCounts, "text-opacity", opacity.text],
     [LAYERS.pointCounts, "text-opacity", opacity.text],
     [LAYERS.names, "text-opacity", opacity.text],
+    [RING_LAYERS.line, "line-opacity", opacity.stroke],
+    [RING_LAYERS.companies, "circle-opacity", dimmed ? 0.4 : 1],
+    [RING_LAYERS.companies, "circle-stroke-opacity", opacity.stroke],
+    [RING_LAYERS.initials, "text-opacity", opacity.text],
+    [RING_LAYERS.names, "text-opacity", opacity.text],
   ];
 }

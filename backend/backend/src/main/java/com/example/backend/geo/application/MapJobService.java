@@ -46,6 +46,9 @@ public class MapJobService {
     static final int MAX_RADIUS_KM = 100;
     static final int MAX_QUERY_PLACES = 200;
     static final int MAX_RETURNED_PLACES = 50;
+    static final int DEFAULT_CENTRE_COMPANIES = 40;
+    static final int MAX_CENTRE_COMPANIES = 60;
+    static final int MAX_COMPANY_LENGTH = 200;
     /** 0.05° grid (about 5 km of latitude): 20 steps per degree. */
     static final int GRID_STEPS_PER_DEGREE = 20;
     static final java.util.regex.Pattern LOCALITY_ID = java.util.regex.Pattern.compile("^osm-[nwr]\\d{1,15}$");
@@ -90,11 +93,25 @@ public class MapJobService {
      * pinned office and no locality in this city ("office not listed").
      */
     public MapJobSlice place(String placeId, String scope, String q, Integer page, Integer size) {
+        return place(placeId, scope, null, q, page, size);
+    }
+
+    /**
+     * {@link #place(String, String, String, Integer, Integer)} narrowed to one stored {@code company} spelling (GEO-9E:
+     * a company in the centre ring). Only with {@code scope=unlisted}; the snapshot has no per-company count, so
+     * {@code totalHint} is null.
+     */
+    public MapJobSlice place(String placeId, String scope, String company, String q, Integer page, Integer size) {
         boolean unlisted = switch (scope == null ? "all" : scope) {
             case "all" -> false;
             case "unlisted" -> true;
             default -> throw new BadRequestException("scope must be all or unlisted");
         };
+        String companyFilter = company == null || company.isBlank() ? null : company;
+        if (companyFilter != null && !unlisted) throw new BadRequestException("company requires scope=unlisted");
+        if (companyFilter != null && companyFilter.length() > MAX_COMPANY_LENGTH) {
+            throw new BadRequestException("company filter is too long");
+        }
         int pageNumber = page(page);
         int pageSize = size(size);
         String phrase = phrase(q);
@@ -105,21 +122,54 @@ public class MapJobService {
         OfficeIndex index = offices.get();
         Rows rows;
         if (unlisted) {
-            List<String> companies = officeCompaniesAt(index, place.id());
-            List<String> localities = snapshot.localities().stream().filter(locality -> locality.placeId().equals(place.id()))
-                    .map(MapSnapshotService.MapLocality::id).sorted().toList();
-            String scopeKey = place.id() + "|" + String.join("\u0001", companies) + "|" + String.join(",", localities);
+            Centre centre = centre(snapshot, index, place.id());
+            String scopeKey = centre.key() + (companyFilter == null ? "" : "|company:" + companyFilter);
             MapJobCache.Key key = new MapJobCache.Key("place-unlisted", snapshot.version(), scopeKey, cacheText(phrase),
                     pageNumber, pageSize);
-            rows = cache.get(key, () -> timed("place", () -> Rows.of(
-                    queries.unlistedAtPlace(place.id(), companies, localities, phrase, pageNumber, pageSize), pageSize)));
+            rows = cache.get(key, () -> timed("place", () -> Rows.of(queries.unlistedAtPlace(place.id(), centre.officeCompanies(),
+                    centre.localityIds(), companyFilter, phrase, pageNumber, pageSize), pageSize)));
         } else {
             rows = rows("place", snapshot, List.of(place.id()), phrase, pageNumber, pageSize);
         }
-        Long totalHint = phrase != null ? null : counted == null ? 0L : unlisted ? counted.centreJobs() : counted.jobs();
+        Long totalHint = phrase != null || companyFilter != null ? null
+                : counted == null ? 0L : unlisted ? counted.centreJobs() : counted.jobs();
         List<MapJob> content = rows.rows().stream().map(row -> row.toJob(List.of(jobPlace(row, place, index)))).toList();
         return new MapJobSlice(content, pageNumber, pageSize, rows.hasNext(), totalHint);
     }
+
+    /**
+     * Companies hiring at a city's centre (GEO-9E): the "office not listed" jobs grouped by company, most jobs first,
+     * for the ring drawn around the centre bubble at street zoom. These are not office locations, only who is hiring
+     * there. {@code limit} 1–{@value #MAX_CENTRE_COMPANIES} (default {@value #DEFAULT_CENTRE_COMPANIES}).
+     */
+    public CentreCompanies centreCompanies(String placeId, Integer limit) {
+        int max = limit == null ? DEFAULT_CENTRE_COMPANIES : limit;
+        if (max < 1 || max > MAX_CENTRE_COMPANIES) {
+            throw new BadRequestException("limit must be between 1 and " + MAX_CENTRE_COMPANIES);
+        }
+        Place place = gazetteer.byId(placeId).orElseThrow(() -> new ResourceNotFoundException("Place not found"));
+        MapSnapshotService.MapSnapshot snapshot = snapshot();
+        long centreJobs = snapshot.places().stream().filter(candidate -> candidate.id().equals(place.id()))
+                .mapToLong(MapSnapshotService.MapPlace::centreJobs).findFirst().orElse(0L);
+        Centre centre = centre(snapshot, offices.get(), place.id());
+        MapJobCache.Key key = new MapJobCache.Key("place-companies", snapshot.version(), centre.key(), "", 0, max);
+        List<CentreCompany> companies = centreJobs == 0 ? List.of() : cache.get(key, () -> timed("place-companies", () ->
+                queries.unlistedCompaniesAtPlace(place.id(), centre.officeCompanies(), centre.localityIds(), max).stream()
+                        .map(row -> new CentreCompany(row.getString("_id"), ((Number) row.get("jobs")).longValue()))
+                        .toList()));
+        return new CentreCompanies(place.id(), place.name(), centreJobs, companies);
+    }
+
+    /** The city-centre scope of a place: company spellings at its pinned offices and its snapshot localities (sorted). */
+    private Centre centre(MapSnapshotService.MapSnapshot snapshot, OfficeIndex index, String placeId) {
+        List<String> companies = officeCompaniesAt(index, placeId);
+        List<String> localities = snapshot.localities().stream().filter(locality -> locality.placeId().equals(placeId))
+                .map(MapSnapshotService.MapLocality::id).sorted().toList();
+        return new Centre(companies, localities,
+                placeId + "|" + String.join("\u0001", companies) + "|" + String.join(",", localities));
+    }
+
+    private record Centre(List<String> officeCompanies, List<String> localityIds, String key) { }
 
     /**
      * Jobs at one OpenStreetMap locality: jobs whose localities include it, except those of companies with a pinned
@@ -149,13 +199,24 @@ public class MapJobService {
         return new MapJobSlice(content, pageNumber, pageSize, rows.hasNext(), totalHint);
     }
 
-    /** A job's place in a list: the company's office there, else its first locality there, else the city. */
+    /**
+     * A job's place in a list: the company's office there, else its first locality there, else the city. The precision
+     * is explicit and the listing's site label for this place (GEO-9D) rides along, so a city-centre card can name the
+     * office the listing gives ("We Work") without pretending it is mapped.
+     */
     private MapJobPlace jobPlace(Row row, Place place, OfficeIndex index) {
+        String siteLabel = row.siteLabels().get(place.id());
         OfficeIndex.Office office = index.officeFor(CompanyNames.key(row.company()), place.id()).orElse(null);
-        if (office != null) return new MapJobPlace(place.id(), place.name(), null, office.id(), office.label());
+        if (office != null) {
+            return new MapJobPlace(place.id(), place.name(), null, office.id(), office.label(), null, null,
+                    MapJobPlace.OFFICE, siteLabel);
+        }
         LocalityIndex.Locality locality = firstLocality(row, place.id());
-        if (locality != null) return new MapJobPlace(place.id(), place.name(), null, null, null, locality.id(), locality.name());
-        return new MapJobPlace(place.id(), place.name(), null);
+        if (locality != null) {
+            return new MapJobPlace(place.id(), place.name(), null, null, null, locality.id(), locality.name(),
+                    MapJobPlace.LOCALITY, siteLabel);
+        }
+        return new MapJobPlace(place.id(), place.name(), null, null, null, null, null, MapJobPlace.CITY, siteLabel);
     }
 
     private LocalityIndex.Locality firstLocality(Row row, String placeId) {
@@ -306,7 +367,8 @@ public class MapJobService {
             double km = Math.round(haversineKm(lat, lng, locality.lat(), locality.lng()) * 10) / 10.0;
             return new MapJobPlace(placeId, name, km, null, null, locality.id(), locality.name());
         }
-        return city == null ? null : new MapJobPlace(placeId, name, city.distanceKm());
+        return city == null ? null : new MapJobPlace(placeId, name, city.distanceKm(), null, null, null, null,
+                MapJobPlace.CITY, row.siteLabels().get(placeId));
     }
 
     private Rows nearbyWithScopes(MapSnapshotService.MapSnapshot snapshot, java.util.Collection<String> placeIds,
@@ -362,7 +424,7 @@ public class MapJobService {
         return cache.get(key, () -> timed(endpoint, () -> Rows.of(queries.atPlaces(sorted, phrase, page, size), size)));
     }
 
-    private Rows timed(String endpoint, Supplier<Rows> query) {
+    private <T> T timed(String endpoint, Supplier<T> query) {
         Timer.Sample sample = Timer.start(registry);
         try {
             return query.get();
@@ -406,12 +468,12 @@ public class MapJobService {
     /** One job row from the projection plus its places per the shared job definition. */
     record Row(String id, String title, String company, String location, String employmentType, Double salaryMin,
                Double salaryMax, String source, LocalDateTime createdAt, LocalDateTime publishedAt, Set<String> placeIds,
-               List<String> localityIds) {
+               List<String> localityIds, Map<String, String> siteLabels) {
         static Row of(Document document) {
             return new Row(String.valueOf(document.get("_id")), document.getString("title"), document.getString("company"),
                     document.getString("location"), document.getString("employmentType"), number(document.get("salaryMin")),
                     number(document.get("salaryMax")), document.getString("source"), time(document.get("createdAt")),
-                    time(document.get("publishedAt")), placeIds(document), localityIds(document));
+                    time(document.get("publishedAt")), placeIds(document), localityIds(document), siteLabels(document));
         }
 
         MapJob toJob(List<MapJobPlace> places) {
@@ -453,6 +515,31 @@ public class MapJobService {
             return List.copyOf(ids);
         }
 
+        /**
+         * Site label per place (GEO-9D): from the first active listing whose places include it, else the listing-less
+         * job's top-level geo. A place whose listing has no label is absent.
+         */
+        private static Map<String, String> siteLabels(Document document) {
+            Map<String, String> labels = new HashMap<>();
+            Set<String> seen = new java.util.HashSet<>();
+            List<Document> listings = document.getList("sourceListings", Document.class);
+            List<Document> geos = new ArrayList<>();
+            if (listings != null && !listings.isEmpty()) {
+                for (Document listing : listings) {
+                    if (!Boolean.FALSE.equals(listing.get("active")) && listing.get("geo") instanceof Document geo) geos.add(geo);
+                }
+            } else if (document.get("geo") instanceof Document geo) {
+                geos.add(geo);
+            }
+            for (Document geo : geos) {
+                String label = geo.getString("siteLabel");
+                for (String placeId : geo.getList("placeIds", String.class, List.of())) {
+                    if (seen.add(placeId) && label != null) labels.put(placeId, label);
+                }
+            }
+            return Map.copyOf(labels);
+        }
+
         private static Double number(Object value) { return value instanceof Number number ? number.doubleValue() : null; }
 
         private static LocalDateTime time(Object value) {
@@ -471,13 +558,28 @@ public class MapJobService {
      * {@code officeId}/{@code officeLabel}: set when the job's company has a pinned office at this place;
      * otherwise {@code localityId}/{@code localityName} when the job names a locality here; neither means the listing
      * only names the city ("office not listed").
+     *
+     * <p>{@code precision} (GEO-9D) says which of those the point is: {@value #OFFICE}, {@value #LOCALITY} or
+     * {@value #CITY}, so clients need not infer it from which ids are set. {@code siteLabel} is the listing's own name for
+     * its office here ("We Work"), text only and never geocoded; null when the listing names none.
      */
     public record MapJobPlace(String id, String name, Double distanceKm, String officeId, String officeLabel,
-                              String localityId, String localityName) {
+                              String localityId, String localityName, String precision, String siteLabel) {
+        public static final String OFFICE = "office";
+        public static final String LOCALITY = "locality";
+        public static final String CITY = "city";
+
         public MapJobPlace(String id, String name, Double distanceKm) { this(id, name, distanceKm, null, null, null, null); }
 
         public MapJobPlace(String id, String name, Double distanceKm, String officeId, String officeLabel) {
             this(id, name, distanceKm, officeId, officeLabel, null, null);
+        }
+
+        /** Precision derived from which ids are set; no site label (pre-GEO-9 shape). */
+        public MapJobPlace(String id, String name, Double distanceKm, String officeId, String officeLabel,
+                           String localityId, String localityName) {
+            this(id, name, distanceKm, officeId, officeLabel, localityId, localityName,
+                    officeId != null ? OFFICE : localityId != null ? LOCALITY : CITY, null);
         }
     }
 
@@ -486,6 +588,15 @@ public class MapJobService {
                          LocalDateTime publishedAt, List<MapJobPlace> places) { }
 
     public record MapJobSlice(List<MapJob> content, int page, int size, boolean hasNext, Long totalHint) { }
+
+    /**
+     * The companies around a city's centre bubble (GEO-9E): {@code centreJobs} is the snapshot's "office not listed"
+     * count; {@code companies} are the top spellings by jobs. They say who is hiring there, never where their office is.
+     */
+    public record CentreCompanies(String placeId, String placeName, long centreJobs, List<CentreCompany> companies) { }
+
+    /** One stored company spelling and its city-centre job count. */
+    public record CentreCompany(String company, long jobs) { }
 
     /**
      * A nearby chip: a city ({@code kind} "city", its centre and all its jobs), a pinned office ({@code kind}

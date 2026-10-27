@@ -1,6 +1,9 @@
 import { describe, expect, it } from "vitest";
 import { layers, namedFlavor } from "@protomaps/basemaps";
-import { dimmingPaint, jobLayers, LAYERS, PLACE_ZOOM, placesSource, selectedFilter } from "./jobLayers";
+import {
+  CENTRE_RING_SOURCE, centreRingLayers, dimmingPaint, jobLayers, LAYERS, PLACE_ZOOM, PLACES_SOURCE, placesSource,
+  RING_LAYERS, RING_ZOOM, selectedFilter,
+} from "./jobLayers";
 
 const baseFonts = new Set(layers("protomaps", namedFlavor("light"), { lang: "en" })
   .flatMap((layer) => JSON.stringify(layer.layout?.["text-font"] ?? []).match(/Noto Sans[^"]*/g) ?? []));
@@ -65,10 +68,43 @@ describe("job map layers", () => {
     expect(names.layout["text-field"].slice(0, 3)).toEqual(["concat", ["get", "name"], " · "]);
   });
 
+  it("draws the centre-company ring from its own source at street zoom, unlike offices and localities", () => {
+    expect(RING_ZOOM).toBe(PLACE_ZOOM + 2);
+    const { circles, labels } = centreRingLayers({ hasGlyphs: true });
+    const all = [...circles, ...labels];
+    expect(all.map((layer) => layer.id)).toEqual([RING_LAYERS.line, RING_LAYERS.companies, RING_LAYERS.initials,
+      RING_LAYERS.names]);
+    all.forEach((layer) => {
+      expect(layer.source).toBe(CENTRE_RING_SOURCE);
+      expect(layer.minzoom).toBeGreaterThanOrEqual(RING_ZOOM);
+    });
+    expect(CENTRE_RING_SOURCE).not.toBe(PLACES_SOURCE);
+    const line = all.find((layer) => layer.id === RING_LAYERS.line);
+    expect(line.paint["line-color"]).toBe("#94a3b8");
+    expect(line.paint["line-dasharray"]).toEqual([2, 2]);
+    const companies = all.find((layer) => layer.id === RING_LAYERS.companies);
+    expect(companies.paint).toMatchObject({ "circle-color": "#f1f5f9", "circle-stroke-color": "#94a3b8",
+      "circle-stroke-width": 1.5, "circle-radius": 11 });
+    const placeLayers = jobLayers({ hasGlyphs: false });
+    for (const id of [LAYERS.offices, LAYERS.localities, LAYERS.points]) {
+      const layer = placeLayers.find((candidate) => candidate.id === id);
+      expect(layer.paint["circle-color"]).not.toBe(companies.paint["circle-color"]);
+      expect(layer.paint["circle-stroke-color"]).not.toBe(companies.paint["circle-stroke-color"]);
+    }
+    expect(all.find((layer) => layer.id === RING_LAYERS.names)).toMatchObject({ minzoom: 14 });
+    expect(all.find((layer) => layer.id === RING_LAYERS.names).layout["text-optional"]).toBe(true);
+    labels.forEach((layer) => layer.layout["text-font"].forEach((font) => expect(baseFonts).toContain(font)));
+    expect(centreRingLayers({ hasGlyphs: false }).labels).toEqual([]);
+  });
+
   it("dims markers for the Remote and India tabs", () => {
     const dimmed = Object.fromEntries(dimmingPaint(true).map(([layer, property, value]) => [`${layer}/${property}`, value]));
     const normal = Object.fromEntries(dimmingPaint(false).map(([layer, property, value]) => [`${layer}/${property}`, value]));
     expect(dimmed[`${LAYERS.points}/circle-opacity`]).toBeLessThan(normal[`${LAYERS.points}/circle-opacity`]);
     expect(dimmed[`${LAYERS.localities}/circle-opacity`]).toBeLessThan(normal[`${LAYERS.localities}/circle-opacity`]);
+    expect(dimmed[`${RING_LAYERS.companies}/circle-opacity`]).toBeLessThan(normal[`${RING_LAYERS.companies}/circle-opacity`]);
+    for (const id of Object.values(RING_LAYERS)) {
+      expect(Object.keys(normal).some((key) => key.startsWith(`${id}/`))).toBe(true);
+    }
   });
 });

@@ -33,7 +33,7 @@ describe("MapJobCard", () => {
     expect(screen.queryByText(/away/)).not.toBeInTheDocument();
   });
 
-  it("shows the office, else the locality, else that the office is not listed", () => {
+  it("shows the office, else the locality, else the site the listing names, else that the office is not listed", () => {
     renderCard({ job: { ...job, places: [{ ...job.places[0], officeId: "o1", officeLabel: "Bellandur", localityName: "Whitefield" }] } });
     expect(screen.getByText("📍 Bellandur")).toHaveAttribute("title", "Bengaluru, Karnataka");
     cleanup();
@@ -42,6 +42,16 @@ describe("MapJobCard", () => {
     cleanup();
     renderCard({ job });
     expect(screen.getByText("📍 Bengaluru · Office not listed")).toHaveAttribute("title", "Bengaluru, Karnataka");
+    cleanup();
+    renderCard({ job: { ...job, location: "Bengaluru- We Work", places: [{ ...job.places[0], precision: "city", siteLabel: "We Work" }] } });
+    expect(screen.getByText("📍 Bengaluru · We Work")).toHaveAttribute("title",
+      "Office named in the listing; its exact address isn't mapped yet");
+    expect(screen.queryByText(/Office not listed/)).not.toBeInTheDocument();
+    cleanup();
+    renderCard({ job: { ...job, places: [{ ...job.places[0], precision: "office", officeId: "o1", officeLabel: "Bellandur",
+      siteLabel: "We Work" }] } });
+    expect(screen.getByText("📍 Bellandur")).toBeInTheDocument();
+    expect(screen.queryByText(/We Work/)).not.toBeInTheDocument();
     cleanup();
     renderCard({ job: { ...job, location: "Remote", places: [] } });
     expect(screen.getByText("📍 Remote")).toBeInTheDocument();
