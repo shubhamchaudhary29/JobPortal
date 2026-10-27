@@ -10,7 +10,7 @@ What was used and how it was filtered (see `backend/backend/scripts/build-gazett
   population, feature code, and up to 15 ASCII alternate names (3–40 characters, not purely numeric).
 - `admin1CodesASCII.txt`: `IN.*` rows (state/union-territory codes and names, `IN.` prefix removed).
 
-`place-aliases.tsv`, `state-aliases.tsv` and `countries.tsv` are maintained by hand in this repository.
+`place-aliases.tsv`, `state-aliases.tsv`, `countries.tsv` and `foreign-qualifiers.tsv` are maintained by hand in this repository.
 
 The product must show "GeoNames (CC BY 4.0)" wherever resolved places are displayed.
 
@@ -36,7 +36,7 @@ https://osmfoundation.org/wiki/Licence/Attribution_Guidelines
     banks, ATMs and shops excluded). Columns: OSM reference, names, brand, operator, matching tag, assigned city and
     a representative point.
 - **Hand-maintained, not OSM-derived:** `locality-aliases.tsv` (if present) only maps well-known spellings to rows of
-  `in-localities.tsv`; `place-aliases.tsv`, `state-aliases.tsv`, `countries.tsv` as above.
+  `in-localities.tsv`; `place-aliases.tsv`, `state-aliases.tsv`, `countries.tsv`, `foreign-qualifiers.tsv` as above.
 
 Keep these files separate from the GeoNames-derived files and from our own data, and keep the visible
 "© OpenStreetMap contributors" credit on every map that shows them (the map attribution already includes it).

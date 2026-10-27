@@ -1,0 +1,85 @@
+# Foreign regions and cities that follow an Indian city name in some listings ("Hyderabad, Sindh", "Delhi, Ontario").
+# Unlike countries.tsv they do not make a job FOREIGN: they only stop "City, X" from reading X as an office site label
+# (GEO-9A). One name per line; compared after Gazetteer.key.
+Alabama
+Alaska
+Arizona
+Arkansas
+California
+Colorado
+Connecticut
+Delaware
+Florida
+Georgia
+Hawaii
+Idaho
+Illinois
+Indiana
+Iowa
+Kansas
+Kentucky
+Louisiana
+Maine
+Maryland
+Massachusetts
+Michigan
+Minnesota
+Mississippi
+Missouri
+Montana
+Nebraska
+Nevada
+New Hampshire
+New Jersey
+New Mexico
+New York
+North Carolina
+North Dakota
+Ohio
+Oklahoma
+Oregon
+Pennsylvania
+Rhode Island
+South Carolina
+South Dakota
+Tennessee
+Texas
+Utah
+Vermont
+Virginia
+Washington
+West Virginia
+Wisconsin
+Wyoming
+District of Columbia
+Ontario
+Quebec
+British Columbia
+Alberta
+Manitoba
+Saskatchewan
+Nova Scotia
+New Brunswick
+Newfoundland
+New South Wales
+Victoria
+Queensland
+Tasmania
+Western Australia
+South Australia
+Sindh
+Balochistan
+Baluchistan
+Khyber Pakhtunkhwa
+Gilgit Baltistan
+Karachi
+Lahore
+Islamabad
+Dhaka
+Chittagong
+Kathmandu
+Colombo
+Springfield
+London
+Toronto
+Dubai

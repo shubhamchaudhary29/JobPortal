@@ -38,10 +38,13 @@ public class Gazetteer {
     static final String PLACE_ALIASES = "geo/place-aliases.tsv";
     static final String STATE_ALIASES = "geo/state-aliases.tsv";
     static final String COUNTRIES = "geo/countries.tsv";
+    /** Foreign regions and cities that are never an office site label after an Indian city (GEO-9A). */
+    static final String FOREIGN_QUALIFIERS = "geo/foreign-qualifiers.tsv";
     /** Written as {@code .tsv.gz} instead when it exceeds 4 MB; either form is read. */
     static final String LOCALITIES = "geo/in-localities.tsv";
     static final String LOCALITY_ALIASES = "geo/locality-aliases.tsv";
-    private static final List<String> DATA_FILES = List.of(PLACES, ADMIN1, PLACE_ALIASES, STATE_ALIASES, COUNTRIES);
+    private static final List<String> DATA_FILES = List.of(PLACES, ADMIN1, PLACE_ALIASES, STATE_ALIASES, COUNTRIES,
+            FOREIGN_QUALIFIERS);
     private static final Pattern DROPPED = Pattern.compile("['.’]");
     private static final Pattern SEPARATORS = Pattern.compile("[^\\p{L}\\p{N}]+");
     private static final Pattern MARKS = Pattern.compile("\\p{M}+");
@@ -55,6 +58,7 @@ public class Gazetteer {
     private final Map<String, String> states;
     private final Set<String> foreign;
     private final Set<String> india;
+    private final Set<String> foreignQualifiers;
     private final String dataHash;
     private final LocalityIndex localities;
     private final Map<String, LocalityIndex.Locality> localityAliases;
@@ -127,6 +131,9 @@ public class Gazetteer {
         this.states = Map.copyOf(stateIndex);
         this.foreign = Set.copyOf(foreignKeys);
         this.india = Set.copyOf(indiaKeys);
+        Set<String> qualifierKeys = new HashSet<>();
+        for (String[] row : rows(raw.get(FOREIGN_QUALIFIERS), false)) qualifierKeys.add(key(row[0]));
+        this.foreignQualifiers = Set.copyOf(qualifierKeys);
         this.dataHash = hash(raw);
         log.info("event=geo_gazetteer_loaded places={} aliases={} states={} localities={} data_hash={}",
                 byId.size(), aliases.size(), states.size(), localities.size(), dataHash);
@@ -154,6 +161,11 @@ public class Gazetteer {
     public Optional<String> admin1Name(String code) { return Optional.ofNullable(code == null ? null : admin1Names.get(code)); }
     public boolean isForeign(String key) { return foreign.contains(key); }
     public boolean isIndia(String key) { return india.contains(key); }
+    /**
+     * A foreign region or city from {@code foreign-qualifiers.tsv} ("Sindh", "Ontario"): not a country, so it never
+     * makes a job FOREIGN, but "Hyderabad, Sindh" must not read "Sindh" as an office site label.
+     */
+    public boolean isForeignQualifier(String key) { return foreignQualifiers.contains(key); }
     /** {@link #key}s a place is known by: its name and every alias that points to it ("bengaluru", "bangalore"). */
     public Set<String> cityKeys(String placeId) { return placeId == null ? Set.of() : cityKeys.getOrDefault(placeId, Set.of()); }
 

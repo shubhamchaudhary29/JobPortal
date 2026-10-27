@@ -117,7 +117,7 @@ class GeoResolverTest {
     @Test
     void parserVersionIsPartOfTheResolutionVersion() {
         assertTrue(RESOLVER.version().startsWith(GeoResolver.PARSER_VERSION + "-"));
-        assertEquals(3, GeoResolver.PARSER_VERSION);
+        assertEquals(4, GeoResolver.PARSER_VERSION);
     }
 
     @ParameterizedTest
@@ -347,6 +347,98 @@ class GeoResolverTest {
     private static List<String> localityNames(GeoResolution result) {
         return result.localityIds().stream().map(id -> GAZETTEER.localityById(id).orElseThrow().name()).toList();
     }
+
+    // GEO-9A: real ATS labels that were UNRESOLVED before the edge-city split and City, Site labels.
+
+    @Test
+    void edgeCitySplitKeepsTheOfficeNameAsSiteLabel() {
+        for (String input : List.of("Bengaluru- We Work", "Bengaluru - We Work")) {
+            GeoResolution result = resolve(input);
+            assertEquals("Bengaluru", name(single(result)), input);
+            assertEquals("We Work", result.siteLabel(), input);
+            assertTrue(result.localityIds().isEmpty(), input);
+        }
+        GeoResolution building = resolve("BENGALURU-BLDG 1 ~ Hitech, Defence & Aerospace Park");
+        assertTrue(building.placeIds().stream().map(GeoResolverTest::name).toList().contains("Bengaluru"));
+        assertTrue(building.siteLabel().startsWith("BLDG 1"), building.siteLabel());
+    }
+
+    @Test
+    void edgeCitySplitDropsCountryTokens() {
+        GeoResolution result = resolve("India-Bangalore");
+        assertEquals("Bengaluru", name(single(result)));
+        assertNull(result.siteLabel());
+        assertNull(resolve("IND - Bengaluru - IN").siteLabel());
+        assertEquals("Bengaluru", name(single(resolve("IND - Bengaluru - IN"))));
+    }
+
+    @Test
+    void edgeCitySplitReadsWorkModesAndLocalitiesNotSites() {
+        GeoResolution pune = resolve("Pune - Remote");
+        assertEquals("Pune", name(single(pune)));
+        assertTrue(pune.remote());
+        assertNull(pune.siteLabel());
+        GeoResolution hyderabad = resolve("Hyderabad - Hybrid");
+        assertEquals("Hyderabad", name(single(hyderabad)));
+        assertFalse(hyderabad.remote());
+        assertNull(hyderabad.siteLabel());
+        GeoResolution whitefield = resolve("Bengaluru - Whitefield");
+        assertEquals("Bengaluru", name(single(whitefield)));
+        assertEquals(List.of("Whitefield"), localityNames(whitefield));
+        assertNull(whitefield.siteLabel());
+    }
+
+    @Test
+    void edgeCitySplitNeverPlacesAForeignLabel() {
+        assertTrue(resolve("London - Bengaluru Tech Park").placeIds().isEmpty());
+        assertTrue(resolve("Engineering - Platform").placeIds().isEmpty());
+    }
+
+    @Test
+    void cityThenUnknownSegmentKeepsTheCityAndTheSiteLabel() {
+        assertSite("Mumbai, Urmi", "Mumbai", "Urmi");
+        assertSite("Mumbai, OUC", "Mumbai", "OUC");
+        assertSite("Chennai, Kochar Jade", "Chennai", "Kochar Jade");
+        assertSite("Gurugram, Star Center", "Gurugram", "Star Center");
+    }
+
+    @Test
+    void siteLabelsNeedALargeCityAndAnUntrustedQualifierStillDropsIt() {
+        assertTrue(resolve("Delhi, NY").placeIds().isEmpty(), "two letters is a state or country code");
+        assertTrue(resolve("Bengaluru, CA").placeIds().isEmpty());
+        assertTrue(resolve("Hyderabad, Sindh").placeIds().isEmpty(), "a listed foreign region");
+        assertTrue(resolve("Delhi, Springfield").placeIds().isEmpty(), "a listed foreign city");
+        assertTrue(resolve("Delhi, Ontario").placeIds().isEmpty());
+        assertNull(resolve("Bengaluru, EGL").siteLabel(), "EGL is a known locality, not a site");
+        assertNull(resolve("Bengaluru").siteLabel());
+        assertNull(resolve("Remote").siteLabel());
+    }
+
+    @Test
+    void siteLabelNormalization() {
+        assertEquals("We Work", GeoResolver.siteLabel("  - We   Work ~ ", GAZETTEER));
+        assertEquals("Tower B", GeoResolver.siteLabel(", Tower B /", GAZETTEER));
+        assertNull(GeoResolver.siteLabel(null, GAZETTEER));
+        assertNull(GeoResolver.siteLabel(" - ", GAZETTEER));
+        assertNull(GeoResolver.siteLabel("A", GAZETTEER));
+        assertNull(GeoResolver.siteLabel("560103", GAZETTEER), "a postal code");
+        assertNull(GeoResolver.siteLabel("12", GAZETTEER));
+        for (String notSite : List.of("Remote", "Hybrid", "On-site", "WFH", "India", "Karnataka", "Bangalore", "Mumbai",
+                "Multiple Locations")) {
+            assertNull(GeoResolver.siteLabel(notSite, GAZETTEER), notSite);
+        }
+        String longLabel = GeoResolver.siteLabel("Tower ".repeat(20) + "End", GAZETTEER);
+        assertTrue(longLabel.length() <= GeoResolver.MAX_SITE_LABEL_LENGTH, longLabel);
+        assertTrue(longLabel.endsWith("Tower"), "cut on a word boundary: " + longLabel);
+    }
+
+    private static void assertSite(String input, String city, String siteLabel) {
+        GeoResolution result = resolve(input);
+        assertEquals(city, name(single(result)), input);
+        assertEquals(siteLabel, result.siteLabel(), input);
+    }
+
+    private static String name(String placeId) { return GAZETTEER.byId(placeId).orElseThrow().name(); }
 
     private static GeoResolution resolve(String input) { return RESOLVER.resolve(input, null); }
 

@@ -26,14 +26,20 @@ import org.springframework.stereotype.Component;
  * City"). A locality alone ("Whitefield") resolves only through the curated {@code locality-aliases.tsv}. An Adzuna
  * point at least {@value #SNAP_MIN_CENTRE_KM} km from its single city's centre snaps to a locality within
  * {@value #SNAP_MAX_KM} km; the raw point is never a pin. Every locality belongs to one of the resolved places.
+ *
+ * <p>Site labels (GEO-9A): ATS feeds name the office after the city ("Mumbai, Urmi", "Bengaluru- We Work"). After a
+ * large city, an unknown comma segment is kept as the job's {@code siteLabel} instead of discarding the whole location;
+ * a candidate that placed nothing is retried split on {@code - – — ~ :} ("India-Bangalore"). The label is text only,
+ * never geocoded, and only a fallback: anything that resolved before GEO-9 resolves to the same places.
  */
 @Component
 public class GeoResolver {
     /**
      * 2: remote markers scoped to a foreign country with no Indian location are FOREIGN, not REMOTE (GEO-6A).
      * 3: OpenStreetMap localities inside the resolved city, curated locality aliases, Adzuna point snapping (GEO-8B).
+     * 4: edge-city split and City, Site labels; siteLabel (GEO-9A).
      */
-    public static final int PARSER_VERSION = 3;
+    public static final int PARSER_VERSION = 4;
     static final int MAX_INPUT_LENGTH = 300;
     static final int MAX_PLACES = 10;
     static final int MAX_LOCALITIES = 10;
@@ -45,6 +51,7 @@ public class GeoResolver {
     static final long ALTERNATE_NAME_MIN_POPULATION = 50_000;
     /** A state/UT name that is also a same-state city this large is a place (Delhi, Puducherry, Chandigarh). */
     static final long CITY_STATE_MIN_POPULATION = 300_000;
+    static final int MAX_SITE_LABEL_LENGTH = 80;
 
     private static final Pattern POSTAL_CODE = Pattern.compile("\\b\\d{6}\\b");
     private static final Pattern WORK_MODE_PARENTHETICAL = Pattern.compile(
@@ -62,6 +69,14 @@ public class GeoResolver {
     private static final Set<String> COUNTRY_PHRASES = Set.of("pan india", "anywhere in india", "all india",
             "across india");
     /** Trailing block/stage/phase/sector parts, stripped one at a time when the full locality name is unknown. */
+    /** Separators of the edge-city split ("Bengaluru- We Work", "India-Bangalore", "BENGALURU-BLDG 1 ~ Hitech"). */
+    private static final Pattern EDGE_SEPARATOR = Pattern.compile("\\s*[-\u2013\u2014~:]\\s*");
+    private static final Pattern EDGE_SEPARATOR_PRESENT = Pattern.compile("[-\u2013\u2014~:]");
+    private static final Set<String> COUNTRY_TOKENS = Set.of("ind", "in", "india");
+    private static final Pattern SITE_LABEL_EDGES = Pattern.compile("^[\\s\\-\u2013\u2014~:,/]+|[\\s\\-\u2013\u2014~:,/]+$");
+    /** Generic words an ATS puts where a site would go; never a site label. */
+    private static final Set<String> NOT_SITE_WORDS = Set.of("location", "locations", "multiple locations",
+            "various locations", "other", "others", "tbd", "na", "n a", "any");
     private static final Pattern LOCALITY_SUFFIX = Pattern.compile(
             "\\s+(?:\\d+(?:st|nd|rd|th)?\\s+(?:block|stage|phase|sector)|(?:block|stage|phase|sector)\\s+\\d+[a-z]?)$");
 
@@ -98,7 +113,8 @@ public class GeoResolver {
         List<String> localityIds = signals.localities.stream()
                 .filter(id -> gazetteer.localityById(id).map(locality -> placeIds.contains(locality.placeId())).orElse(false))
                 .limit(MAX_LOCALITIES).toList();
-        return new GeoResolution(signals.status(), placeIds, signals.remote(), point, version, localityIds);
+        String siteLabel = placeIds.isEmpty() ? null : signals.siteLabel;
+        return new GeoResolution(signals.status(), placeIds, signals.remote(), point, version, localityIds, siteLabel);
     }
 
     /**
@@ -162,6 +178,8 @@ public class GeoResolver {
         for (String candidate : CANDIDATE_SEPARATOR.split(text)) {
             if (candidate.isBlank()) continue;
             Signals own = candidate(candidate);
+            // Fallback only: a candidate that placed nothing at all is retried split on - – — ~ : (GEO-9A).
+            if (!own.any()) own = edgeSplit(candidate);
             if (!own.any()) unplaced.add(Gazetteer.key(candidate));
             signals.merge(own);
         }
@@ -205,13 +223,105 @@ public class GeoResolver {
         return signals.scopeRemote();
     }
 
+    /**
+     * The edge-city split (GEO-9A), for a candidate that placed nothing: "Bengaluru- We Work", "India-Bangalore",
+     * "Pune - Remote". Country tokens at either end are dropped; the first part that is a place wins, else the last.
+     * The other parts are a locality of that place, a work mode or remote marker, or else the site label. A foreign part
+     * ("London - Bengaluru") places nothing.
+     */
+    private Signals edgeSplit(String raw) {
+        Signals signals = new Signals();
+        String text = WORK_MODE_PARENTHETICAL.matcher(raw).replaceAll(" ");
+        if (!EDGE_SEPARATOR_PRESENT.matcher(text).find()) return signals;
+        List<String> parts = new ArrayList<>();
+        for (String part : EDGE_SEPARATOR.split(text)) {
+            if (!Gazetteer.key(part).isEmpty()) parts.add(part.trim());
+        }
+        while (!parts.isEmpty() && COUNTRY_TOKENS.contains(Gazetteer.key(parts.get(0)))) parts.remove(0);
+        while (!parts.isEmpty() && COUNTRY_TOKENS.contains(Gazetteer.key(parts.get(parts.size() - 1)))) {
+            parts.remove(parts.size() - 1);
+        }
+        if (parts.isEmpty() || parts.stream().anyMatch(part -> gazetteer.isForeign(Gazetteer.key(part)))) return signals;
+        int placeIndex = edgePlace(parts.get(0)) != null ? 0
+                : parts.size() > 1 && edgePlace(parts.get(parts.size() - 1)) != null ? parts.size() - 1 : -1;
+        if (placeIndex < 0) return signals;
+        Place place = edgePlace(parts.get(placeIndex));
+        List<String> remainder = new ArrayList<>();
+        for (int index = 0; index < parts.size(); index++) {
+            if (index == placeIndex) continue;
+            String part = parts.get(index);
+            String key = Gazetteer.key(part);
+            if (WORK_MODE_WORDS.contains(key) || gazetteer.isIndia(key)) continue;
+            if (remoteInIndia(part)) { signals.remoteOpen = true; continue; }
+            remainder.add(part);
+        }
+        signals.places.add(place.id());
+        if (remainder.isEmpty()) return signals;
+        // Trailing state / India / postal-code segments say where, not which office ("We Work, Karnataka").
+        List<String> commaSegments = new ArrayList<>(List.of(String.join(" - ", remainder).split(",")));
+        while (commaSegments.size() > 1 && isQualifier(Gazetteer.key(commaSegments.get(commaSegments.size() - 1)))) {
+            commaSegments.remove(commaSegments.size() - 1);
+        }
+        String rest = String.join(",", commaSegments);
+        LocalityIndex.Locality locality = locality(Gazetteer.key(rest), place);
+        if (locality == null) locality = locality(Gazetteer.key(commaSegments.get(0)), place);
+        if (locality != null) signals.localities.add(locality.id());
+        else signals.siteLabel = siteLabel(rest, gazetteer);
+        return signals;
+    }
+
+    /** "Remote", "WFH", "Remote - India": an open remote marker, never a site label. */
+    private boolean remoteInIndia(String part) {
+        if (REMOTE_WORDS.contains(Gazetteer.key(part))) return true;
+        Matcher remote = REMOTE_PREFIX.matcher(part);
+        if (!remote.matches()) return false;
+        String rest = Gazetteer.key(remote.group(1));
+        return rest.isEmpty() || gazetteer.isIndia(rest);
+    }
+
+    /** One part of the edge-city split as a place: an ordinary lookup, never India, a state, a mode or remote word. */
+    private Place edgePlace(String part) {
+        String key = Gazetteer.key(part);
+        if (key.isEmpty() || isQualifier(key) || WORK_MODE_WORDS.contains(key) || REMOTE_WORDS.contains(key)) return null;
+        return lookup(key, null);
+    }
+
+    /**
+     * The normalized site label, or null when it names nothing useful: trimmed, whitespace collapsed, edge punctuation
+     * ({@code - – — ~ : , /}) stripped and cut to {@value #MAX_SITE_LABEL_LENGTH} characters on a word boundary; null
+     * when shorter than two characters, only digits (a postal code), a remote or work-mode word, or a state, India or
+     * a known place name, which say where rather than which office.
+     */
+    static String siteLabel(String raw, Gazetteer gazetteer) {
+        if (raw == null) return null;
+        String label = SITE_LABEL_EDGES.matcher(raw.trim().replaceAll("\\s+", " ")).replaceAll("");
+        if (label.length() > MAX_SITE_LABEL_LENGTH) {
+            int cut = label.lastIndexOf(' ', MAX_SITE_LABEL_LENGTH);
+            label = SITE_LABEL_EDGES.matcher(label.substring(0, cut > 0 ? cut : MAX_SITE_LABEL_LENGTH)).replaceAll("");
+        }
+        String key = Gazetteer.key(label);
+        if (label.length() < 2 || key.isEmpty() || key.replace(" ", "").chars().allMatch(Character::isDigit)) return null;
+        if (REMOTE_WORDS.contains(key) || WORK_MODE_WORDS.contains(key) || isRemoteWord(label) || NOT_SITE_WORDS.contains(key)
+                || COUNTRY_PHRASES.contains(key)) {
+            return null;
+        }
+        if (gazetteer.isIndia(key) || gazetteer.stateCode(key).isPresent() || !gazetteer.aliasMatches(key).isEmpty()
+                || !gazetteer.primaryMatches(key).isEmpty()) {
+            return null;
+        }
+        return label;
+    }
+
     private void segments(String candidate, Signals signals) {
         List<String> segments = new ArrayList<>();
+        // The segment as written, for the site label ("Kochar Jade", not "kochar jade").
+        List<String> written = new ArrayList<>();
         for (String segment : candidate.split(",")) {
             String key = Gazetteer.key(segment);
             if (key.isEmpty() || WORK_MODE_WORDS.contains(key)) continue;
             if (REMOTE_WORDS.contains(key)) { signals.remoteOpen = true; continue; }
             segments.add(key);
+            written.add(segment.trim());
         }
         if (segments.isEmpty()) return;
         // Any foreign segment ("San Francisco, CA, United States", or "United States, Remote") means no Indian place.
@@ -223,6 +333,7 @@ public class GeoResolver {
             return;
         }
         String admin1 = null;
+        List<String> siteParts = new ArrayList<>();
         for (int index = 1; index < segments.size(); index++) {
             String segment = segments.get(index);
             if (gazetteer.isIndia(segment)) continue;
@@ -232,7 +343,12 @@ public class GeoResolver {
             // named in another segment is Indian too ("Bengaluru, Whitefield"), and so is an unknown part followed by a
             // place, since hierarchies grow to the right ("Sector V, Salt Lake, Kolkata").
             if (lookup(segment, null) == null && !localityOfAnotherSegment(segments, index)
-                    && !placeFollows(segments, index)) return;
+                    && !placeFollows(segments, index)) {
+                // After a large city, an unknown segment is the ATS's office name ("Mumbai, Urmi"), not a reason to drop
+                // the city (GEO-9A); a two-letter or listed foreign qualifier still is ("Delhi, NY", "Hyderabad, Sindh").
+                if (!siteSegment(segments, index)) return;
+                siteParts.add(written.get(index));
+            }
         }
         List<String> names = segments.stream().filter(segment -> !isQualifier(segment)).toList();
         if (names.size() == 1) {
@@ -281,6 +397,7 @@ public class GeoResolver {
             return;
         }
         signals.places.add(place.id());
+        if (!siteParts.isEmpty()) signals.siteLabel = siteLabel(String.join(", ", siteParts), gazetteer);
         if (fusedLocality != null) signals.localities.add(fusedLocality.id());
         // All segments together named the city ("New Delhi"): none of them is a locality.
         if (placeIndex < 0) return;
@@ -289,6 +406,21 @@ public class GeoResolver {
             LocalityIndex.Locality locality = locality(segments.get(index), place);
             if (locality != null) signals.localities.add(locality.id());
         }
+    }
+
+    /**
+     * Rule A (GEO-9A): segment {@code index}, unknown and not a locality, may be a site label only after a first segment
+     * that is a city of at least {@value #LIST_MODE_MIN_POPULATION} people, and only when it is not foreign, not a state,
+     * not a listed foreign region or city and not two letters (a US state or country code: "Delhi, NY", "Bengaluru, CA").
+     */
+    private boolean siteSegment(List<String> segments, int index) {
+        String first = segments.get(0);
+        String segment = segments.get(index);
+        if (isQualifier(first)) return false;
+        Place city = lookup(first, null);
+        return city != null && city.population() >= LIST_MODE_MIN_POPULATION && !gazetteer.isForeign(segment)
+                && !gazetteer.isForeignQualifier(segment) && gazetteer.stateCode(segment).isEmpty()
+                && segment.replace(" ", "").length() > 2;
     }
 
     /** India, a state, or a postal-code-only segment: says where, but never names a city or locality. */
@@ -421,6 +553,8 @@ public class GeoResolver {
         boolean state;
         boolean country;
         boolean foreign;
+        /** The first site label found (GEO-9A); kept only when the job has a place. */
+        String siteLabel;
 
         boolean any() { return !places.isEmpty() || remoteOpen || remoteForeign || state || country || foreign; }
 
@@ -443,6 +577,7 @@ public class GeoResolver {
             state |= other.state;
             country |= other.country;
             foreign |= other.foreign;
+            if (siteLabel == null) siteLabel = other.siteLabel;
         }
 
         GeoStatus status() {
