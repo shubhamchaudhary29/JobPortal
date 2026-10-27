@@ -4,7 +4,8 @@ const { apiGet } = vi.hoisted(() => ({ apiGet: vi.fn() }));
 vi.mock("./helper", () => ({ default: { get: apiGet } }));
 
 import {
-  getLocalityJobs, getMapSnapshot, getNearbyJobs, getOfficeJobs, getPlaceJobs, getUnplacedJobs, isAbortError,
+  getCentreCompanies, getLocalityJobs, getMapSnapshot, getNearbyJobs, getOfficeJobs, getPlaceJobs, getUnplacedJobs,
+  isAbortError,
 } from "./map-service";
 
 const slice = { content: [{ id: "job-1" }], page: 0, size: 20, hasNext: false, totalHint: 1 };
@@ -40,6 +41,25 @@ describe("map service", () => {
     await getPlaceJobs("1277333", { scope: undefined });
     expect(apiGet).toHaveBeenLastCalledWith("/api/v1/jobs/map/places/1277333/jobs",
       { params: { page: 0, size: 20 }, signal: undefined });
+  });
+
+  it("passes a centre company only when given", async () => {
+    await getPlaceJobs("1277333", { scope: "unlisted", company: "Wonka & Co", page: 1 });
+    expect(apiGet).toHaveBeenLastCalledWith("/api/v1/jobs/map/places/1277333/jobs",
+      { params: { scope: "unlisted", company: "Wonka & Co", page: 1, size: 20 }, signal: undefined });
+    await getPlaceJobs("1277333", { scope: "unlisted", company: "" });
+    expect(apiGet).toHaveBeenLastCalledWith("/api/v1/jobs/map/places/1277333/jobs",
+      { params: { scope: "unlisted", page: 0, size: 20 }, signal: undefined });
+  });
+
+  it("requests a city's centre companies with a limit and the caller's signal", async () => {
+    const signal = new AbortController().signal;
+    const centre = { placeId: "1277333", placeName: "Bengaluru", centreJobs: 5, companies: [{ company: "Wonka", jobs: 3 }] };
+    apiGet.mockResolvedValue({ data: centre });
+    await expect(getCentreCompanies("12/34", { limit: 40, signal })).resolves.toEqual(centre);
+    expect(apiGet).toHaveBeenCalledWith("/api/v1/jobs/map/places/12%2F34/companies", { params: { limit: 40 }, signal });
+    await getCentreCompanies("1277333");
+    expect(apiGet).toHaveBeenLastCalledWith("/api/v1/jobs/map/places/1277333/companies", { params: {}, signal: undefined });
   });
 
   it("requests one locality's jobs with an encoded id", async () => {

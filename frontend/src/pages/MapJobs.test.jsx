@@ -59,7 +59,7 @@ vi.mock("../map/tilesManifest", async (original) => ({
 }));
 const service = vi.hoisted(() => ({
   getMapSnapshot: vi.fn(), getPlaceJobs: vi.fn(), getNearbyJobs: vi.fn(), getUnplacedJobs: vi.fn(), getOfficeJobs: vi.fn(),
-  getLocalityJobs: vi.fn(),
+  getLocalityJobs: vi.fn(), getCentreCompanies: vi.fn(),
 }));
 vi.mock("../services/map-service", async (original) => ({ ...(await original()), ...service }));
 vi.mock("../components/Header", () => ({ default: () => <header>Header</header> }));
@@ -571,5 +571,82 @@ describe("MapJobs page", () => {
     expect(map.off).toHaveBeenCalledWith("click", "localities-points", expect.any(Function));
     expect(map.removeSource).toHaveBeenCalledWith("places");
     expect(map.remove).toHaveBeenCalled();
+  });
+});
+
+describe("MapJobs centre-company ring", () => {
+  const centre = { placeId: BENGALURU.id, placeName: "Bengaluru", centreJobs: 214,
+    companies: [{ company: "Wonka", jobs: 120 }, { company: "Hooli", jobs: 94 }] };
+
+  beforeEach(() => {
+    maplibre.instances.length = 0;
+    Object.values(service).forEach((mock) => mock.mockReset());
+    service.getMapSnapshot.mockResolvedValue(snapshot);
+    service.getPlaceJobs.mockResolvedValue(slice([job("job-1")], { totalHint: 214 }));
+    service.getCentreCompanies.mockResolvedValue(centre);
+  });
+  afterEach(cleanup);
+
+  /** Every listener for {@code event} (JobsMap's and the ring hook's), as MapLibre would call them. */
+  const fire = (map, event) => act(() => map.handlers.filter((args) => args[0] === event && typeof args[1] === "function")
+    .forEach((args) => args[1]({})));
+
+  it("draws the ring from its own source under office pins, with a caption, only at street zoom", async () => {
+    renderAt("/jobs/map");
+    const map = await readyMap();
+    expect(map.sources["centre-ring"]).toBeDefined();
+    expect(map.addLayer).toHaveBeenCalledWith(expect.objectContaining({ id: "centre-companies", source: "centre-ring" }),
+      "offices-points");
+    await waitFor(() => expect(map.sources.places.setData).toHaveBeenCalled());
+    expect(service.getCentreCompanies).not.toHaveBeenCalled();
+
+    map.getZoom = () => 13;
+    fire(map, "moveend");
+    await waitFor(() => expect(service.getCentreCompanies).toHaveBeenCalledWith(BENGALURU.id,
+      expect.objectContaining({ limit: 40 })));
+    await waitFor(() => expect(map.sources["centre-ring"].setData).toHaveBeenLastCalledWith(expect.objectContaining({
+      features: expect.arrayContaining([expect.objectContaining({ properties: expect.objectContaining({ company: "Wonka" }) })]),
+    })));
+    expect(screen.getByRole("note")).toHaveTextContent(
+      "Grey circles: companies whose listings only name the city. Shown around the centre, not at their offices.");
+    // The ring never reaches the clustered source, so cluster sums are unchanged.
+    for (const [data] of map.sources.places.setData.mock.calls) {
+      expect(data.features.every((feature) => feature.properties.kind !== undefined)).toBe(true);
+      expect(data.features.some((feature) => "company" in feature.properties)).toBe(false);
+    }
+
+    map.getZoom = () => 11;
+    fire(map, "moveend");
+    await waitFor(() => expect(screen.queryByRole("note")).not.toBeInTheDocument());
+    expect(map.sources["centre-ring"].setData).toHaveBeenLastCalledWith(expect.objectContaining({ features: [] }));
+  });
+
+  it("opens a ring company as the city's office-not-listed list for that company, with a removable chip", async () => {
+    renderAt("/jobs/map");
+    const map = await readyMap();
+    act(() => map.handler("click", "centre-companies")({
+      features: [{ properties: { placeId: BENGALURU.id, company: "Wonka" } }],
+    }));
+
+    await waitFor(() => expect(params().get("company")).toBe("Wonka"));
+    expect(params().get("place")).toBe(BENGALURU.id);
+    expect(params().get("scope")).toBe("unlisted");
+    await waitFor(() => expect(service.getPlaceJobs).toHaveBeenLastCalledWith(BENGALURU.id,
+      expect.objectContaining({ scope: "unlisted", company: "Wonka", page: 0 })));
+    expect(await screen.findByText("Company: Wonka")).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "Remove company filter Wonka" }));
+    await waitFor(() => expect(params().has("company")).toBe(false));
+    expect(params().get("scope")).toBe("unlisted");
+    await waitFor(() => expect(service.getPlaceJobs).toHaveBeenLastCalledWith(BENGALURU.id,
+      expect.objectContaining({ scope: "unlisted", company: null })));
+    expect(screen.queryByText(/Company:/)).not.toBeInTheDocument();
+  });
+
+  it("ignores a company in the URL unless the list is the city centre", async () => {
+    renderAt(`/jobs/map?place=${BENGALURU.id}&company=Wonka`);
+    await waitFor(() => expect(service.getPlaceJobs).toHaveBeenCalled());
+    expect(service.getPlaceJobs).toHaveBeenLastCalledWith(BENGALURU.id, expect.objectContaining({ company: null }));
+    expect(screen.queryByText(/Company:/)).not.toBeInTheDocument();
   });
 });

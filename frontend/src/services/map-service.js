@@ -48,10 +48,18 @@ export const getMapSnapshot = ({ signal } = {}) => get(apiRoutes.jobs.mapSnapsho
 
 /**
  * Slice of jobs at one place: {@code {content, page, size, hasNext, totalHint}}. {@code scope} "unlisted" keeps only
- * the jobs at the city centre (no pinned office or locality); omitted means all of them.
+ * the jobs at the city centre (no pinned office or locality); omitted means all of them. {@code company} (exact stored
+ * spelling, only with scope "unlisted") narrows that to one company of the centre ring.
  */
-export const getPlaceJobs = (placeId, { scope, q, page = 0, size = PAGE_SIZE, signal } = {}) =>
-  get(apiRoutes.jobs.mapPlaceJobs(placeId), { scope, q: q?.trim(), page, size }, signal);
+export const getPlaceJobs = (placeId, { scope, company, q, page = 0, size = PAGE_SIZE, signal } = {}) =>
+  get(apiRoutes.jobs.mapPlaceJobs(placeId), { scope, company, q: q?.trim(), page, size }, signal);
+
+/**
+ * Companies at a city's centre, for the street-zoom ring: {@code {placeId, placeName, centreJobs, companies: [{company,
+ * jobs}]}}, most jobs first. They are who is hiring there, not where their offices are.
+ */
+export const getCentreCompanies = (placeId, { limit, signal } = {}) =>
+  get(apiRoutes.jobs.mapPlaceCompanies(placeId), { limit }, signal);
 
 /**
  * Places within a radius and their jobs: {@code {centerLat, centerLng, radiusKm, places, jobs}}. Coordinates are

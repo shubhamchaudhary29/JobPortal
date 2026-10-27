@@ -18,6 +18,8 @@ describe("versioned API routes", () => {
     expect(apiRoutes.jobs.mapSnapshot).toBe("/api/v1/jobs/map/snapshot");
     expect(apiRoutes.jobs.mapPlaceJobs("1277333")).toBe("/api/v1/jobs/map/places/1277333/jobs");
     expect(apiRoutes.jobs.mapPlaceJobs("a/b c")).toBe("/api/v1/jobs/map/places/a%2Fb%20c/jobs");
+    expect(apiRoutes.jobs.mapPlaceCompanies("1277333")).toBe("/api/v1/jobs/map/places/1277333/companies");
+    expect(apiRoutes.jobs.mapPlaceCompanies("a/b")).toBe("/api/v1/jobs/map/places/a%2Fb/companies");
     expect(apiRoutes.jobs.mapNearby).toBe("/api/v1/jobs/map/nearby");
     expect(apiRoutes.jobs.mapUnplaced).toBe("/api/v1/jobs/map/unplaced");
     expect(apiRoutes.jobs.mapOfficeJobs("a/b")).toBe("/api/v1/jobs/map/offices/a%2Fb/jobs");

@@ -2,14 +2,17 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import BaseMap from "../../map/BaseMap";
 import { circleBounds, circleRing, radiusForView, roundToGrid } from "../../map/geo";
 import {
-  AREA_SOURCE, dimmingPaint, EMPTY_COLLECTION, jobLayers, LAYERS, PLACE_ZOOM, PLACES_SOURCE, placesSource, selectedFilter,
+  AREA_SOURCE, CENTRE_RING_SOURCE, centreRingLayers, dimmingPaint, EMPTY_COLLECTION, jobLayers, LAYERS, PLACE_ZOOM,
+  PLACES_SOURCE, placesSource, RING_LAYERS, selectedFilter,
 } from "../../map/jobLayers";
 import { snapshotToGeoJson } from "../../map/placesGeoJson";
+import { useCentreCompanies } from "../../map/useCentreCompanies";
 import { formatViewHash, parseViewHash, replaceHash } from "../../map/viewHash";
 
 const AREA_BUTTON_DELAY_MS = 500;
 const OWN_MOVE = Object.freeze({ ownMove: true });
-const CLICKABLE = [LAYERS.clusters, LAYERS.points, LAYERS.offices, LAYERS.localities];
+const CLICKABLE = [LAYERS.clusters, LAYERS.points, LAYERS.offices, LAYERS.localities, RING_LAYERS.companies];
+const RING_CAPTION = "Grey circles: companies whose listings only name the city. Shown around the centre, not at their offices.";
 const MARKERS_MARK = "jobs-map:markers-visible";
 
 const prefersReducedMotion = () => Boolean(globalThis.matchMedia?.("(prefers-reduced-motion: reduce)").matches);
@@ -33,8 +36,8 @@ const areaGeoJson = (area) => !area ? EMPTY_COLLECTION : {
 function removeOverlay(map) {
   // The map may already be gone (BaseMap removes it on unmount); there is nothing left to clean up then.
   try {
-    Object.values(LAYERS).forEach((id) => { if (map.getLayer(id)) map.removeLayer(id); });
-    [PLACES_SOURCE, AREA_SOURCE].forEach((id) => { if (map.getSource(id)) map.removeSource(id); });
+    [...Object.values(LAYERS), ...Object.values(RING_LAYERS)].forEach((id) => { if (map.getLayer(id)) map.removeLayer(id); });
+    [PLACES_SOURCE, AREA_SOURCE, CENTRE_RING_SOURCE].forEach((id) => { if (map.getSource(id)) map.removeSource(id); });
   } catch { /* map already removed */ }
 }
 
@@ -43,12 +46,14 @@ function removeOverlay(map) {
  * keyboard users need. {@code selected}: the city, locality or office shown in the panel ({@code {id, lat, lng}}),
  * ringed and framed.
  * {@code area}: {@code {lat, lng, radiusKm, fit, approximate}} draws the search circle (and frames it when fit).
+ * At street zoom the focus city's centre bubble is ringed by the companies hiring there (GEO-9E); clicking one calls
+ * {@code onSelectCentreCompany(placeId, company)}. The ring has its own source, so cluster sums never include it.
  */
 export default function JobsMap({ snapshot, selected, dimmed, area, allowAreaSearch, onSelectPlace, onSelectOffice,
-  onSelectLocality, onSearchArea, className = "" }) {
+  onSelectLocality, onSelectCentreCompany, onSearchArea, className = "" }) {
   const [ready, setReady] = useState(null);
   const [showAreaButton, setShowAreaButton] = useState(false);
-  const callbacks = useRef({ onSelectPlace, onSelectOffice, onSelectLocality, onSearchArea });
+  const callbacks = useRef({ onSelectPlace, onSelectOffice, onSelectLocality, onSelectCentreCompany, onSearchArea });
   // A view restored from the URL hash (reload, or Back from a job) wins over framing the place it was showing.
   const [restoredPlaceId] = useState(() => {
     const { hash = "", search = "" } = globalThis.location ?? {};
@@ -60,7 +65,7 @@ export default function JobsMap({ snapshot, selected, dimmed, area, allowAreaSea
   const privateView = useRef(false);
 
   useEffect(() => {
-    callbacks.current = { onSelectPlace, onSelectOffice, onSelectLocality, onSearchArea };
+    callbacks.current = { onSelectPlace, onSelectOffice, onSelectLocality, onSelectCentreCompany, onSearchArea };
   });
 
   const handleReady = useCallback((map, { hasGlyphs }) => {
@@ -68,7 +73,12 @@ export default function JobsMap({ snapshot, selected, dimmed, area, allowAreaSea
     if (view) map.jumpTo(view, OWN_MOVE);
     map.addSource(PLACES_SOURCE, placesSource(EMPTY_COLLECTION));
     map.addSource(AREA_SOURCE, { type: "geojson", data: EMPTY_COLLECTION });
+    map.addSource(CENTRE_RING_SOURCE, { type: "geojson", data: EMPTY_COLLECTION });
     jobLayers({ hasGlyphs }).forEach((layer) => map.addLayer(layer));
+    // Ring circles under office pins (the precise points stay on top); their labels above everything.
+    const ring = centreRingLayers({ hasGlyphs });
+    ring.circles.forEach((layer) => map.addLayer(layer, LAYERS.offices));
+    ring.labels.forEach((layer) => map.addLayer(layer));
     setReady({ map });
   }, []);
 
@@ -98,6 +108,10 @@ export default function JobsMap({ snapshot, selected, dimmed, area, allowAreaSea
       const id = event.features?.[0]?.properties?.id;
       if (id != null) callbacks.current.onSelectLocality?.(String(id));
     };
+    const clickCentreCompany = (event) => {
+      const { placeId, company } = event.features?.[0]?.properties ?? {};
+      if (placeId != null && company) callbacks.current.onSelectCentreCompany?.(String(placeId), String(company));
+    };
     let userMoving = false;
     let timer = null;
     const moveStart = (event) => {
@@ -122,6 +136,7 @@ export default function JobsMap({ snapshot, selected, dimmed, area, allowAreaSea
     map.on("click", LAYERS.points, clickPlace);
     map.on("click", LAYERS.offices, clickOffice);
     map.on("click", LAYERS.localities, clickLocality);
+    map.on("click", RING_LAYERS.companies, clickCentreCompany);
     map.on("movestart", moveStart);
     map.on("moveend", moveEnd);
     // A pasted or edited view hash on an open page moves the map, as MapLibre's own hash option did.
@@ -138,6 +153,7 @@ export default function JobsMap({ snapshot, selected, dimmed, area, allowAreaSea
       map.off("click", LAYERS.points, clickPlace);
       map.off("click", LAYERS.offices, clickOffice);
       map.off("click", LAYERS.localities, clickLocality);
+      map.off("click", RING_LAYERS.companies, clickCentreCompany);
       map.off("movestart", moveStart);
       map.off("moveend", moveEnd);
       removeOverlay(map);
@@ -152,6 +168,13 @@ export default function JobsMap({ snapshot, selected, dimmed, area, allowAreaSea
       map.once?.("idle", () => performance.mark(MARKERS_MARK));
     }
   }, [map, snapshot]);
+
+  // Dimmed tabs (Remote, India) are not about a city, so they get no ring.
+  const ring = useCentreCompanies({ map, snapshot: dimmed ? null : snapshot, selected });
+  useEffect(() => {
+    if (!map) return;
+    map.getSource(CENTRE_RING_SOURCE)?.setData(ring.geojson);
+  }, [map, ring.geojson]);
 
   useEffect(() => {
     if (!map) return;
@@ -202,10 +225,20 @@ export default function JobsMap({ snapshot, selected, dimmed, area, allowAreaSea
           Jobs in this area
         </button>
       )}
-      {area?.approximate && (
-        <p className="pointer-events-none absolute bottom-3 left-3 z-10 rounded-full bg-white/90 px-3 py-1 text-xs font-medium text-slate-600 shadow-sm ring-1 ring-slate-200">
-          Approximate area · {area.radiusKm} km
-        </p>
+      {(area?.approximate || ring.visible) && (
+        <div className="pointer-events-none absolute bottom-3 left-3 right-3 z-10 flex flex-col items-start gap-2 sm:right-auto">
+          {ring.visible && (
+            <p role="note" className="max-w-xs rounded-2xl bg-white/90 px-3 py-1.5 text-xs font-medium text-slate-600 shadow-sm ring-1 ring-slate-200">
+              <span aria-hidden="true" className="mr-1.5 inline-block h-2.5 w-2.5 rounded-full border border-slate-400 bg-slate-100 align-middle" />
+              {RING_CAPTION}
+            </p>
+          )}
+          {area?.approximate && (
+            <p className="rounded-full bg-white/90 px-3 py-1 text-xs font-medium text-slate-600 shadow-sm ring-1 ring-slate-200">
+              Approximate area · {area.radiusKm} km
+            </p>
+          )}
+        </div>
       )}
     </section>
   );
