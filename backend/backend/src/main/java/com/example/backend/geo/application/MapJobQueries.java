@@ -73,11 +73,39 @@ public class MapJobQueries {
      */
     public List<Document> unlistedAtPlace(String placeId, Collection<String> officeCompanies, Collection<String> localityIds,
                                           String phrase, int page, int size) {
+        return unlistedAtPlace(placeId, officeCompanies, localityIds, null, phrase, page, size);
+    }
+
+    /** {@link #unlistedAtPlace} for one stored {@code company} spelling only (GEO-9E ring click); null means any. */
+    public List<Document> unlistedAtPlace(String placeId, Collection<String> officeCompanies, Collection<String> localityIds,
+                                          String company, String phrase, int page, int size) {
+        Document filter = unlisted(placeId, officeCompanies, localityIds);
+        if (company != null) filter.getList("$and", Document.class).add(new Document("company", company));
+        return find(filter, phrase, page, size);
+    }
+
+    /**
+     * Companies hiring at {@code placeId}'s centre (GEO-9E ring): the {@link #unlistedAtPlace} filter grouped by the
+     * stored {@code company} spelling, most jobs first, then by name, at most {@code limit}. Rows are
+     * {@code {_id: company, jobs: n}}; jobs without a company are left out.
+     */
+    public List<Document> unlistedCompaniesAtPlace(String placeId, Collection<String> officeCompanies,
+                                                   Collection<String> localityIds, int limit) {
+        Document filter = unlisted(placeId, officeCompanies, localityIds);
+        filter.getList("$and", Document.class).add(new Document("company", new Document("$type", "string")));
+        List<Document> stages = List.of(new Document("$match", filter),
+                new Document("$group", new Document("_id", "$company").append("jobs", new Document("$sum", 1))),
+                new Document("$sort", new Document("jobs", -1).append("_id", 1)),
+                new Document("$limit", limit));
+        return mongo.getCollection(JOBS).aggregate(stages).maxTime(MAX_TIME_MS, TimeUnit.MILLISECONDS).into(new ArrayList<>());
+    }
+
+    private static Document unlisted(String placeId, Collection<String> officeCompanies, Collection<String> localityIds) {
         List<Document> conditions = new ArrayList<>(List.of(GeoPipelines.visibleJobs(),
                 new Document("$or", placeBranches(List.of(placeId)))));
         if (!officeCompanies.isEmpty()) conditions.add(new Document("company", new Document("$nin", List.copyOf(officeCompanies))));
         if (!localityIds.isEmpty()) conditions.add(new Document("$nor", localityBranches(List.copyOf(localityIds))));
-        return find(new Document("$and", conditions), phrase, page, size);
+        return new Document("$and", conditions);
     }
 
     private List<Document> find(Document filter, String phrase, int page, int size) {

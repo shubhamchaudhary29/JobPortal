@@ -3,11 +3,14 @@ package com.example.backend.geo.application;
 import static org.junit.jupiter.api.Assertions.*;
 
 import com.example.backend.geo.domain.Place;
+import com.example.backend.shared.error.BadRequestException;
+import com.example.backend.shared.error.ResourceNotFoundException;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.Date;
 import java.util.List;
 import org.bson.Document;
+import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -54,6 +57,14 @@ class CentreJobsMongoIntegrationTest {
         snapshots.refresh();
     }
 
+    @AfterEach
+    void tearDown() {
+        mongo.getCollection("jobs").deleteMany(new Document());
+        mongo.getCollection("company_offices").deleteMany(new Document());
+        mongo.getCollection("company_office_audit").deleteMany(new Document());
+        offices.loadIndex();
+    }
+
     @Test
     void jobPlacesCarryExplicitPrecisionAndTheirListingsSiteLabel() {
         MapJobService.MapJobSlice all = jobs.place(blr, "all", null, 0, 20);
@@ -66,6 +77,47 @@ class CentreJobsMongoIntegrationTest {
         assertPlace(all, "t1", "city", "OUC");
         MapJobService.MapJobPlace punePlace = byId(jobs.place(pune, null, null, 0, 20), "m1").places().get(0);
         assertEquals("Urmi", punePlace.siteLabel(), "the listing's label applies to each of its places");
+    }
+
+    @Test
+    void centreCompaniesGroupOnlyCentreJobsMostJobsFirst() {
+        MapJobService.CentreCompanies centre = jobs.centreCompanies(blr, null);
+
+        assertEquals(blr, centre.placeId());
+        assertEquals("Bengaluru", centre.placeName());
+        assertEquals(8, centre.centreJobs(), "c1-c6, m1 and t1; Acme is at its office and Globex at Whitefield");
+        assertEquals(List.of(new MapJobService.CentreCompany("Wonka", 3), new MapJobService.CentreCompany("Hooli", 2),
+                new MapJobService.CentreCompany("Initech", 1), new MapJobService.CentreCompany("Stark", 1),
+                new MapJobService.CentreCompany("Tyrell", 1)), centre.companies());
+        assertEquals(centre.centreJobs(), centre.companies().stream().mapToLong(MapJobService.CentreCompany::jobs).sum(),
+                "every centre job has a company here, so the ring adds up to the bubble");
+        assertEquals(List.of("Wonka", "Hooli"), jobs.centreCompanies(blr, 2).companies().stream()
+                .map(MapJobService.CentreCompany::company).toList());
+    }
+
+    @Test
+    void centreCompaniesValidateLimitAndPlace() {
+        assertThrows(BadRequestException.class, () -> jobs.centreCompanies(blr, 0));
+        assertThrows(BadRequestException.class, () -> jobs.centreCompanies(blr, 61));
+        assertEquals(5, jobs.centreCompanies(blr, 60).companies().size());
+        assertThrows(ResourceNotFoundException.class, () -> jobs.centreCompanies("999999999", null));
+        String chennai = GeoTestJobs.placeId(gazetteer, "Chennai");
+        MapJobService.CentreCompanies empty = jobs.centreCompanies(chennai, null);
+        assertEquals(0, empty.centreJobs());
+        assertEquals(List.of(), empty.companies());
+    }
+
+    @Test
+    void unlistedListCanBeNarrowedToOneCompany() {
+        MapJobService.MapJobSlice wonka = jobs.place(blr, "unlisted", "Wonka", null, 0, 20);
+        assertEquals(List.of("c3", "c2", "c1"), wonka.content().stream().map(MapJobService.MapJob::id).toList());
+        assertNull(wonka.totalHint(), "the snapshot has no per-company count");
+        assertEquals(List.of(), jobs.place(blr, "unlisted", "wonka", null, 0, 20).content(), "exact stored spelling");
+        assertEquals(List.of(), jobs.place(blr, "unlisted", "Acme", null, 0, 20).content(), "Acme's jobs are at its office");
+        assertEquals(8, jobs.place(blr, "unlisted", " ", null, 0, 20).content().size(), "blank means no filter");
+        assertThrows(BadRequestException.class, () -> jobs.place(blr, "all", "Wonka", null, 0, 20));
+        assertThrows(BadRequestException.class, () -> jobs.place(blr, null, "Wonka", null, 0, 20));
+        assertThrows(BadRequestException.class, () -> jobs.place(blr, "unlisted", "x".repeat(201), null, 0, 20));
     }
 
     @Test

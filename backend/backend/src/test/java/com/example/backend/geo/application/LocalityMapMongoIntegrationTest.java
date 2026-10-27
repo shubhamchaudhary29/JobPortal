@@ -13,6 +13,7 @@ import java.util.Map;
 import java.util.Set;
 import java.util.stream.Collectors;
 import org.bson.Document;
+import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -58,6 +59,14 @@ class LocalityMapMongoIntegrationTest {
                 .append("createdAt", Date.from(Instant.parse("2026-10-11T00:00:00Z")))
                 .append("geo", geo(List.of(blr), koramangala.id())));
         snapshots.refresh();
+    }
+
+    @AfterEach
+    void tearDown() {
+        mongo.getCollection("jobs").deleteMany(new Document());
+        mongo.getCollection("company_offices").deleteMany(new Document());
+        mongo.getCollection("company_office_audit").deleteMany(new Document());
+        offices.loadIndex();
     }
 
     @Test

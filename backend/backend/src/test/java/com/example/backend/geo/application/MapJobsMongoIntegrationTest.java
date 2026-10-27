@@ -14,6 +14,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import org.bson.Document;
+import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -25,6 +26,7 @@ import org.springframework.data.mongodb.core.MongoTemplate;
 class MapJobsMongoIntegrationTest {
     @Autowired MapJobService jobs;
     @Autowired MapSnapshotService snapshots;
+    @Autowired CompanyOfficeService offices;
     @Autowired Gazetteer gazetteer;
     @Autowired MongoTemplate mongo;
     private String blr;
@@ -35,6 +37,9 @@ class MapJobsMongoIntegrationTest {
     @BeforeEach
     void setUp() {
         mongo.getCollection("jobs").deleteMany(new Document());
+        mongo.getCollection("company_offices").deleteMany(new Document());
+        mongo.getCollection("company_office_audit").deleteMany(new Document());
+        offices.loadIndex();
         blr = id("Bengaluru");
         mum = id("Mumbai");
         pune = id("Pune");
@@ -49,6 +54,14 @@ class MapJobsMongoIntegrationTest {
         insert(job("S", 8, "Field Officer", true, listing(true, "STATE")));
         insert(job("J", 9, "Product Manager", true, listing(true, "PLACE", pune)).append("geo", geo("PLACE", mum)));
         snapshots.refresh();
+    }
+
+    @AfterEach
+    void tearDown() {
+        mongo.getCollection("jobs").deleteMany(new Document());
+        mongo.getCollection("company_offices").deleteMany(new Document());
+        mongo.getCollection("company_office_audit").deleteMany(new Document());
+        offices.loadIndex();
     }
 
     @Test
