@@ -57,6 +57,11 @@ Attribution required: © OpenStreetMap contributors, GeoNames (CC-BY 4.0).
 - [x] GEO-8B — resolver v3: localities inside the resolved city, curated locality aliases, Adzuna point snapping; `localityIds` on every write path
 - [x] GEO-8C — locality markers and "office not listed" city bubbles on `/jobs/map`, locality job lists, NCR decision
 - [x] GEO-8D — OpenStreetMap office suggestions for admins, opt-in auto-apply behind `GEO_OSM_OFFICE_AUTO_APPLY`
+- [x] GEO-9A — resolver v4: edge-city split and "City, Site" labels; `siteLabel` stored on every geo write path
+- [x] GEO-9D — explicit `precision` and `siteLabel` on map job places, site labels on job cards, `topSiteLabels` worklist
+- [x] GEO-9E — centre-company ring around a city's centre bubble at street zoom, company filter on its job list
+- [ ] GEO-9B — structured ATS lat/lng and postal code
+- [ ] GEO-9C — several offices per city keyed by site label
 
 ---
 
@@ -464,6 +469,31 @@ Precision order everywhere (snapshot, job pages, nearby, distances): **office** 
 - The flag defaults to false in `application.properties`, Compose and `.env.example`. Turn it on only after reviewing
   the report on production data.
 
+## GEO-9 — Label splitting, honest precision, centre-company ring
+
+Most city jobs sit on the city centroid, as on comparable maps; GEO-9 places the messy ATS labels that used to be
+UNRESOLVED and is explicit about how precise each pin is. Scope of the first PR: 9A, 9D, 9E.
+
+**9A — label splitting (done, parser version 4).** A candidate that placed nothing is retried split on `- – — ~ :`
+("Bengaluru- We Work", "India-Bangalore", "Pune - Remote"): leading/trailing `IND`/`IN`/`India` dropped, the first part
+that is a place wins, else the last; the rest is a locality of that place, a work mode or remote marker, or the site
+label. In "City, X", an unknown X after a city of 300k+ is the site label instead of a reason to drop the city ("Mumbai,
+Urmi"), unless X is two letters ("Delhi, NY") or a listed foreign region or city (`foreign-qualifiers.tsv`: "Hyderabad,
+Sindh", "Delhi, Springfield"). Both are fallbacks only: `GeoResolverRegressionTest` replays a fixture recorded with
+parser version 3 and every earlier test input resolves exactly as before. `GeoResolution.siteLabel` is text only, never
+geocoded; documents written before GEO-9 read it back as null.
+
+**9D — honest precision (done).** Every map job place carries `precision` (`office | locality | city`) and the
+listing's `siteLabel` there; a city-centre card reads "📍 Bengaluru · We Work" with a title saying the office is named
+but not mapped. The precision report's `topSiteLabels` (top 50 company, city, site label of city-centre jobs) is the
+GEO-9C worklist.
+
+**9E — centre-company ring (done).** From zoom 12 the focus city (the selected one, else the in-view city with
+city-centre jobs nearest the view centre) is ringed by the companies hiring there (`GET
+/api/v1/jobs/map/places/{placeId}/companies`): rings of 10, 16, 22, … markers at 44 + 30·ring px, each ring turned by
+ring·π/capacity, from their own unclustered `centre-ring` source so cluster sums are unchanged. Slate circles, a dashed
+outline and a caption say these are not offices. A click opens the city's "office not listed" list for that company.
+
 ---
 
 ## Scaling path (only when load demands it)
@@ -482,6 +512,6 @@ Precision order everywhere (snapshot, job pages, nearby, distances): **office** 
 
 ## Optional later
 
-- GEO-9 — employer-pinned offices: companies claim a page, pin their offices, and recruiters pick an office when
+- Employer-pinned offices: companies claim a page, pin their offices, and recruiters pick an office when
   posting a job (the exact, long-term source).
 - Feed `placeIds` into `MATCHING_LOCATION_WEIGHT` for distance-aware matching.
