@@ -73,6 +73,20 @@ class SearchProviderIngestionServiceTest {
     }
 
     @Test
+    void theProvidersLocationHintReachesTheStore() {
+        when(store.upsert(any(), any())).thenReturn(UpsertOutcome.INSERTED);
+        FakeProvider provider = new FakeProvider(1, List.of("java"), 1);
+        provider.hint = new com.example.backend.job.domain.LocationHint(List.of("India", "Karnataka", "Bangalore"), 12.97, 77.6);
+
+        engine(new CountingBudget(10)).sync(provider, () -> true);
+
+        org.mockito.ArgumentCaptor<com.example.backend.job.infrastructure.JobDocument> stored =
+                org.mockito.ArgumentCaptor.forClass(com.example.backend.job.infrastructure.JobDocument.class);
+        verify(store).upsert(stored.capture(), any());
+        assertEquals(provider.hint, stored.getValue().getLocationHint());
+    }
+
+    @Test
     void zeroBudgetMakesNoRequest() {
         FakeProvider provider = new FakeProvider(1, List.of("java"), 1);
         SearchSyncResult result = engine(new CountingBudget(0)).sync(provider, () -> true);
@@ -121,6 +135,7 @@ class SearchProviderIngestionServiceTest {
         private long intervalMs;
         private final List<Long> sleeps = new ArrayList<>();
         private SearchSyncResult completed;
+        private com.example.backend.job.domain.LocationHint hint;
         FakeProvider(int attempts, List<String> keywords, int pages) {
             this.attempts = attempts;
             this.keywords = keywords;
@@ -134,7 +149,8 @@ class SearchProviderIngestionServiceTest {
             requests.add(query.keyword() + ":" + query.page());
             if (failuresBeforeSuccess-- > 0) throw new SearchProviderException("HTTP 503", true, null);
             return List.of(ExternalJobNormalizer.normalize(query.keyword() + "-" + query.page(), "Engineer " + query.page(),
-                    null, "Acme", "Pune", null, "https://jobs.example.test/" + query.keyword() + "/" + query.page(), null));
+                    null, "Acme", "Pune", null, "https://jobs.example.test/" + query.keyword() + "/" + query.page(), null,
+                    null, null, hint));
         }
         @Override public int maxAttempts() { return attempts; }
         @Override public long backoffMs(int attempt) { return 0; }

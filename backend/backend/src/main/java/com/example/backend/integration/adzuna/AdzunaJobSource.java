@@ -1,4 +1,5 @@
 package com.example.backend.integration.adzuna;
+import com.example.backend.job.domain.LocationHint;
 
 import com.example.backend.integration.aggregation.JobFingerprint;
 import com.example.backend.integration.jobs.ExternalJob;
@@ -25,8 +26,11 @@ public class AdzunaJobSource implements JobSource {
         String title = job.title() == null ? null : job.title().trim();
         String description = AdzunaJobMapper.cleanDescription(job.description());
         String fingerprint = url == null || title == null ? null : JobFingerprint.of(company, title, location);
+        // GEO-10A: area and point reach the resolver as evidence for a locality; the point is never a pin.
+        LocationHint hint = new LocationHint(job.location() == null ? null : job.location().area(), job.latitude(),
+                job.longitude());
         return new ExternalJob(job.id(), title, description, company, location, job.employmentType(), job.salaryMin(), job.salaryMax(), url,
-                parseDate(job.publishedAt()), null, fingerprint);
+                parseDate(job.publishedAt()), null, fingerprint, hint);
     }
     private static java.time.LocalDateTime parseDate(String value) { try { return value == null ? null : java.time.OffsetDateTime.parse(value).toLocalDateTime(); } catch (java.time.format.DateTimeParseException ex) { return null; } }
 }

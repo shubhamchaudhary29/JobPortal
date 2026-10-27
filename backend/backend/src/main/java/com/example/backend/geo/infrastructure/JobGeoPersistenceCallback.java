@@ -5,7 +5,10 @@ import com.example.backend.job.infrastructure.JobDocument;
 import org.springframework.data.mongodb.core.mapping.event.BeforeConvertCallback;
 import org.springframework.stereotype.Component;
 
-/** Resolves top-level {@code geo} for jobs without source listings; imported listings resolve in the store. */
+/**
+ * Resolves top-level {@code geo} for jobs without source listings; imported listings resolve in the store. The
+ * description is locality evidence (GEO-10C), never a place of its own.
+ */
 @Component
 public class JobGeoPersistenceCallback implements BeforeConvertCallback<JobDocument> {
     private final GeoResolver resolver;
@@ -14,7 +17,7 @@ public class JobGeoPersistenceCallback implements BeforeConvertCallback<JobDocum
     @Override
     public JobDocument onBeforeConvert(JobDocument entity, String collection) {
         if (entity.getSourceListings() == null || entity.getSourceListings().isEmpty()) {
-            entity.setGeo(resolver.resolve(entity.getLocation(), null));
+            entity.setGeo(resolver.resolve(entity.getLocation(), null, entity.getDescription()));
         }
         return entity;
     }

@@ -175,6 +175,7 @@ public class EmployerIngestionService {
         job.setSourceUrl(external.applicationUrl());
         job.setPublishedAt(external.publishedAt());
         job.setFingerprint(external.fingerprint());
+        job.setLocationHint(external.locationHint());
         return job;
     }
 
