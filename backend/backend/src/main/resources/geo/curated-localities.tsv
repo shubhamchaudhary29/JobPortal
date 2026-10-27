@@ -1,0 +1,14 @@
+# Hand-maintained tech parks and office corridors that OpenStreetMap has no locality row for (GEO-10D).
+# Every coordinate is copied from the cited object (an OpenStreetMap object or a Wikidata P625 value); never invented.
+# kind: tech_park (one campus) or corridor (a long road; the point is its main office cluster, named in source).
+# Ids are cur-<slug>; they never collide with OpenStreetMap ids (osm-…). Editing this file changes the resolver version.
+localityId	name	nameEn	altNames	placeId	lat	lng	kind	source
+cur-magarpatta	Magarpatta	Magarpatta City	Magarpatta City|Magarpatta Cybercity	1259229	18.51468	73.93071	tech_park	https://www.openstreetmap.org/way/217659258 (Magarpatta Circle, centre of Magarpatta City)
+cur-golf-course-road	Golf Course Road		GCR	1270642	28.43811	77.10321	corridor	https://www.openstreetmap.org/way/28605687 (Golf Course Road at Sector 53, office cluster)
+cur-outer-ring-road	Outer Ring Road		ORR	1277333	12.93069	77.69142	corridor	https://www.openstreetmap.org/way/232970396 (Embassy TechVillage, Bellandur-Marathahalli ORR office cluster)
+cur-omr	Old Mahabalipuram Road	Rajiv Gandhi Salai	OMR|Rajiv Gandhi Salai|IT Expressway|Rajiv Gandhi IT Expressway	1264527	12.95393	80.24253	corridor	https://www.openstreetmap.org/way/184110853 (Rajiv Gandhi Salai at Perungudi, office cluster)
+cur-tidel-park	Tidel Park	TIDEL Park		1264527	12.98969	80.24873	tech_park	https://www.wikidata.org/wiki/Q566225 (P625)
+cur-technopark	Technopark		Technopark Trivandrum|Technopark Thiruvananthapuram	1254163	8.55783	76.88074	tech_park	https://www.openstreetmap.org/relation/2980593 (Technopark, landuse=commercial)
+cur-noida-sector-63	Sector 63		Noida Sector 63	7279746	28.61663	77.3807	tech_park	https://www.openstreetmap.org/way/71686932 (Sector 63 Road)
+cur-noida-sector-125	Sector 125		Noida Sector 125	7279746	28.5456	77.33201	tech_park	https://www.openstreetmap.org/way/421455596 (Sector 125)
+cur-noida-sector-135	Sector 135		Noida Sector 135	7279746	28.498	77.40003	tech_park	https://www.openstreetmap.org/way/170571248 (Sector 135, landuse)

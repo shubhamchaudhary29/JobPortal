@@ -117,7 +117,7 @@ class GeoResolverTest {
     @Test
     void parserVersionIsPartOfTheResolutionVersion() {
         assertTrue(RESOLVER.version().startsWith(GeoResolver.PARSER_VERSION + "-"));
-        assertEquals(4, GeoResolver.PARSER_VERSION);
+        assertEquals(5, GeoResolver.PARSER_VERSION);
     }
 
     @ParameterizedTest
@@ -430,6 +430,106 @@ class GeoResolverTest {
         String longLabel = GeoResolver.siteLabel("Tower ".repeat(20) + "End", GAZETTEER);
         assertTrue(longLabel.length() <= GeoResolver.MAX_SITE_LABEL_LENGTH, longLabel);
         assertTrue(longLabel.endsWith("Tower"), "cut on a word boundary: " + longLabel);
+    }
+
+    // GEO-10: office kinds, location hints, PIN codes, descriptions and curated tech parks; all fallbacks.
+
+    @Test
+    void officeKindsAreNoSiteLabel() {
+        for (String input : List.of("Mumbai, Head Office", "Bengaluru, Corporate Office", "Bengaluru - Head Quarters",
+                "Chennai, Registered Office", "Pune, Regional Office", "Hyderabad, Branch Office", "Mumbai, Headquarters")) {
+            GeoResolution result = resolve(input);
+            assertEquals(1, result.placeIds().size(), input);
+            assertNull(result.siteLabel(), input);
+        }
+        assertEquals("Mumbai", name(single(resolve("Mumbai, Head Office"))));
+    }
+
+    @Test
+    void adzunaAreaAndPointGiveALocalityButNeverAPin() {
+        GeoResolution area = RESOLVER.resolve("Bangalore",
+                new LocationHint(List.of("India", "Karnataka", "Bangalore", "Whitefield"), null, null));
+        assertEquals("Bengaluru", name(single(area)));
+        assertEquals(List.of("Whitefield"), localityNames(area));
+
+        LocalityIndex.Locality whitefield = GAZETTEER.localityMatches("whitefield", single(area)).get(0);
+        GeoResolution offCentre = RESOLVER.resolve("Bangalore", new LocationHint(List.of(), whitefield.lat() + 0.009,
+                whitefield.lng()));
+        String nearest = GAZETTEER.nearestLocality(single(area), whitefield.lat() + 0.009, whitefield.lng(), 2.0)
+                .orElseThrow().id();
+        assertEquals(List.of(nearest), offCentre.localityIds(), "far from the centre: the nearest known locality");
+        assertEquals(whitefield.lat() + 0.009, offCentre.point().lat(), "the raw point is kept as evidence, not a pin");
+
+        Place centre = GAZETTEER.byId(single(area)).orElseThrow();
+        GeoResolution atCentre = RESOLVER.resolve("Bangalore", new LocationHint(List.of(), centre.lat(), centre.lng()));
+        assertTrue(atCentre.localityIds().isEmpty(), "Adzuna's own city centroid says nothing");
+    }
+
+    @Test
+    void pinCodeRefinesTheNamedCityOnly() {
+        GeoResolution whitefield = resolve("Bengaluru, Karnataka 560066");
+        assertEquals("Bengaluru", name(single(whitefield)));
+        assertEquals(List.of("Whitefield"), localityNames(whitefield));
+        assertEquals(List.of("Electronics City Phase 1"), localityNames(resolve("Bengaluru 560100")));
+        GeoResolution noida = resolve("Noida 201309");
+        assertEquals("Noida", name(single(noida)));
+        assertEquals(1, noida.localityIds().size());
+
+        GeoResolution otherCity = resolve("Mumbai 560066");
+        assertEquals("Mumbai", name(single(otherCity)));
+        assertTrue(otherCity.localityIds().isEmpty(), "a Bengaluru PIN never moves a Mumbai job");
+        assertTrue(resolve("560066").placeIds().isEmpty(), "a PIN never names a city on its own");
+        assertTrue(resolve("Bengaluru 560066 / 560100").localityIds().isEmpty(), "two PINs, two localities: no upgrade");
+        assertEquals(List.of("Koramangala"), localityNames(resolve("Koramangala, Bengaluru 560066")),
+                "the text's own locality wins over the PIN");
+    }
+
+    @Test
+    void pinCodesThatGeoNamesCannotPlaceAddNothing() {
+        // 411057 is Hinjewadi or Wakad, 500081 Madhapur or HITEC City: both name two localities, so they are left out.
+        assertTrue(resolve("Pune 411057").localityIds().isEmpty());
+        assertEquals("Pune", name(single(resolve("Pune 411057"))));
+        assertTrue(resolve("Hyderabad, Telangana 500081").localityIds().isEmpty());
+    }
+
+    @Test
+    void descriptionNamesALocalityOnlyInACueLineOfTheSameCity() {
+        GeoResolution marathahalli = RESOLVER.resolve("Bengaluru", null,
+                "<p>Join us.</p><p>Office address: Prestige Tech Park, Marathahalli, Bengaluru - 560103</p>");
+        assertEquals(List.of("Prestige Tech Park"), localityNames(marathahalli), "the park inside Marathahalli");
+        assertEquals(List.of("Marathahalli"), localityNames(RESOLVER.resolve("Bengaluru", null,
+                "Office address: 3rd floor, Marathahalli, Bengaluru - 560103")));
+        assertTrue(RESOLVER.resolve("Bengaluru", null, "We have offices in Whitefield and Electronic City.")
+                .localityIds().isEmpty(), "two localities");
+        assertTrue(RESOLVER.resolve("Bengaluru", null, "Work location: Hinjewadi Phase 2").localityIds().isEmpty(),
+                "a Pune locality");
+        assertTrue(RESOLVER.resolve("Bengaluru", null, "Our team loves Koramangala cafes.").localityIds().isEmpty(),
+                "no cue word");
+        assertTrue(RESOLVER.resolve("Bengaluru / Pune", null, "Work location: Whitefield").localityIds().isEmpty(),
+                "only for a job with one place");
+        assertEquals(List.of("Whitefield"), localityNames(RESOLVER.resolve("Bengaluru", null,
+                "Work location: Whitefield, Bengaluru 560066")), "PIN and name agree");
+        assertTrue(RESOLVER.resolve("Bengaluru", null, "Work location: Koramangala, Bengaluru 560066").localityIds()
+                .isEmpty(), "PIN and name disagree");
+        assertEquals(List.of("Koramangala"), localityNames(RESOLVER.resolve("Koramangala, Bengaluru", null,
+                "Work location: Whitefield")), "the location text wins");
+    }
+
+    @Test
+    void curatedTechParksAndCorridorsAreLocalities() {
+        assertEquals(List.of("Magarpatta"), localityNames(resolve("Magarpatta, Pune")));
+        assertEquals(List.of("Magarpatta"), localityNames(resolve("Magarpatta")), "an unambiguous alias alone");
+        assertEquals(List.of("Technopark"), localityNames(resolve("Technopark, Thiruvananthapuram")));
+        assertEquals(List.of("Tidel Park"), localityNames(resolve("Tidel Park")));
+        assertEquals(List.of("Old Mahabalipuram Road"), localityNames(resolve("Chennai, OMR")));
+        assertEquals(List.of("Old Mahabalipuram Road"), localityNames(resolve("Rajiv Gandhi Salai, Chennai")));
+        assertEquals(List.of("Outer Ring Road"), localityNames(resolve("Outer Ring Road, Bengaluru")));
+        assertEquals(List.of("Golf Course Road"), localityNames(resolve("Golf Course Road, Gurugram")));
+        assertEquals(List.of("Sector 63"), localityNames(resolve("Noida Sector 63")));
+        assertEquals(List.of("Sector 125"), localityNames(resolve("Sector 125, Noida")));
+        assertTrue(resolve("Outer Ring Road, Hyderabad").localityIds().isEmpty(), "a corridor belongs to one city");
+        assertEquals("cur-", single(resolve("Magarpatta")).isEmpty() ? "" : resolve("Magarpatta").localityIds().get(0)
+                .substring(0, 4));
     }
 
     private static void assertSite(String input, String city, String siteLabel) {

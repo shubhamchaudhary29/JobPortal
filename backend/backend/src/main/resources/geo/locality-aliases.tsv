@@ -57,3 +57,8 @@ Sector V Salt Lake	Sector V|1275004
 Infopark	osm-w731817480
 Infopark Kochi	osm-w731817480
 Kakkanad	osm-n594931695
+# Curated tech parks (GEO-10D, curated-localities.tsv)
+Magarpatta	cur-magarpatta
+Magarpatta City	cur-magarpatta
+Technopark	cur-technopark
+Tidel Park	cur-tidel-park
