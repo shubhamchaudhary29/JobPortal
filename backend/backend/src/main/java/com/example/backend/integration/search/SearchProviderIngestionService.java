@@ -248,6 +248,7 @@ public class SearchProviderIngestionService {
         mapped.setPublishedAt(source.publishedAt());
         mapped.setExpiresAt(source.expiresAt());
         mapped.setFingerprint(source.fingerprint());
+        mapped.setLocationHint(source.locationHint());
         return mapped;
     }
 

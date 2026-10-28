@@ -59,12 +59,20 @@ public class GreenhouseJobSource implements JobSource {
                 output.add(ExternalJobNormalizer.normalize(job.id() == null ? null : job.id().toString(),
                         job.title(), job.content(), request.company(),
                         job.location() == null ? null : job.location().name(), employmentType(job),
-                        job.absolute_url(), null));
+                        job.absolute_url(), null, null, null, officeHint(job)));
             } catch (RuntimeException malformedItem) {
                 rejected++;
             }
         }
         return new FetchResult(output, result.retries(), rejected);
+    }
+    /** Office address texts (GEO-10E, {@code ats-samples/greenhouse.json}) as locality evidence; no coordinates exist. */
+    static com.example.backend.job.domain.LocationHint officeHint(GreenhouseJobDto job) {
+        if (job.offices() == null) return null;
+        String text = job.offices().stream().filter(java.util.Objects::nonNull).map(GreenhouseOfficeDto::location)
+                .filter(location -> location != null && !location.isBlank()).distinct()
+                .collect(java.util.stream.Collectors.joining("; "));
+        return text.isEmpty() ? null : new com.example.backend.job.domain.LocationHint(List.of(), null, null, null, text);
     }
     private String employmentType(GreenhouseJobDto job) {
         if (job.metadata() == null) return null;

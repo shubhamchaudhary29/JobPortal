@@ -18,6 +18,8 @@ All under `backend/backend/src/main/resources/geo/`:
 | `in-localities.tsv` | `scripts/build-osm-geo.py` | OpenStreetMap suburbs, neighbourhoods, quarters and tech hubs per city (GEO-8, ODbL) |
 | `in-osm-offices.tsv` | `scripts/build-osm-geo.py` | OpenStreetMap company offices and office buildings per city (GEO-8, ODbL) |
 | `locality-aliases.tsv` | hand | Localities that resolve without a city, and spellings OSM lacks (`Electronic City` → `Electronics City Phase 1`) |
+| `curated-localities.tsv` | hand | Tech parks and corridors OSM has no locality for (`cur-…` ids; every coordinate cites an OSM object or Wikidata P625), GEO-10D |
+| `in-pincode-localities.tsv` | `scripts/build-pincodes.py` | PIN code → the one locality its post offices name (GeoNames postal codes, CC BY 4.0), GEO-10B |
 
 ### Regenerate the gazetteer
 
@@ -82,6 +84,40 @@ data file, an edit changes the resolver version and re-resolves all jobs.
 
 Inside a resolved city no alias is needed: "Hinjawadi, Pune" matches by name, "Hinjewadi, Pune" through the alias.
 
+### Locality evidence (GEO-10)
+
+When the location text names no locality, three sources may name one, **inside a city the text already resolved**:
+
+| Evidence | Where it comes from | Rule |
+|---|---|---|
+| PIN code | 6-digit codes in the location text or an ATS `postalCode` | `in-pincode-localities.tsv`; a PIN of another city is ignored |
+| Description | PINs anywhere in the description; locality names of the job's one city in a cue line ("address", "location", "work location", "office(s)", "venue", "campus", "based in"), first 20,000 characters, plus an ATS street address | `DescriptionLocationScanner`; only for a job with exactly one place |
+| Provider point | Adzuna point (and a SmartRecruiters point that comes with a street address) | ≥ 1.5 km from the city centre and ≤ 2 km from a known locality (GEO-8B) |
+
+They must agree on exactly one locality; anything else (two PINs, PIN vs description, two localities in one line)
+keeps the job at the city. One tech park plus the suburb around it ("Prestige Tech Park, Marathahalli", every other
+locality within 2 km) counts as agreement and picks the park. None of them ever becomes a point or a place.
+
+### Rebuild the PIN codes
+
+```bash
+curl -sS -o /tmp/IN.zip https://download.geonames.org/export/zip/IN.zip
+python3 backend/backend/scripts/build-pincodes.py --zip /tmp/IN.zip
+```
+
+It prints how many PINs were kept and the spot-check PINs (560066 Whitefield, 560100 Electronic City, …). GeoNames gives
+most PINs a district-level point (97 of Bengaluru's 109 PINs share one), so a PIN is mapped by the **names** of its post
+offices, never by its point; PINs whose offices name no locality or several (411057 Hinjewadi/Wakad) are left out.
+Run it again after rebuilding `in-localities.tsv` or editing `curated-localities.tsv` / `locality-aliases.tsv`.
+
+### Add a curated tech park or corridor
+
+Add a row to `curated-localities.tsv`: a `cur-<slug>` id, the name and spellings, the gazetteer place id, and the
+coordinate **copied from an object you cite** in the `source` column (an `https://www.openstreetmap.org/…` object or a
+`https://www.wikidata.org/wiki/Q…` item's P625). For a long road (`kind=corridor`) cite an object at its main office
+cluster. Never estimate a coordinate. `GazetteerDataTest` checks the id, the city, the distance from the city and the
+citation. Add a `locality-aliases.tsv` row only when the name is unambiguous on its own.
+
 ## Re-resolution job
 
 A lease-locked (`geo-reresolution`) background job re-resolves active jobs whose `geo.version` is not
@@ -100,6 +136,9 @@ sets `rawLocationInferred: true`; the next sync of that listing replaces it with
 Since GEO-8B the job passes a listing's stored provider point (Adzuna) back to the resolver, so it is kept and can
 snap to a locality. Earlier releases dropped the point on every version bump until the next Adzuna sync, so after the
 first GEO-8 deploy some Adzuna jobs have no point until Adzuna lists them again.
+
+**GEO-10 deploy:** parser version 5 (and the new data files) make every job stale again; the same throughput applies.
+Listings imported before GEO-10 have no `rawArea`; Adzuna listings get it, and their point, on their next sync.
 
 **GEO-9 deploy:** parser version 4 makes every job stale. At the defaults a run re-resolves up to
 `GEO_RERESOLUTION_BATCH_SIZE × GEO_RERESOLUTION_MAX_BATCHES` = 5,000 jobs every `GEO_RERESOLUTION_DELAY_MS` (10 min),

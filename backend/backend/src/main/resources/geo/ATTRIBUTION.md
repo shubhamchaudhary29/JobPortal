@@ -40,3 +40,19 @@ https://osmfoundation.org/wiki/Licence/Attribution_Guidelines
 
 Keep these files separate from the GeoNames-derived files and from our own data, and keep the visible
 "© OpenStreetMap contributors" credit on every map that shows them (the map attribution already includes it).
+
+## GEO-10 files
+
+- `in-pincode-localities.tsv`: derived from the **GeoNames postal codes** dump for India,
+  https://download.geonames.org/export/zip/IN.zip, licensed under **Creative Commons Attribution 4.0**
+  (https://creativecommons.org/licenses/by/4.0/), joined with `in-localities.tsv` (OpenStreetMap, ODbL, see above) and
+  `curated-localities.tsv`. Built offline by `backend/backend/scripts/build-pincodes.py`: a PIN is kept only when the
+  names of its post offices name exactly one known locality of the PIN's district city. The GeoNames coordinates are
+  district-level for most PINs, so they are only a sanity check, never a location. Columns: PIN, gazetteer place id,
+  locality id, the post-office name that matched.
+- `curated-localities.tsv`: maintained by hand. Each row's coordinate is copied from the object cited in its
+  `source` column: an OpenStreetMap object (© OpenStreetMap contributors, ODbL 1.0) or a Wikidata item's P625 value
+  (Wikidata, CC0 1.0, https://creativecommons.org/publicdomain/zero/1.0/). The lookups were made once, by hand, at
+  build time; nothing is queried at runtime. Names are the common names of the parks and roads.
+
+The map's existing "© OpenStreetMap contributors · Protomaps · GeoNames" credit covers both files.

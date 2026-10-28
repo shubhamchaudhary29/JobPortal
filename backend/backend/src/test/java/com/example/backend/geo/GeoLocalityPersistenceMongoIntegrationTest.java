@@ -183,7 +183,7 @@ class GeoLocalityPersistenceMongoIntegrationTest {
         GeoResolution adzuna = listed.getSourceListings().get(1).getGeo();
         GeoResolution manual = mongo.findById("manual", JobDocument.class).getGeo();
         assertAll(
-                () -> assertTrue(resolver.version().startsWith("4-")),
+                () -> assertTrue(resolver.version().startsWith(GeoResolver.PARSER_VERSION + "-")),
                 () -> assertEquals(resolver.version(), lever.version()),
                 () -> assertEquals(List.of(whitefield.id()), lever.localityIds()),
                 () -> assertNotNull(adzuna.point(), "re-resolution keeps the stored Adzuna point"),

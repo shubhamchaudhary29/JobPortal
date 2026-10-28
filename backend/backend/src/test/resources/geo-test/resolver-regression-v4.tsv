@@ -1,0 +1,111 @@
+# Recorded with resolver 4-c3d77b14e7ca (before GEO-10). input	status	placeIds	localityIds	remote
+Bengaluru, Karnataka, India	PLACE	1277333		false
+Bangalore	PLACE	1277333		false
+Gurgaon	PLACE	1270642		false
+Gurugram, Haryana	PLACE	1270642		false
+Bengaluru / Mumbai	PLACE	1277333,1275339		false
+Bengaluru; Remote	PLACE	1277333		true
+Bengaluru, Pune, Hyderabad	PLACE	1277333,1259229,1269843		false
+Hyderabad, Telangana	PLACE	1269843		false
+Hyderabad, TS	PLACE	1269843		false
+Chennai, TN	PLACE	1264527		false
+Noida, Uttar Pradesh 201301	PLACE	7279746		false
+Hyderabad, Sindh	UNRESOLVED			false
+Delhi, NY	UNRESOLVED			false
+San Francisco, CA, United States	FOREIGN			false
+Bengaluru; Remote - United States	PLACE	1277333		true
+Karnataka	STATE			false
+Jammu and Kashmir	STATE			false
+Jammu & Kashmir	STATE			false
+Delhi	PLACE	1273294		false
+New Delhi, Delhi, India	PLACE	1273294		false
+Delhi NCR	PLACE	1273294		false
+Andheri East, Mumbai	PLACE	1275339	osm-n702054777	false
+Bengaluru (Hybrid)	PLACE	1277333		false
+Hybrid - Pune	PLACE	1259229		false
+Pune (Remote)	PLACE	1259229		true
+Multiple Locations	UNRESOLVED			false
+$where	UNRESOLVED			false
+{"a":1}	UNRESOLVED			false
+Whitefield, Bengaluru, Karnataka, India	PLACE	1277333	osm-n377219489	false
+Bengaluru, Whitefield	PLACE	1277333	osm-n377219489	false
+Koramangala 5th Block, Bangalore	PLACE	1277333	osm-n9790284747	false
+Koramangala 12th Block, Bangalore	PLACE	1277333	osm-n429918282	false
+Electronic City, Bengaluru	PLACE	1277333	osm-n459501900	false
+Whitefield, Pune	PLACE	1259229		false
+New Delhi	PLACE	1273294		false
+Sector V, Salt Lake, Kolkata	PLACE	1275004	osm-n10792425145	false
+Delhi, Springfield	UNRESOLVED			false
+Gurgaon Cyber City	PLACE	1270642	osm-n2727388994	false
+Hinjewadi Phase 2, Pune	PLACE	1259229	osm-n13611182118	false
+Hinjewadi Ph. II, Pune	PLACE	1259229	osm-n13611182118	false
+Hinjewadi Phase 7, Pune	PLACE	1259229	osm-n9455603476	false
+Okhla Phase 2, New Delhi	PLACE	1273294	osm-n2805925632	false
+Whitefield	PLACE	1277333	osm-n377219489	false
+HITEC City	PLACE	1269843	osm-n2926946739	false
+Electronic City	PLACE	1277333	osm-n459501900	false
+Hitech City, Telangana, India	PLACE	1269843	osm-n2926946739	false
+HITEC City, Karnataka	STATE			false
+Sector 18	UNRESOLVED			false
+Powai, Mumbai, Maharashtra	PLACE	1275339	osm-n4759418251	false
+Hinjewadi / Kharadi, Pune	PLACE	1259229	osm-n9455603476,osm-n1796628053	false
+Aundh / Kharadi, Pune	PLACE	1259229	osm-n1796628053,osm-n245648364	false
+Aundh	UNRESOLVED			false
+Whitefield, Bengaluru; Gachibowli, Hyderabad	PLACE	1277333,1269843	osm-n377219489,osm-n701232038	false
+Bengaluru	PLACE	1277333		false
+Remote - United States	FOREIGN			true
+Remote - UK	FOREIGN			true
+Remote, USA	FOREIGN			true
+United States (Remote)	FOREIGN			true
+Remote - San Francisco, CA, United States	FOREIGN			true
+Remote - Germany / Remote - UK	FOREIGN			true
+United States, Remote	FOREIGN			true
+Remote - United States; Remote - India	REMOTE			true
+Remote - UK / Remote	REMOTE			true
+Remote - US; Anywhere	REMOTE			true
+Work from home (Remote)	REMOTE			true
+Remote	REMOTE			true
+Remote - India	REMOTE			true
+Work from home	REMOTE			true
+India	COUNTRY			false
+Pan India	COUNTRY			false
+Anywhere in India	COUNTRY			false
+Bengaluru, EGL	PLACE	1277333	osm-w28453683	false
+IND, Bangalore	PLACE	1277333		false
+Bengaluru, KA, IN	PLACE	1277333		false
+Noida Sector 62	PLACE	7279746	osm-n10811810934	false
+Powai, Mumbai	PLACE	1275339	osm-n4759418251	false
+Bengaluru, CA	UNRESOLVED			false
+Bengaluru - Whitefield	PLACE	1277333	osm-n377219489	false
+BENGALURU-BLDG 1 ~ Hitech, Defence & Aerospace Park	PLACE	1277333		false
+India-Bangalore	PLACE	1277333		false
+IND - Bengaluru - IN	PLACE	1277333		false
+Pune - Remote	PLACE	1259229		true
+Hyderabad - Hybrid	PLACE	1269843		false
+London - Bengaluru Tech Park	UNRESOLVED			false
+Engineering - Platform	UNRESOLVED			false
+Delhi, Ontario	UNRESOLVED			false
+Bengaluru, Karnataka 560066	PLACE	1277333		false
+Bengaluru 560001	PLACE	1277333		false
+Pune 411057	PLACE	1259229		false
+Mumbai 560066	PLACE	1275339		false
+Mumbai 400076	PLACE	1275339		false
+Hyderabad, Telangana 500081	PLACE	1269843		false
+Noida 201301	PLACE	7279746		false
+Mumbai, Head Office	PLACE	1275339		false
+Bengaluru, Corporate Office	PLACE	1277333		false
+Bengaluru - Head Quarters	PLACE	1277333		false
+Gurugram, HQ	UNRESOLVED			false
+Magarpatta, Pune	PLACE	1259229		false
+Pune, Magarpatta	PLACE	1259229		false
+Technopark, Thiruvananthapuram	PLACE	1254163		false
+Tidel Park, Chennai	PLACE	1264527		false
+Chennai, OMR	PLACE	1264527		false
+Outer Ring Road, Bengaluru	PLACE	1277333		false
+Golf Course Road, Gurugram	PLACE	1270642		false
+Noida Sector 63	UNRESOLVED			false
+Sector 125, Noida	PLACE	7279746		false
+Noida Sector 135	UNRESOLVED			false
+Magarpatta	UNRESOLVED			false
+Technopark	UNRESOLVED			false
+Tidel Park	UNRESOLVED			false

@@ -29,6 +29,8 @@ import org.slf4j.LoggerFactory;
 public class AdzunaJobStore {
     private static final Logger log = LoggerFactory.getLogger(AdzunaJobStore.class);
     private static final int MAX_RAW_LOCATION = 300;
+    private static final int MAX_RAW_AREA_ELEMENTS = 10;
+    private static final int MAX_RAW_AREA_LENGTH = 100;
     private final MongoTemplate mongo;
     private final AggregationConflictService conflicts;
     private final JobFeatureService jobFeatures;
@@ -81,7 +83,7 @@ public class AdzunaJobStore {
         UpdateDefinition update = canonicalUpsertUpdate(job, now, identity, listing);
         try {
             UpsertOutcome result = outcome(mongo.findAndModify(query, update,
-                    FindAndModifyOptions.options().upsert(true), JobDocument.class), job, identity);
+                    FindAndModifyOptions.options().upsert(true), JobDocument.class), job, identity, storesPoint(listing));
             return result;
         }
         catch (DuplicateKeyException race) {
@@ -92,17 +94,21 @@ public class AdzunaJobStore {
                 }
                 Query winnerQuery = Query.query(Criteria.where("_id").is(winner.getId()));
                 UpsertOutcome result = outcome(mongo.findAndModify(winnerQuery, update,
-                        FindAndModifyOptions.options().upsert(false), JobDocument.class), job, identity);
+                        FindAndModifyOptions.options().upsert(false), JobDocument.class), job, identity, storesPoint(listing));
                 return result;
             }
             catch (RuntimeException failure) { throw new AdzunaPersistenceException(failure); }
         } catch (RuntimeException failure) { throw new AdzunaPersistenceException(failure); }
     }
-    private UpsertOutcome outcome(JobDocument previous, JobDocument incoming, String identity) {
+    private UpsertOutcome outcome(JobDocument previous, JobDocument incoming, String identity, boolean storesPoint) {
         if (previous == null) return UpsertOutcome.INSERTED;
         ImportedSourceListing existingListing = previous.getSourceListings() == null ? null
                 : previous.getSourceListings().stream()
                         .filter(listing -> identity.equals(listing.getIdentity())).findFirst().orElse(null);
+        // GEO-10A: a listing stored without a provider point that now has one has a new resolution to show.
+        if (existingListing != null && storesPoint && (existingListing.getGeo() == null || existingListing.getGeo().point() == null)) {
+            return UpsertOutcome.UPDATED;
+        }
         if (existingListing != null
                 && !(java.util.Objects.equals(previous.getSource(), incoming.getSource())
                 && java.util.Objects.equals(previous.getExternalId(), incoming.getExternalId()))) {
@@ -114,6 +120,10 @@ public class AdzunaJobStore {
             return UpsertOutcome.UPDATED;
         }
         return same(previous, incoming) ? UpsertOutcome.UNCHANGED : UpsertOutcome.UPDATED;
+    }
+    /** The new resolution keeps a provider point (one inside India; others are dropped by the resolver). */
+    private static boolean storesPoint(ImportedSourceListing listing) {
+        return listing.getGeo() != null && listing.getGeo().point() != null;
     }
     private UpdateDefinition canonicalUpsertUpdate(JobDocument job, LocalDateTime now, String identity,
                                                    ImportedSourceListing listing) {
@@ -196,6 +206,11 @@ public class AdzunaJobStore {
         if (listing.getApplicationUrl() != null) document.append("applicationUrl", listing.getApplicationUrl());
         // Pipeline update: provider strings starting with '$' would otherwise be read as field paths.
         if (listing.getRawLocation() != null) document.append("rawLocation", literal(listing.getRawLocation()));
+        if (listing.getRawArea() != null && !listing.getRawArea().isEmpty()) {
+            document.append("rawArea", literal(listing.getRawArea()));
+        }
+        if (listing.getRawPostalCode() != null) document.append("rawPostalCode", literal(listing.getRawPostalCode()));
+        if (listing.getRawAddress() != null) document.append("rawAddress", literal(listing.getRawAddress()));
         if (listing.getGeo() != null) document.append("geo", literal(mongo.getConverter().convertToMongoType(listing.getGeo())));
         return document;
     }
@@ -204,7 +219,16 @@ public class AdzunaJobStore {
         String location = job.getLocation();
         listing.setRawLocation(location == null || location.length() <= MAX_RAW_LOCATION ? location
                 : location.substring(0, MAX_RAW_LOCATION));
-        listing.setGeo(geoResolver.resolve(location, job.getLocationHint()));
+        if (job.getLocationHint() != null && !job.getLocationHint().area().isEmpty()) {
+            listing.setRawArea(job.getLocationHint().area().stream().limit(MAX_RAW_AREA_ELEMENTS)
+                    .map(element -> element.length() <= MAX_RAW_AREA_LENGTH ? element : element.substring(0, MAX_RAW_AREA_LENGTH))
+                    .toList());
+        }
+        if (job.getLocationHint() != null) {
+            listing.setRawPostalCode(job.getLocationHint().postalCode());
+            listing.setRawAddress(job.getLocationHint().address());
+        }
+        listing.setGeo(geoResolver.resolve(location, job.getLocationHint(), job.getDescription()));
         if (listing.getGeo().status() != GeoStatus.UNRESOLVED || unresolvedLocations == null) return;
         try {
             unresolvedLocations.record(location, job.getSource());

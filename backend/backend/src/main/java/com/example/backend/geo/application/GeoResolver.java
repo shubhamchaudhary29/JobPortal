@@ -9,6 +9,7 @@ import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Optional;
 import java.util.Set;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
@@ -31,6 +32,11 @@ import org.springframework.stereotype.Component;
  * large city, an unknown comma segment is kept as the job's {@code siteLabel} instead of discarding the whole location;
  * a candidate that placed nothing is retried split on {@code - – — ~ :} ("India-Bangalore"). The label is text only,
  * never geocoded, and only a fallback: anything that resolved before GEO-9 resolves to the same places.
+ *
+ * <p>Locality evidence (GEO-10): when the text names no locality, a PIN code in the text
+ * ({@code in-pincode-localities.tsv}), the description ({@link DescriptionLocationScanner}) and the provider point
+ * ({@link #snap}) may each name one locality of a resolved place. A locality is added only when that evidence agrees
+ * on exactly one; disagreement keeps the job at the city. None of them is ever a point of its own.
  */
 @Component
 public class GeoResolver {
@@ -38,8 +44,9 @@ public class GeoResolver {
      * 2: remote markers scoped to a foreign country with no Indian location are FOREIGN, not REMOTE (GEO-6A).
      * 3: OpenStreetMap localities inside the resolved city, curated locality aliases, Adzuna point snapping (GEO-8B).
      * 4: edge-city split and City, Site labels; siteLabel (GEO-9A).
+     * 5: PIN code, description and curated tech-park/corridor localities; office kinds are no site label (GEO-10).
      */
-    public static final int PARSER_VERSION = 4;
+    public static final int PARSER_VERSION = 5;
     static final int MAX_INPUT_LENGTH = 300;
     static final int MAX_PLACES = 10;
     static final int MAX_LOCALITIES = 10;
@@ -68,38 +75,52 @@ public class GeoResolver {
     private static final Set<String> WORK_MODE_WORDS = Set.of("hybrid", "onsite", "on site", "office", "in office");
     private static final Set<String> COUNTRY_PHRASES = Set.of("pan india", "anywhere in india", "all india",
             "across india");
-    /** Trailing block/stage/phase/sector parts, stripped one at a time when the full locality name is unknown. */
     /** Separators of the edge-city split ("Bengaluru- We Work", "India-Bangalore", "BENGALURU-BLDG 1 ~ Hitech"). */
     private static final Pattern EDGE_SEPARATOR = Pattern.compile("\\s*[-\u2013\u2014~:]\\s*");
     private static final Pattern EDGE_SEPARATOR_PRESENT = Pattern.compile("[-\u2013\u2014~:]");
     private static final Set<String> COUNTRY_TOKENS = Set.of("ind", "in", "india");
     private static final Pattern SITE_LABEL_EDGES = Pattern.compile("^[\\s\\-\u2013\u2014~:,/]+|[\\s\\-\u2013\u2014~:,/]+$");
-    /** Generic words an ATS puts where a site would go; never a site label. */
+    /**
+     * Generic words an ATS puts where a site would go; never a site label. Office kinds ("Head Office", "HQ") name no
+     * particular building (GEO-10).
+     */
     private static final Set<String> NOT_SITE_WORDS = Set.of("location", "locations", "multiple locations",
-            "various locations", "other", "others", "tbd", "na", "n a", "any");
+            "various locations", "other", "others", "tbd", "na", "n a", "any", "head office", "corporate office",
+            "registered office", "regional office", "branch office", "hq", "head quarters", "headquarters");
+    /** Trailing block/stage/phase/sector parts, stripped one at a time when the full locality name is unknown. */
     private static final Pattern LOCALITY_SUFFIX = Pattern.compile(
             "\\s+(?:\\d+(?:st|nd|rd|th)?\\s+(?:block|stage|phase|sector)|(?:block|stage|phase|sector)\\s+\\d+[a-z]?)$");
 
     private final Gazetteer gazetteer;
     private final String version;
+    private final DescriptionLocationScanner descriptions;
 
     public GeoResolver(Gazetteer gazetteer) {
         this.gazetteer = gazetteer;
         this.version = PARSER_VERSION + "-" + gazetteer.dataHash();
+        this.descriptions = new DescriptionLocationScanner(gazetteer, this::locality);
     }
 
     /** Parser version plus data hash: editing any data file changes it, which marks old resolutions stale. */
     public String version() { return version; }
 
     public GeoResolution resolve(String raw, LocationHint hint) {
+        return resolve(raw, hint, null);
+    }
+
+    /**
+     * {@link #resolve(String, LocationHint)} plus the job description as locality evidence (GEO-10C): it can only pick
+     * a locality of the one place the location already resolved to, never a place.
+     */
+    public GeoResolution resolve(String raw, LocationHint hint, String description) {
         try {
-            return resolveSafely(raw, hint);
+            return resolveSafely(raw, hint, description);
         } catch (RuntimeException unexpected) {
             return new GeoResolution(GeoStatus.UNRESOLVED, List.of(), false, null, version);
         }
     }
 
-    private GeoResolution resolveSafely(String raw, LocationHint hint) {
+    private GeoResolution resolveSafely(String raw, LocationHint hint, String description) {
         Signals signals = new Signals();
         GeoPoint point = hint == null ? null : pointInIndia(hint.lat(), hint.lng());
         if (hint != null) applyHint(hint, signals);
@@ -108,7 +129,18 @@ public class GeoResolver {
         if (signals.places.isEmpty() && !blank) parse(raw.length() > MAX_INPUT_LENGTH
                 ? raw.substring(0, MAX_INPUT_LENGTH) : raw, signals);
         List<String> placeIds = signals.places.stream().limit(MAX_PLACES).toList();
-        if (point != null && placeIds.size() == 1 && signals.localities.isEmpty()) snap(point, placeIds.get(0), signals);
+        if (signals.localities.isEmpty() && !placeIds.isEmpty()) {
+            // Evidence beyond the location text; each source names at most one locality, and they must agree.
+            String postalCode = hint == null || hint.postalCode() == null ? "" : " " + hint.postalCode();
+            Set<String> evidence = new LinkedHashSet<>(pinLocalities((blank ? "" : raw) + postalCode, placeIds));
+            if (placeIds.size() == 1) {
+                if (point != null) snapLocality(point, placeIds.get(0)).ifPresent(evidence::add);
+                // An ATS street address (GEO-10E) is a cue line by definition.
+                String address = hint == null || hint.address() == null ? "" : "\nAddress: " + hint.address();
+                descriptions.scan((description == null ? "" : description) + address, placeIds).ifPresent(evidence::add);
+            }
+            if (evidence.size() == 1) signals.localities.addAll(evidence);
+        }
         // Invariant: a locality belongs to one of the job's places.
         List<String> localityIds = signals.localities.stream()
                 .filter(id -> gazetteer.localityById(id).map(locality -> placeIds.contains(locality.placeId())).orElse(false))
@@ -121,13 +153,27 @@ public class GeoResolver {
      * Adzuna sends a point; one at the city centre is Adzuna's own city centroid, not an office. A point far enough from
      * the centre snaps to the nearest known locality within {@value #SNAP_MAX_KM} km, never to the raw point.
      */
-    private void snap(GeoPoint point, String placeId, Signals signals) {
+    private Optional<String> snapLocality(GeoPoint point, String placeId) {
         Place place = gazetteer.byId(placeId).orElse(null);
         if (place == null || MapJobService.haversineKm(point.lat(), point.lng(), place.lat(), place.lng()) < SNAP_MIN_CENTRE_KM) {
-            return;
+            return Optional.empty();
         }
-        gazetteer.nearestLocality(placeId, point.lat(), point.lng(), SNAP_MAX_KM)
-                .ifPresent(locality -> signals.localities.add(locality.id()));
+        return gazetteer.nearestLocality(placeId, point.lat(), point.lng(), SNAP_MAX_KM).map(LocalityIndex.Locality::id);
+    }
+
+    /**
+     * Localities that the location text's PIN codes name inside the resolved places (GEO-10B), read before parsing
+     * strips them. A PIN of another city ("Mumbai 560066") or an unknown PIN adds nothing; two PINs naming different
+     * localities give two, which the caller treats as disagreement.
+     */
+    private Set<String> pinLocalities(String raw, List<String> placeIds) {
+        Set<String> found = new LinkedHashSet<>();
+        Matcher pins = POSTAL_CODE.matcher(raw.length() > MAX_INPUT_LENGTH + 7 ? raw.substring(0, MAX_INPUT_LENGTH + 7) : raw);
+        while (pins.find()) {
+            gazetteer.pinLocality(pins.group()).filter(locality -> placeIds.contains(locality.placeId()))
+                    .ifPresent(locality -> found.add(locality.id()));
+        }
+        return found;
     }
 
     private void applyHint(LocationHint hint, Signals signals) {
@@ -450,7 +496,7 @@ public class GeoResolver {
      * locality in this city, then the same after stripping a trailing block/stage/phase/sector part
      * ("Koramangala 12th Block" → Koramangala, "Hinjewadi Phase 4" → Hinjewadi). Never a locality of another city.
      */
-    private LocalityIndex.Locality locality(String key, Place city) {
+    LocalityIndex.Locality locality(String key, Place city) {
         String current = LocalityIndex.localityKey(key);
         while (!current.isEmpty()) {
             List<LocalityIndex.Locality> named = gazetteer.localityMatches(current, city.id());

@@ -5,7 +5,9 @@ import com.example.backend.job.domain.GeoResolution;
 import com.example.backend.job.domain.LocationHint;
 import java.time.Clock;
 import java.util.ArrayList;
+import com.mongodb.client.model.CountOptions;
 import java.util.List;
+import java.util.concurrent.TimeUnit;
 import org.bson.Document;
 import org.bson.conversions.Bson;
 import org.slf4j.Logger;
@@ -25,7 +27,9 @@ import org.springframework.stereotype.Service;
  * {@code geo} cannot depend on this package without a cycle.
  *
  * <p>The stored provider point (Adzuna) is passed back to the resolver, so re-resolution keeps it and can snap it to a
- * locality (GEO-8B); before GEO-8 every version bump dropped it until the next sync.
+ * locality (GEO-8B); before GEO-8 every version bump dropped it until the next sync. Since GEO-10 the listing's stored
+ * {@code rawArea} goes with it, and the job's description is locality evidence as at ingestion. Every query is bounded
+ * by {@value #MAX_TIME_MS} ms.
  */
 @Service
 public class GeoReResolutionService {
@@ -33,6 +37,7 @@ public class GeoReResolutionService {
     static final String LOCK = "geo-reresolution";
     static final long LEASE_MS = 300_000;
     private static final String JOBS = "jobs";
+    static final long MAX_TIME_MS = 15_000;
 
     private final MongoTemplate mongo;
     private final DistributedLeaseLock locks;
@@ -72,7 +77,8 @@ public class GeoReResolutionService {
                 }
                 if (jobs.size() < batchSize) { exhausted = true; break; }
             }
-            long remaining = exhausted ? 0 : mongo.getCollection(JOBS).countDocuments(staleFilter(version, null));
+            long remaining = exhausted ? 0 : mongo.getCollection(JOBS).countDocuments(staleFilter(version, null),
+                    new CountOptions().maxTime(MAX_TIME_MS, TimeUnit.MILLISECONDS));
             Result result = new Result(true, scanned, updated, remaining, clock.millis() - started);
             log.info("event=geo_reresolution_completed scanned={} updated={} remaining_estimate={} duration_ms={}",
                     result.scanned(), result.updated(), result.remainingEstimate(), result.durationMs());
@@ -85,9 +91,12 @@ public class GeoReResolutionService {
     private List<Document> staleBatch(String version, Object afterId) {
         Document projection = new Document("_id", 1).append("location", 1).append("sourceListings.identity", 1)
                 .append("sourceListings.rawLocation", 1).append("sourceListings.geo.version", 1).append("geo.version", 1)
-                .append("sourceListings.geo.point", 1).append("geo.point", 1);
+                .append("sourceListings.geo.point", 1).append("geo.point", 1).append("sourceListings.rawArea", 1)
+                .append("sourceListings.rawPostalCode", 1).append("sourceListings.rawAddress", 1)
+                .append("description", 1);
         return mongo.getCollection(JOBS).find(staleFilter(version, afterId)).projection(projection)
-                .sort(new Document("_id", 1)).limit(batchSize).into(new ArrayList<>());
+                .sort(new Document("_id", 1)).limit(batchSize).maxTime(MAX_TIME_MS, TimeUnit.MILLISECONDS)
+                .into(new ArrayList<>());
     }
 
     /** Active jobs (same semantics as job search) with any listing, or a listing-less top level, off-version. */
@@ -109,9 +118,11 @@ public class GeoReResolutionService {
     private int reResolve(Document job, String version) {
         Query byId = Query.query(Criteria.where("_id").is(job.get("_id")));
         String location = job.getString("location");
+        String description = job.getString("description");
         List<Document> listings = job.getList("sourceListings", Document.class);
         if (listings == null || listings.isEmpty()) {
-            Update update = new Update().set("geo", mapped(resolver.resolve(location, pointHint(job.get("geo", Document.class)))));
+            Update update = new Update().set("geo", mapped(resolver.resolve(location,
+                    hint(null, job.get("geo", Document.class)), description)));
             return (int) mongo.updateFirst(Query.query(Criteria.where("_id").is(job.get("_id"))
                     .and("geo.version").ne(version)), update, JOBS).getModifiedCount();
         }
@@ -122,7 +133,7 @@ public class GeoReResolutionService {
             String raw = listing.getString("rawLocation");
             boolean seeded = raw == null && location != null;
             Update update = new Update().set("sourceListings.$[l].geo", mapped(resolver.resolve(seeded ? location : raw,
-                            pointHint(geo))))
+                            hint(listing, geo), description)))
                     .filterArray(Criteria.where("l.identity").is(listing.getString("identity")).and("l.geo.version").ne(version));
             if (seeded) {
                 update.set("sourceListings.$[l].rawLocation", location).set("sourceListings.$[l].rawLocationInferred", true);
@@ -132,11 +143,19 @@ public class GeoReResolutionService {
         return updated;
     }
 
-    /** The stored provider point as a hint without area (the area is not stored), or null. */
-    private static LocationHint pointHint(Document geo) {
+    /**
+     * The listing's stored area (GEO-10A), postal code and address (GEO-10E) and provider point as the hint, or null when
+     * none is stored. {@code listing} is null for a listing-less job, which has only a point.
+     */
+    private static LocationHint hint(Document listing, Document geo) {
         Document point = geo == null ? null : geo.get("point", Document.class);
-        if (point == null || !(point.get("lat") instanceof Number lat) || !(point.get("lng") instanceof Number lng)) return null;
-        return new LocationHint(List.of(), lat.doubleValue(), lng.doubleValue());
+        boolean hasPoint = point != null && point.get("lat") instanceof Number && point.get("lng") instanceof Number;
+        List<String> area = listing == null ? null : listing.getList("rawArea", String.class);
+        String postalCode = listing == null ? null : listing.getString("rawPostalCode");
+        String address = listing == null ? null : listing.getString("rawAddress");
+        if (!hasPoint && (area == null || area.isEmpty()) && postalCode == null && address == null) return null;
+        return new LocationHint(area, hasPoint ? ((Number) point.get("lat")).doubleValue() : null,
+                hasPoint ? ((Number) point.get("lng")).doubleValue() : null, postalCode, address);
     }
 
     private Object mapped(GeoResolution resolution) {

@@ -89,6 +89,31 @@ class GazetteerDataTest {
         assertTrue(offices.offices().stream().allMatch(office -> office.osmRef().matches("osm-[nwr]\\d{1,15}")));
     }
 
+    @Test
+    void curatedLocalitiesAreCitedAndNearTheirCity() {
+        List<String[]> rows = Gazetteer.readOsm(Gazetteer.CURATED_LOCALITIES).rows();
+        assertTrue(rows.size() >= 9, "only " + rows.size() + " curated rows");
+        for (String[] row : rows) {
+            assertTrue(row[0].matches("cur-[a-z0-9-]{1,60}"), row[0]);
+            LocalityIndex.Locality locality = GAZETTEER.localityById(row[0]).orElseThrow(() -> new AssertionError(row[0]));
+            Place city = GAZETTEER.byId(locality.placeId()).orElseThrow(() -> new AssertionError(row[0] + " city"));
+            assertTrue(MapJobService.haversineKm(locality.lat(), locality.lng(), city.lat(), city.lng()) < 40,
+                    row[0] + " is far from " + city.name());
+            assertTrue(row[7].equals("corridor") || row[7].equals("tech_park"), row[0] + " kind " + row[7]);
+            assertTrue(row[8].startsWith("https://www.openstreetmap.org/") || row[8].startsWith("https://www.wikidata.org/"),
+                    row[0] + " must cite its coordinate's source");
+        }
+    }
+
+    @Test
+    void everyPinRowNamesALocalityOfItsCity() {
+        List<String[]> rows = Gazetteer.readOsm(Gazetteer.PIN_LOCALITIES).rows();
+        assertTrue(rows.size() > 500, "only " + rows.size() + " PIN rows");
+        assertEquals(rows.size(), GAZETTEER.pinLocalityCount(), "every row's locality exists and is in its city");
+        assertTrue(rows.stream().allMatch(row -> row[0].matches("[1-9]\\d{5}")));
+        assertEquals("Whitefield", GAZETTEER.pinLocality("560066").orElseThrow().name());
+    }
+
     private static List<String[]> rows(String resource) throws IOException {
         try (InputStream input = GazetteerDataTest.class.getClassLoader().getResourceAsStream(resource)) {
             assertNotNull(input, resource);

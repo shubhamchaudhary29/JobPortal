@@ -12,7 +12,13 @@ record SmartRecruitersPostingDto(String id, String name, String releasedDate, Sm
                                  SmartRecruitersLabelDto typeOfEmployment) { }
 
 @JsonIgnoreProperties(ignoreUnknown = true)
-record SmartRecruitersLocationDto(String city, String region, String country, Boolean remote) { }
+record SmartRecruitersLocationDto(String city, String region, String country, Boolean remote, String address,
+                                  String postalCode, String latitude, String longitude) {
+    /** City-level only (pre-GEO-10E shape). */
+    SmartRecruitersLocationDto(String city, String region, String country, Boolean remote) {
+        this(city, region, country, remote, null, null, null, null);
+    }
+}
 
 @JsonIgnoreProperties(ignoreUnknown = true)
 record SmartRecruitersLabelDto(String id, String label) { }

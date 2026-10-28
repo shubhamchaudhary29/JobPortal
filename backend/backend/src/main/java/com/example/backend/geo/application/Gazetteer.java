@@ -29,6 +29,10 @@ import org.springframework.stereotype.Component;
  * Offline India gazetteer (GeoNames, CC BY 4.0) plus hand-maintained alias, state and country files, and the
  * OpenStreetMap localities of its cities (ODbL, GEO-8). Loaded once at startup and immutable afterwards, so lookups
  * are safe from any thread. The locality file is part of {@link #dataHash()} because it changes resolutions.
+ *
+ * <p>GEO-10: hand-curated tech parks and corridors ({@code curated-localities.tsv}, ids {@code cur-…}) are localities
+ * like the OpenStreetMap ones, and {@code in-pincode-localities.tsv} maps a PIN code to the one locality its post
+ * offices name. Both are part of the data hash.
  */
 @Component
 public class Gazetteer {
@@ -43,6 +47,11 @@ public class Gazetteer {
     /** Written as {@code .tsv.gz} instead when it exceeds 4 MB; either form is read. */
     static final String LOCALITIES = "geo/in-localities.tsv";
     static final String LOCALITY_ALIASES = "geo/locality-aliases.tsv";
+    /** Tech parks and corridors OpenStreetMap has no locality for (GEO-10D); every row cites its coordinate's source. */
+    static final String CURATED_LOCALITIES = "geo/curated-localities.tsv";
+    /** PIN code → the one locality its post offices name (GEO-10B, from GeoNames postal codes). */
+    static final String PIN_LOCALITIES = "geo/in-pincode-localities.tsv";
+    static final String CURATED_PREFIX = "cur-";
     private static final List<String> DATA_FILES = List.of(PLACES, ADMIN1, PLACE_ALIASES, STATE_ALIASES, COUNTRIES,
             FOREIGN_QUALIFIERS);
     private static final Pattern DROPPED = Pattern.compile("['.’]");
@@ -62,6 +71,7 @@ public class Gazetteer {
     private final String dataHash;
     private final LocalityIndex localities;
     private final Map<String, LocalityIndex.Locality> localityAliases;
+    private final Map<String, LocalityIndex.Locality> pinLocalities;
     private final List<String> danglingLocalityAliases;
     private final long localityHeapBytes;
 
@@ -71,7 +81,14 @@ public class Gazetteer {
         long heapBefore = usedHeapAfterGc();
         OsmFile localityFile = readOsm(LOCALITIES);
         raw.put(localityFile.name(), localityFile.raw());
-        this.localities = LocalityIndex.fromRows(localityFile.rows());
+        OsmFile curatedFile = readOsm(CURATED_LOCALITIES);
+        raw.put(curatedFile.name(), curatedFile.raw());
+        List<String[]> localityRows = new ArrayList<>(localityFile.rows());
+        for (String[] row : curatedFile.rows()) {
+            // A curated id must not be mistaken for (or collide with) an OpenStreetMap one.
+            if (row.length > 0 && row[0].startsWith(CURATED_PREFIX)) localityRows.add(row);
+        }
+        this.localities = LocalityIndex.fromRows(localityRows);
         this.localityHeapBytes = Math.max(0, usedHeapAfterGc() - heapBefore);
         raw.put(LOCALITY_ALIASES, read(LOCALITY_ALIASES));
         Map<String, LocalityIndex.Locality> localityAliasIndex = new HashMap<>();
@@ -84,6 +101,15 @@ public class Gazetteer {
         if (!dangling.isEmpty()) log.warn("event=geo_locality_alias_dangling aliases={}", dangling);
         this.localityAliases = Map.copyOf(localityAliasIndex);
         this.danglingLocalityAliases = List.copyOf(dangling);
+        OsmFile pinFile = readOsm(PIN_LOCALITIES);
+        raw.put(pinFile.name(), pinFile.raw());
+        Map<String, LocalityIndex.Locality> pins = new HashMap<>();
+        for (String[] row : pinFile.rows()) {
+            LocalityIndex.Locality locality = row.length < 3 ? null : localities.byId(row[2].trim()).orElse(null);
+            // A row whose locality is gone, or is not in the row's city, is dropped rather than trusted.
+            if (locality != null && locality.placeId().equals(row[1].trim())) pins.put(row[0].trim(), locality);
+        }
+        this.pinLocalities = Map.copyOf(pins);
         Map<String, Place> places = new LinkedHashMap<>();
         Map<String, List<Place>> primaryIndex = new HashMap<>();
         Map<String, List<Place>> alternateIndex = new HashMap<>();
@@ -184,6 +210,13 @@ public class Gazetteer {
     public Optional<LocalityIndex.Locality> localityAlias(String key) {
         return Optional.ofNullable(key == null ? null : localityAliases.get(LocalityIndex.localityKey(key)));
     }
+    /** The one locality a 6-digit PIN code's post offices name, if known (never a point of its own). */
+    public Optional<LocalityIndex.Locality> pinLocality(String pin) {
+        return Optional.ofNullable(pin == null ? null : pinLocalities.get(pin));
+    }
+
+    int pinLocalityCount() { return pinLocalities.size(); }
+
     /** Alias rows whose target is not in the locality file (must be empty; checked by a test). */
     List<String> danglingLocalityAliases() { return danglingLocalityAliases; }
 
@@ -196,7 +229,7 @@ public class Gazetteer {
      */
     /** {@code osm-…} id, or {@code name|placeId} naming exactly one locality of that place. */
     private LocalityIndex.Locality localityTarget(String target) {
-        if (target.startsWith("osm-")) return localities.byId(target).orElse(null);
+        if (target.startsWith("osm-") || target.startsWith(CURATED_PREFIX)) return localities.byId(target).orElse(null);
         int bar = target.lastIndexOf('|');
         if (bar <= 0) return null;
         String name = target.substring(0, bar).trim();

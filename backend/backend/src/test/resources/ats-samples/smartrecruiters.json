@@ -1,0 +1,42 @@
+{
+  "_fixture": "Captured 2026-10-28 from api.smartrecruiters.com/v1/companies/swiggy/postings (public job-board API, employer-registry board); 3 jobs (street address, postal code, and the usual city-geocode point without either), trimmed to ids and location fields (GEO-10E).",
+  "content": [
+    {
+      "id": "6000000001469436",
+      "location": {
+        "city": "BENGALURU URBAN",
+        "region": "Karnataka",
+        "country": "in",
+        "address": "Sumadhura Capitol Towers (1826)",
+        "remote": false,
+        "hybrid": false,
+        "fullLocation": "BENGALURU URBAN, Karnataka, India"
+      }
+    },
+    {
+      "id": "6000000001501334",
+      "location": {
+        "city": "Bengaluru",
+        "country": "in",
+        "address": ".",
+        "postalCode": "560066",
+        "remote": false,
+        "hybrid": false,
+        "fullLocation": "Bengaluru, , India"
+      }
+    },
+    {
+      "id": "6000000001526179",
+      "location": {
+        "city": "Bengaluru",
+        "region": "KA",
+        "country": "in",
+        "remote": false,
+        "hybrid": true,
+        "latitude": "12.9628957",
+        "longitude": "77.57754",
+        "fullLocation": "Bengaluru, KA, India"
+      }
+    }
+  ]
+}

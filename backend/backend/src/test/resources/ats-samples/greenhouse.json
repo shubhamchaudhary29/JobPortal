@@ -1,0 +1,31 @@
+{
+  "_fixture": "Captured 2026-10-28 from boards-api.greenhouse.io/v1/boards/inmobi/jobs?content=true (public job-board API, employer-registry board); 2 jobs, trimmed to ids and location fields (GEO-10E).",
+  "jobs": [
+    {
+      "id": 7959734,
+      "location": {
+        "name": "Bangalore"
+      },
+      "offices": [
+        {
+          "id": 4955,
+          "name": "Bangalore",
+          "location": "Bangalore, Karnataka, India"
+        }
+      ]
+    },
+    {
+      "id": 7925318,
+      "location": {
+        "name": "Egypt"
+      },
+      "offices": [
+        {
+          "id": 84956,
+          "name": "Others",
+          "location": null
+        }
+      ]
+    }
+  ]
+}

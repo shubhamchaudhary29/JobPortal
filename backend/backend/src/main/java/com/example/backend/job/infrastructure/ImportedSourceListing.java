@@ -19,5 +19,13 @@ public class ImportedSourceListing {
     private String rawLocation;
     /** True when {@code rawLocation} was seeded from the canonical location by re-resolution, not the provider. */
     private boolean rawLocationInferred;
+    /**
+     * The provider's structured area (Adzuna {@code location.area[]}, GEO-10A), kept so re-resolution can use it as the
+     * hint again; documents written before GEO-10 have none.
+     */
+    private java.util.List<String> rawArea;
+    /** The ATS postal code and street address (GEO-10E), replayed by re-resolution; absent before GEO-10. */
+    private String rawPostalCode;
+    private String rawAddress;
     private com.example.backend.job.domain.GeoResolution geo;
 }

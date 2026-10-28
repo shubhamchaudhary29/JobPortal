@@ -51,7 +51,9 @@ public class MapJobService {
     static final int MAX_COMPANY_LENGTH = 200;
     /** 0.05° grid (about 5 km of latitude): 20 steps per degree. */
     static final int GRID_STEPS_PER_DEGREE = 20;
-    static final java.util.regex.Pattern LOCALITY_ID = java.util.regex.Pattern.compile("^osm-[nwr]\\d{1,15}$");
+    /** OpenStreetMap localities ({@code osm-n…/w…/r…}) and curated tech parks and corridors ({@code cur-…}, GEO-10D). */
+    static final java.util.regex.Pattern LOCALITY_ID = java.util.regex.Pattern.compile(
+            "^(?:osm-[nwr]\\d{1,15}|cur-[a-z0-9-]{1,60})$");
 
     private final MapSnapshotService snapshots;
     private final MapJobQueries queries;
