@@ -60,7 +60,9 @@ Attribution required: © OpenStreetMap contributors, GeoNames (CC-BY 4.0).
 - [x] GEO-9A — resolver v4: edge-city split and "City, Site" labels; `siteLabel` stored on every geo write path
 - [x] GEO-9D — explicit `precision` and `siteLabel` on map job places, site labels on job cards, `topSiteLabels` worklist
 - [x] GEO-9E — centre-company ring around a city's centre bubble at street zoom, company filter on its job list
-- [ ] GEO-9B — structured ATS lat/lng and postal code
+- [x] GEO-10 — locality evidence: Adzuna area and point on the live path, PIN codes, description cue lines, curated tech parks and corridors, ATS postal code and address (resolver v5)
+- [ ] GEO-11 — office resolution for companies with several offices, admin worklist, recruiter locality picker
+- [ ] GEO-9B — structured ATS lat/lng and postal code (covered by GEO-10E where the ATS sends them)
 - [ ] GEO-9C — several offices per city keyed by site label
 
 ---
@@ -397,7 +399,8 @@ Precision order everywhere (snapshot, job pages, nearby, distances): **office** 
 - **Bare localities** resolve only through `locality-aliases.tsv` (47 hand-checked aliases for unambiguous hubs; a
   test fails on a dangling alias or an alias that is also a 100k+ city name). "Sector 18" alone stays unresolved.
   Not aliased because OpenStreetMap has no matching row: Magarpatta, Golf Course Road, Outer Ring Road, OMR, Tidel
-  Park, Technopark, Noida Sectors 63/125/135.
+  Park, Technopark, Noida Sectors 63/125/135. (GEO-10D adds them as curated
+  localities with cited coordinates, `curated-localities.tsv`.)
 - Multi-candidate input keeps every locality with its own city; a candidate that placed nothing is tried as a locality
   of a city another candidate named ("Aundh / Kharadi, Pune").
 - **Adzuna:** with one place, no text locality and a point ≥ 1.5 km from the centre, the point snaps to the nearest

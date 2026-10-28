@@ -209,6 +209,8 @@ public class AdzunaJobStore {
         if (listing.getRawArea() != null && !listing.getRawArea().isEmpty()) {
             document.append("rawArea", literal(listing.getRawArea()));
         }
+        if (listing.getRawPostalCode() != null) document.append("rawPostalCode", literal(listing.getRawPostalCode()));
+        if (listing.getRawAddress() != null) document.append("rawAddress", literal(listing.getRawAddress()));
         if (listing.getGeo() != null) document.append("geo", literal(mongo.getConverter().convertToMongoType(listing.getGeo())));
         return document;
     }
@@ -221,6 +223,10 @@ public class AdzunaJobStore {
             listing.setRawArea(job.getLocationHint().area().stream().limit(MAX_RAW_AREA_ELEMENTS)
                     .map(element -> element.length() <= MAX_RAW_AREA_LENGTH ? element : element.substring(0, MAX_RAW_AREA_LENGTH))
                     .toList());
+        }
+        if (job.getLocationHint() != null) {
+            listing.setRawPostalCode(job.getLocationHint().postalCode());
+            listing.setRawAddress(job.getLocationHint().address());
         }
         listing.setGeo(geoResolver.resolve(location, job.getLocationHint(), job.getDescription()));
         if (listing.getGeo().status() != GeoStatus.UNRESOLVED || unresolvedLocations == null) return;

@@ -1,0 +1,33 @@
+{
+  "_fixture": "Captured 2026-10-28 from api.ashbyhq.com/posting-api/job-board/sarvam (public job-board API, employer-registry board); 2 jobs, trimmed to ids and location fields (GEO-10E).",
+  "jobs": [
+    {
+      "id": "c0406fe0-c8c0-44aa-aa3e-b879f2bf1049",
+      "location": "Delhi",
+      "address": {
+        "postalAddress": {
+          "addressRegion": "Delhi",
+          "addressCountry": "India",
+          "addressLocality": "Delhi"
+        }
+      },
+      "secondaryLocations": [],
+      "isRemote": false,
+      "workplaceType": "OnSite"
+    },
+    {
+      "id": "7c42207a-bb56-413c-839f-9ad692df840e",
+      "location": "Bengaluru",
+      "address": {
+        "postalAddress": {
+          "addressRegion": "Karnataka",
+          "addressCountry": "India",
+          "addressLocality": "Bengaluru"
+        }
+      },
+      "secondaryLocations": [],
+      "isRemote": false,
+      "workplaceType": "OnSite"
+    }
+  ]
+}

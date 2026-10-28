@@ -131,10 +131,13 @@ public class GeoResolver {
         List<String> placeIds = signals.places.stream().limit(MAX_PLACES).toList();
         if (signals.localities.isEmpty() && !placeIds.isEmpty()) {
             // Evidence beyond the location text; each source names at most one locality, and they must agree.
-            Set<String> evidence = new LinkedHashSet<>(pinLocalities(blank ? "" : raw, placeIds));
+            String postalCode = hint == null || hint.postalCode() == null ? "" : " " + hint.postalCode();
+            Set<String> evidence = new LinkedHashSet<>(pinLocalities((blank ? "" : raw) + postalCode, placeIds));
             if (placeIds.size() == 1) {
                 if (point != null) snapLocality(point, placeIds.get(0)).ifPresent(evidence::add);
-                descriptions.scan(description, placeIds).ifPresent(evidence::add);
+                // An ATS street address (GEO-10E) is a cue line by definition.
+                String address = hint == null || hint.address() == null ? "" : "\nAddress: " + hint.address();
+                descriptions.scan((description == null ? "" : description) + address, placeIds).ifPresent(evidence::add);
             }
             if (evidence.size() == 1) signals.localities.addAll(evidence);
         }
@@ -165,7 +168,7 @@ public class GeoResolver {
      */
     private Set<String> pinLocalities(String raw, List<String> placeIds) {
         Set<String> found = new LinkedHashSet<>();
-        Matcher pins = POSTAL_CODE.matcher(raw.length() > MAX_INPUT_LENGTH ? raw.substring(0, MAX_INPUT_LENGTH) : raw);
+        Matcher pins = POSTAL_CODE.matcher(raw.length() > MAX_INPUT_LENGTH + 7 ? raw.substring(0, MAX_INPUT_LENGTH + 7) : raw);
         while (pins.find()) {
             gazetteer.pinLocality(pins.group()).filter(locality -> placeIds.contains(locality.placeId()))
                     .ifPresent(locality -> found.add(locality.id()));

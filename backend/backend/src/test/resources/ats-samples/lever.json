@@ -1,0 +1,31 @@
+{
+  "_fixture": "Captured 2026-10-28 from api.lever.co/v0/postings/meesho?mode=json (public job-board API, employer-registry board); 2 jobs, trimmed to ids and location fields (GEO-10E).",
+  "postings": [
+    {
+      "id": "1229feac-d439-4997-bbe3-4bbc15f5b3bc",
+      "categories": {
+        "location": "Delhi, Delhi",
+        "allLocations": [
+          "Delhi, Delhi",
+          "Bangalore, Karnataka",
+          "Mumbai, Maharashtra",
+          "Jaipur, Rajasthan",
+          "Ludhiana, Punjab"
+        ]
+      },
+      "workplaceType": "onsite",
+      "country": "IN"
+    },
+    {
+      "id": "7d9af9b5-c1c7-48ec-bbb5-9b25e49f6596",
+      "categories": {
+        "location": "Bangalore, Karnataka",
+        "allLocations": [
+          "Bangalore, Karnataka"
+        ]
+      },
+      "workplaceType": "onsite",
+      "country": "IN"
+    }
+  ]
+}

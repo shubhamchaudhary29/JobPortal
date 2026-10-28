@@ -10,6 +10,7 @@ import com.example.backend.integration.reliability.ProviderHttpClient;
 import com.example.backend.integration.reliability.ProviderReliabilityProperties;
 import com.example.backend.integration.reliability.ProviderRequestLimiter;
 import com.example.backend.integration.reliability.ProviderRetryExecutor;
+import com.example.backend.job.domain.LocationHint;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
@@ -135,7 +136,8 @@ public class SmartRecruitersJobSource implements JobSource {
                 output.add(ExternalJobNormalizer.normalize(posting.id(), posting.name(), found.description(),
                         request.company(), location(posting.location()),
                         posting.typeOfEmployment() == null ? null : posting.typeOfEmployment().label(),
-                        found.postingUrl() != null ? found.postingUrl() : found.applyUrl(), posting.releasedDate()));
+                        found.postingUrl() != null ? found.postingUrl() : found.applyUrl(), posting.releasedDate(), null, null,
+                        hint(posting.location())));
             } catch (RuntimeException malformedItem) {
                 rejected++;
             }
@@ -171,6 +173,30 @@ public class SmartRecruitersJobSource implements JobSource {
         }
         return new SmartRecruitersDetailCache.Detail(description.isEmpty() ? null : description.toString(),
                 dto.postingUrl(), dto.applyUrl());
+    }
+
+    /**
+     * GEO-10E, from captured responses ({@code ats-samples/smartrecruiters.json}): postal code and street address are
+     * evidence; the coordinates are one geocode per city name unless the posting has a street address, so they are
+     * used only with one (a city geocode a few km from our centre would otherwise snap to an arbitrary locality).
+     */
+    static LocationHint hint(SmartRecruitersLocationDto location) {
+        if (location == null) return null;
+        LocationHint parsed = new LocationHint(List.of(), null, null, location.postalCode(), location.address());
+        String address = parsed.address();
+        boolean streetAddress = address != null && location.city() != null && !address.equalsIgnoreCase(location.city().trim());
+        Double lat = streetAddress ? number(location.latitude()) : null;
+        Double lng = streetAddress ? number(location.longitude()) : null;
+        if (lat == null && parsed.postalCode() == null && address == null) return null;
+        return new LocationHint(List.of(), lat, lat == null ? null : lng, parsed.postalCode(), streetAddress ? address : null);
+    }
+
+    private static Double number(String value) {
+        try {
+            return value == null || value.isBlank() ? null : Double.valueOf(value.trim());
+        } catch (NumberFormatException malformed) {
+            return null;
+        }
     }
 
     static String location(SmartRecruitersLocationDto location) {

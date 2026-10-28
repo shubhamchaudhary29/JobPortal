@@ -88,6 +88,18 @@ class GeoEvidenceMongoIntegrationTest {
     }
 
     @Test
+    void atsPostalCodeIsStoredAndReplayedByReResolution() {
+        store.upsert(adzuna("s1", "Bengaluru", new LocationHint(List.of(), null, null, "560066", null), "desc"), NOW);
+        assertEquals(List.of(whitefield().id()), listingGeo().localityIds());
+        assertEquals("560066", rawListing().getString("rawPostalCode"));
+
+        mongo.getCollection("jobs").updateOne(new Document(), new Document("$set", new Document("sourceListings.0.geo.version", "4-old")
+                .append("sourceListings.0.geo.localityIds", List.of())));
+        assertEquals(1, reResolution.runOnce().updated());
+        assertEquals(List.of(whitefield().id()), listingGeo().localityIds());
+    }
+
+    @Test
     void importedDescriptionIsEvidenceButNeverAPlace() {
         store.upsert(adzuna("a1", "Bengaluru", null, "Office address: Whitefield, Bengaluru"), NOW);
         assertEquals(List.of(whitefield().id()), listingGeo().localityIds());

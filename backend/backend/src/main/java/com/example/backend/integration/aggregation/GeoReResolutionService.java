@@ -92,6 +92,7 @@ public class GeoReResolutionService {
         Document projection = new Document("_id", 1).append("location", 1).append("sourceListings.identity", 1)
                 .append("sourceListings.rawLocation", 1).append("sourceListings.geo.version", 1).append("geo.version", 1)
                 .append("sourceListings.geo.point", 1).append("geo.point", 1).append("sourceListings.rawArea", 1)
+                .append("sourceListings.rawPostalCode", 1).append("sourceListings.rawAddress", 1)
                 .append("description", 1);
         return mongo.getCollection(JOBS).find(staleFilter(version, afterId)).projection(projection)
                 .sort(new Document("_id", 1)).limit(batchSize).maxTime(MAX_TIME_MS, TimeUnit.MILLISECONDS)
@@ -132,7 +133,7 @@ public class GeoReResolutionService {
             String raw = listing.getString("rawLocation");
             boolean seeded = raw == null && location != null;
             Update update = new Update().set("sourceListings.$[l].geo", mapped(resolver.resolve(seeded ? location : raw,
-                            hint(listing.getList("rawArea", String.class), geo), description)))
+                            hint(listing, geo), description)))
                     .filterArray(Criteria.where("l.identity").is(listing.getString("identity")).and("l.geo.version").ne(version));
             if (seeded) {
                 update.set("sourceListings.$[l].rawLocation", location).set("sourceListings.$[l].rawLocationInferred", true);
@@ -142,13 +143,19 @@ public class GeoReResolutionService {
         return updated;
     }
 
-    /** The listing's stored area (GEO-10A) and provider point as the hint, or null when neither is stored. */
-    private static LocationHint hint(List<String> area, Document geo) {
+    /**
+     * The listing's stored area (GEO-10A), postal code and address (GEO-10E) and provider point as the hint, or null when
+     * none is stored. {@code listing} is null for a listing-less job, which has only a point.
+     */
+    private static LocationHint hint(Document listing, Document geo) {
         Document point = geo == null ? null : geo.get("point", Document.class);
         boolean hasPoint = point != null && point.get("lat") instanceof Number && point.get("lng") instanceof Number;
-        if (!hasPoint && (area == null || area.isEmpty())) return null;
+        List<String> area = listing == null ? null : listing.getList("rawArea", String.class);
+        String postalCode = listing == null ? null : listing.getString("rawPostalCode");
+        String address = listing == null ? null : listing.getString("rawAddress");
+        if (!hasPoint && (area == null || area.isEmpty()) && postalCode == null && address == null) return null;
         return new LocationHint(area, hasPoint ? ((Number) point.get("lat")).doubleValue() : null,
-                hasPoint ? ((Number) point.get("lng")).doubleValue() : null);
+                hasPoint ? ((Number) point.get("lng")).doubleValue() : null, postalCode, address);
     }
 
     private Object mapped(GeoResolution resolution) {
